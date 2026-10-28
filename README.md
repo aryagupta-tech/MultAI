@@ -1,6 +1,6 @@
 # MultAI backend · development foundation
 
-A fresh TypeScript implementation of the collaboration service and host-local safety library described in [MultAI.md](docs/MultAI.md). This is an early backend milestone. The desktop application, inference engines, native workspace tools and production deployment are still to be implemented and verified.
+A fresh TypeScript implementation of the collaboration service and host-local safety library described in [MultAI.md](docs/MultAI.md), together with the sandboxed Electron desktop shell and React renderer in `apps/desktop`. This is an early milestone: the desktop UI is implemented but not yet wired to the collaboration service (production builds show sign-in and retain drafts without sending), and inference engines, native workspace tools and production deployment are still to be implemented and verified.
 
 The collaboration service stores shared conversation and membership in PostgreSQL. Source files, project paths, shell processes and inference credentials stay outside this service. Sending an instruction records a pending instruction; it does not start inference or execute an action.
 
