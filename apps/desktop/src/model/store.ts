@@ -91,7 +91,10 @@ interface Actions {
 }
 
 const PREFS_KEY = 'multai.prefs.v1';
-const DRAFTS_KEY = 'multai.drafts.v1';
+// Drafts are scoped to the account that wrote them (MultAI.md §4): a signed-out
+// or different account never sees them, and sign-out preserves each account's own.
+export const draftStorageKey = (accountId: string | null): string =>
+  `multai.drafts.v1:${accountId ?? 'signed-out'}`;
 
 const defaultPrefs: Preferences = {
   theme: 'dark', density: 'comfortable', textSize: 'default', motion: 'system', defaultKind: 'instruction', showToolDetails: false,
@@ -188,16 +191,16 @@ export const useApp = create<State & Actions>()((set, get) => {
     overlay: null,
     settingsSection: 'general',
     showArchived: false,
-    drafts: readJson<Record<string, Draft>>(DRAFTS_KEY, {}),
+    drafts: readJson<Record<string, Draft>>(draftStorageKey(null), {}),
     prefs: readJson(PREFS_KEY, defaultPrefs),
     toasts: [],
     focusedApproval: null,
 
     setBuild: (build) => set({ build }),
     loadDemo: ({ account, sessions, projects, details }) =>
-      set({ account, sessions, projects, details, activeId: 's-rate', onboarding: 'done', connection: 'connected' }),
+      set({ account, sessions, projects, details, activeId: 's-rate', onboarding: 'done', connection: 'connected', drafts: readJson<Record<string, Draft>>(draftStorageKey(account.id), {}) }),
     completeOnboarding: (onboarding) => set({ onboarding }),
-    signOut: () => set({ account: null, onboarding: 'signin', sessions: [], projects: [], details: {}, activeId: null, overlay: null, connection: 'offline' }),
+    signOut: () => set({ account: null, onboarding: 'signin', sessions: [], projects: [], details: {}, activeId: null, overlay: null, connection: 'offline', drafts: readJson<Record<string, Draft>>(draftStorageKey(null), {}) }),
 
     selectSession: (id) => {
       set((s) => ({ activeId: id, sessions: s.sessions.map((x) => (x.id === id ? { ...x, unread: false } : x)) }));
@@ -217,7 +220,7 @@ export const useApp = create<State & Actions>()((set, get) => {
       set((s) => {
         const prev = s.drafts[key] ?? { text: '', kind: s.prefs.defaultKind };
         const drafts = { ...s.drafts, [key]: { ...prev, ...draft } };
-        writeJson(DRAFTS_KEY, drafts);
+        writeJson(draftStorageKey(s.account?.id ?? null), drafts);
         return { drafts };
       });
     },
