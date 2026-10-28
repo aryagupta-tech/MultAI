@@ -10,3 +10,6 @@ coverage/
 *.sqlite-wal
 .DS_Store
 .local/
+
+# Local agent/tooling config
+.claude/
