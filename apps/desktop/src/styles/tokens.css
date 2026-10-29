@@ -2,40 +2,41 @@
 
 :root,
 :root[data-theme='dark'] {
+  /* Totally black: every surface is #000; depth comes from hairline borders, not fills. */
   color-scheme: dark;
   --bg: #000000;
-  --surface-1: #0b0a0e;
-  --surface-2: #121117;
-  --surface-3: #1a1920;
-  --surface-4: #23222a;
-  --overlay: rgba(0, 0, 0, 0.62);
-  --border: #1c1c21;
-  --border-strong: #2a2a31;
-  --text: #ededf0;
-  --text-2: #a3a3ad;
-  --text-3: #6c6c76;
-  --text-inverse: #050506;
+  --surface-1: #000000;
+  --surface-2: #000000;
+  --surface-3: #111111;
+  --surface-4: #1a1a1a;
+  --overlay: rgba(0, 0, 0, 0.78);
+  --border: #161616;
+  --border-strong: #262626;
+  --text: #ededed;
+  --text-2: #a1a1a1;
+  --text-3: #666666;
+  --text-inverse: #000000;
 
-  --accent: #a78bfa;
-  --accent-strong: #8b5cf6;
-  --accent-hover: #b9a2fc;
-  --accent-ink: #ffffff;
-  --accent-soft: rgba(167, 139, 250, 0.12);
-  --accent-line: rgba(167, 139, 250, 0.38);
+  /* Monochrome accent: white on black. */
+  --accent: #ffffff;
+  --accent-strong: #e6e6e6;
+  --accent-hover: #d9d9d9;
+  --accent-ink: #000000;
+  --accent-soft: rgba(255, 255, 255, 0.07);
+  --accent-line: rgba(255, 255, 255, 0.3);
 
-  --discuss: #8cc8ff;
-  --discuss-soft: rgba(140, 200, 255, 0.1);
-  --discuss-line: rgba(140, 200, 255, 0.3);
+  --discuss: #9a9a9a;
+  --discuss-soft: rgba(255, 255, 255, 0.05);
+  --discuss-line: rgba(255, 255, 255, 0.18);
 
-  /* Floating panels and their atmospheric glow. */
-  --panel: #0a090d;
-  --panel-border: rgba(255, 255, 255, 0.07);
-  --glow-a: rgba(124, 58, 237, 0.42);
-  --glow-b: rgba(91, 33, 182, 0.22);
-  --glass: rgba(22, 20, 28, 0.72);
-  --glass-border: rgba(255, 255, 255, 0.09);
-  --chip: rgba(255, 255, 255, 0.04);
-  --chip-hover: rgba(255, 255, 255, 0.08);
+  --panel: #000000;
+  --panel-border: #1c1c1c;
+  --glow-a: transparent;
+  --glow-b: transparent;
+  --glass: #000000;
+  --glass-border: #222222;
+  --chip: transparent;
+  --chip-hover: rgba(255, 255, 255, 0.06);
 
   --warn: #f6bd5c;
   --warn-soft: rgba(246, 189, 92, 0.1);
@@ -53,7 +54,7 @@
   --diff-del-strong: rgba(255, 111, 111, 0.22);
 
   /* Welcome slider stage and its 3D slabs. */
-  --stage: radial-gradient(120% 95% at 68% 42%, #2a2a2f 0%, #141416 52%, #060607 100%);
+  --stage: none;
   --slab-top: #1e1e23;
   --slab-a: #101013;
   --slab-b: #0b0b0d;
@@ -65,10 +66,10 @@
   --slab-lit-b: #8d8d96;
   --slab-lit-ink: #1b1b20;
   --slab-lit-line: rgba(10, 10, 14, 0.22);
-  --key-a: #7c5bd6;
-  --key-b: #6a48c4;
-  --key-c: #5a3bb0;
-  --key-ink: #1b1033;
+  --key-a: #bdbdbd;
+  --key-b: #a3a3a3;
+  --key-c: #8a8a8a;
+  --key-ink: #000000;
 
   --shadow-pop: 0 0 0 1px var(--border-strong), 0 18px 48px -12px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.5);
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
@@ -89,21 +90,22 @@
   --text-3: #85858f;
   --text-inverse: #ffffff;
 
-  --accent: #7c3aed;
-  --accent-strong: #6d28d9;
-  --accent-hover: #6d28d9;
+  /* Monochrome accent: black on white. */
+  --accent: #000000;
+  --accent-strong: #000000;
+  --accent-hover: #262626;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(124, 58, 237, 0.08);
-  --accent-line: rgba(124, 58, 237, 0.3);
+  --accent-soft: rgba(0, 0, 0, 0.06);
+  --accent-line: rgba(0, 0, 0, 0.3);
 
-  --discuss: #1d6fd1;
-  --discuss-soft: rgba(29, 111, 209, 0.07);
-  --discuss-line: rgba(29, 111, 209, 0.26);
+  --discuss: #6b6b6b;
+  --discuss-soft: rgba(0, 0, 0, 0.04);
+  --discuss-line: rgba(0, 0, 0, 0.2);
 
   --panel: #ffffff;
-  --panel-border: rgba(20, 16, 40, 0.08);
-  --glow-a: rgba(167, 139, 250, 0.22);
-  --glow-b: rgba(196, 181, 253, 0.16);
+  --panel-border: rgba(0, 0, 0, 0.08);
+  --glow-a: transparent;
+  --glow-b: transparent;
   --glass: rgba(255, 255, 255, 0.82);
   --glass-border: rgba(20, 16, 40, 0.1);
   --chip: rgba(20, 16, 40, 0.03);
@@ -136,9 +138,9 @@
   --slab-lit-b: #222228;
   --slab-lit-ink: #e6e6ea;
   --slab-lit-line: rgba(255, 255, 255, 0.16);
-  --key-a: #8b5cf6;
-  --key-b: #7c3aed;
-  --key-c: #6d28d9;
+  --key-a: #3a3a3a;
+  --key-b: #262626;
+  --key-c: #171717;
   --key-ink: #ffffff;
 
   --shadow-pop: 0 0 0 1px var(--border-strong), 0 18px 40px -12px rgba(16, 16, 24, 0.22), 0 4px 10px rgba(16, 16, 24, 0.06);

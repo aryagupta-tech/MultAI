@@ -39,7 +39,7 @@ export function ParticleField({ slide }: { slide: number }) {
     const stars = Array.from({ length: STARS }, () => ({ x: Math.random(), y: Math.random(), s: rand(0.4, 1.2), tw: rand(0, Math.PI * 2) }));
 
     let w = 0, h = 0, dpr = 1, spread = SPREAD[slideRef.current] ?? 0.42, frame = 0, t = 0;
-    let accent = '#a78bfa', ink = '#ededf0';
+    let accent = '#ffffff', ink = '#ededed';
     const still = reducedMotion();
 
     const readColors = () => {

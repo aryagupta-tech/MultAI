@@ -834,8 +834,8 @@ ol.md-list { list-style: decimal; }
 /* Pills */
 .btn { border-radius: var(--r-pill); }
 .btn-lg { border-radius: var(--r-pill); }
-.btn-primary { background: linear-gradient(180deg, var(--accent), var(--accent-strong)); color: var(--accent-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 8px 22px -10px var(--accent-strong); }
-.btn-primary:hover:not(:disabled) { background: linear-gradient(180deg, var(--accent-hover), var(--accent)); }
+.btn-primary { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .btn-secondary { background: var(--chip); border-color: var(--glass-border); }
 .btn-secondary:hover:not(:disabled) { background: var(--chip-hover); }
 .segmented { border-radius: var(--r-pill); background: var(--chip); border-color: var(--glass-border); }
@@ -871,10 +871,10 @@ ol.md-list { list-style: decimal; }
 .composer-bar .segmented { margin-right: 6px; }
 .send-btn {
   width: 34px; height: 34px; border-radius: 50%; color: #fff;
-  background: linear-gradient(180deg, #b49cfc, #7c3aed);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 20px -6px rgba(124, 58, 237, 0.75);
+  background: var(--accent); color: var(--accent-ink);
+  box-shadow: none;
 }
-.send-btn.is-discussion { background: linear-gradient(180deg, #a8d6ff, #3b82f6); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 20px -6px rgba(59, 130, 246, 0.7); }
+.send-btn.is-discussion { background: var(--discuss); color: var(--accent-ink); box-shadow: none; }
 .send-btn:disabled { background: var(--surface-4); color: var(--text-3); box-shadow: none; }
 .composer-dock { padding: 0 24px 30px; }
 
@@ -1043,3 +1043,43 @@ ol.md-list { list-style: decimal; }
   :root:not([data-motion='full']) .slider *,
   :root:not([data-motion='full']) .slider *::after { transition-duration: 0ms !important; transition-delay: 0ms !important; }
 }
+
+/* ============================================================ Totally black (dark theme)
+   Flat black everywhere: no glows, gradients or tinted glass. White is the only accent. */
+
+:root:not([data-theme='light']) .main,
+:root:not([data-theme='light']) .inspector { background: #000; border-color: var(--panel-border); }
+:root:not([data-theme='light']) .welcome-glow { display: none; }
+:root:not([data-theme='light']) .welcome-card,
+:root:not([data-theme='light']) .composer,
+:root:not([data-theme='light']) .feature-card,
+:root:not([data-theme='light']) .tools,
+:root:not([data-theme='light']) .card,
+:root:not([data-theme='light']) .dialog,
+:root:not([data-theme='light']) .menu { background: #000; backdrop-filter: none; }
+:root:not([data-theme='light']) .menu,
+:root:not([data-theme='light']) .dialog { box-shadow: 0 0 0 1px var(--border-strong), 0 24px 60px -12px rgba(0, 0, 0, 0.9); }
+:root:not([data-theme='light']) .composer { box-shadow: none; }
+:root:not([data-theme='light']) .composer:focus-within { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06); }
+:root:not([data-theme='light']) .btn-primary,
+:root:not([data-theme='light']) .btn-primary:hover:not(:disabled) { background: #fff; color: #000; box-shadow: none; }
+:root:not([data-theme='light']) .btn-primary:hover:not(:disabled) { background: #d9d9d9; }
+:root:not([data-theme='light']) .send-btn { background: #fff; color: #000; box-shadow: none; }
+:root:not([data-theme='light']) .send-btn.is-discussion { background: #9a9a9a; color: #000; box-shadow: none; }
+:root:not([data-theme='light']) .send-btn:disabled { background: #1a1a1a; color: #555; }
+:root:not([data-theme='light']) .approval.is-pending { background: #000; box-shadow: none; }
+:root:not([data-theme='light']) .msg-instruction .msg-text { background: #000; }
+:root:not([data-theme='light']) .segment.is-selected { background: #1f1f1f; box-shadow: none; }
+:root:not([data-theme='light']) .chat-row.is-active .chat-link { background: #141414; }
+:root:not([data-theme='light']) .new-chat-btn { background: #111; }
+:root:not([data-theme='light']) .new-chat-btn:hover { background: #1a1a1a; }
+:root:not([data-theme='light']) .side-card { background: #000; }
+:root:not([data-theme='light']) .status-dot.is-running { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1); }
+:root:not([data-theme='light']) .composer-spark { filter: none; }
+:root:not([data-theme='light']) .md-code { background: #111; }
+:root:not([data-theme='light']) .md-pre,
+:root:not([data-theme='light']) .tool-output,
+:root:not([data-theme='light']) .cmd { background: #000; }
+:root:not([data-theme='light']) .cmd-meta { background: #0a0a0a; }
+:root:not([data-theme='light']) .kbd { background: #111; }
+:root:not([data-theme='light']) .avatar { filter: saturate(0.35); }
