@@ -847,22 +847,6 @@ ol.md-list { list-style: decimal; }
 .icon-btn { border-radius: var(--r-pill); }
 .kind-tag, .queue-tag, .role-tag { border-radius: var(--r-pill); padding: 0 7px; }
 
-/* Orb */
-.orb {
-  display: inline-block; flex: none; border-radius: 50%;
-  background: radial-gradient(circle at 34% 28%, #fbf9ff 0%, #ddd1ff 9%, #a78bfa 30%, #6d28d9 58%, #2e1065 82%, #140629 100%);
-  box-shadow: 0 0 22px rgba(167, 139, 250, 0.45), 0 0 80px rgba(124, 58, 237, 0.32), inset -6px -8px 16px rgba(10, 0, 30, 0.55), inset 3px 4px 10px rgba(255, 255, 255, 0.14);
-  animation: orb-float 6s ease-in-out infinite;
-}
-.orb.is-still { animation: none; }
-.agent-avatar .orb { box-shadow: 0 0 10px rgba(167, 139, 250, 0.4), inset -3px -4px 8px rgba(10, 0, 30, 0.55), inset 2px 2px 5px rgba(255, 255, 255, 0.14); }
-.agent-avatar .orb:not(.is-still) { animation: orb-pulse 1.6s ease-in-out infinite; }
-@keyframes orb-float {
-  50% { transform: translateY(-4px); box-shadow: 0 0 30px rgba(167, 139, 250, 0.55), 0 0 110px rgba(124, 58, 237, 0.4), inset -6px -8px 16px rgba(10, 0, 30, 0.55), inset 3px 4px 10px rgba(255, 255, 255, 0.14); }
-}
-@keyframes orb-pulse { 50% { box-shadow: 0 0 18px rgba(167, 139, 250, 0.75), inset -3px -4px 8px rgba(10, 0, 30, 0.55); } }
-.agent-avatar { background: none; border: 0; width: 28px; height: 28px; }
-
 /* Composer */
 .composer {
   border-radius: var(--r-2xl);
@@ -896,7 +880,7 @@ ol.md-list { list-style: decimal; }
 
 /* New chat */
 .new-chat-inner { width: min(780px, 100%); gap: 12px; padding-bottom: 6vh; }
-.new-chat-hero { gap: 16px; margin-bottom: 22px; }
+.new-chat-hero { gap: 10px; margin-bottom: 22px; }
 .new-chat-hero h1 { font-size: calc(var(--fs-base) + 13px); font-weight: 600; letter-spacing: -0.02em; }
 .new-chat .composer-hints { display: none; }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -953,7 +937,7 @@ ol.md-list { list-style: decimal; }
 /* Dialogs, menus, welcome */
 .dialog { border-radius: var(--r-2xl); border: 1px solid var(--panel-border); }
 .menu { border-radius: var(--r-lg); }
-.welcome-mark { background: none; border: 0; width: auto; height: auto; margin-bottom: 10px; }
+.welcome-mark { width: 56px; height: 56px; border-radius: 16px; background: var(--chip); border: 1px solid var(--glass-border); margin-bottom: 6px; }
 .welcome-card { border-radius: 24px; background: var(--glass); border-color: var(--glass-border); backdrop-filter: blur(24px); }
 .welcome-glow {
   background:

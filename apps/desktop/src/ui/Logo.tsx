@@ -18,8 +18,3 @@ export function Wordmark() {
     </span>
   );
 }
-
-/** A softly lit violet sphere used as the hero mark and the agent's avatar. */
-export function Orb({ size = 64, still }: { size?: number; still?: boolean }) {
-  return <span className={still ? 'orb is-still' : 'orb'} style={{ width: size, height: size }} aria-hidden />;
-}

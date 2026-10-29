@@ -2,7 +2,6 @@ import { Bug, FileSearch, Folder, Laptop, Lightbulb, ListChecks, MessagesSquare,
 import { useApp } from '../model/store';
 import type { MessageKind } from '../model/types';
 import { Composer } from './Composer';
-import { Orb } from '../ui/Logo';
 
 const CHIPS = [
   { icon: Bug, title: 'Fix a bug', text: 'There’s a bug where ', kind: 'instruction' },
@@ -43,7 +42,6 @@ export function NewChat() {
     <div className="new-chat">
       <div className="new-chat-inner">
         <div className="new-chat-hero">
-          <Orb size={68} />
           <h1>Ready to build something together?</h1>
           <p className="new-chat-where">
             {project

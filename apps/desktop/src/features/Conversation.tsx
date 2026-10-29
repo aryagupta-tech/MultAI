@@ -8,7 +8,7 @@ import { clockTime } from '../model/format';
 import type { Decision, Participant, SessionDetail, TimelineItem, ToolCall } from '../model/types';
 import { Avatar, Button, cx } from '../ui/primitives';
 import { Markdown } from '../ui/Markdown';
-import { Orb } from '../ui/Logo';
+import { LogoMark } from '../ui/Logo';
 
 type Item<T extends TimelineItem['type']> = Extract<TimelineItem, { type: T }>;
 
@@ -131,7 +131,7 @@ function MessageRow({ item, author, grouped }: { item: Item<'message'>; author: 
 function AgentRow({ item }: { item: Item<'agent'> }) {
   return (
     <article className="msg msg-agent" aria-label="Agent response" aria-busy={item.streaming}>
-      <div className="msg-gutter"><span className="agent-avatar"><Orb size={26} still={!item.streaming} /></span></div>
+      <div className="msg-gutter"><span className="agent-avatar"><LogoMark size={18} /></span></div>
       <div className="msg-body">
         <header className="msg-head">
           <span className="msg-author">Agent</span>
