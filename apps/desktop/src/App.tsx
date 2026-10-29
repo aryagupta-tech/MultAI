@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useApp } from './model/store';
-import { loadBuildInfo } from './bridge/client';
+import { getBridge, loadBuildInfo } from './bridge/client';
+import * as live from './live/controller';
 import { Sidebar } from './features/Sidebar';
 import { SessionHeader } from './features/SessionHeader';
 import { Conversation } from './features/Conversation';
@@ -9,7 +10,7 @@ import { Inspector } from './features/Inspector';
 import { NewChat } from './features/NewChat';
 import { Welcome } from './features/Welcome';
 import {
-  CommandPalette, DeleteSessionDialog, InviteDialog, NewProjectDialog, SettingsDialog, ShortcutsDialog, Toasts,
+  CommandPalette, DeleteSessionDialog, InviteDialog, JoinDialog, NewProjectDialog, SettingsDialog, ShortcutsDialog, Toasts,
 } from './features/Overlays';
 import { cx } from './ui/primitives';
 
@@ -79,7 +80,7 @@ function useGlobalShortcuts() {
 }
 
 export function App() {
-  const { account, activeId, details, sidebarOpen, inspectorOpen, dataMode, build } = useApp();
+  const { account, activeId, details, sidebarOpen, inspectorOpen, dataMode, build, onboarding, loading } = useApp();
   const d = activeId ? details[activeId] ?? null : null;
 
   usePreferencesOnRoot();
@@ -88,12 +89,14 @@ export function App() {
   useEffect(() => {
     void loadBuildInfo().then(useApp.getState().setBuild);
     if (dataMode === 'demo') void loadDemo();
+    else if (getBridge()) void live.start();
   }, [dataMode]);
 
-  if (!account) {
+  if (!account || onboarding !== 'done') {
     return (
       <>
         <Welcome onDemoSignIn={() => void loadDemo()} />
+        <JoinDialog />
         <Toasts />
       </>
     );
@@ -106,7 +109,9 @@ export function App() {
       {sidebarOpen && <Sidebar />}
       <main className="main" aria-label={d ? d.title : 'New chat'}>
         <SessionHeader d={d} />
-        {d ? (
+        {activeId && !d ? (
+          <div className="session-loading" role="status">{loading[activeId] ? 'Loading session…' : 'This session isn’t available.'}</div>
+        ) : d ? (
           <>
             <Conversation d={d} />
             <div className="composer-dock">
@@ -125,6 +130,7 @@ export function App() {
       <InviteDialog />
       <NewProjectDialog />
       <DeleteSessionDialog />
+      <JoinDialog />
       <Toasts />
     </div>
   );

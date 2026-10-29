@@ -1,13 +1,13 @@
 import {
   Archive, ChevronDown, Cpu, Hammer, Laptop, ListChecks, MoreHorizontal, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain,
+  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain, CloudOff, Radio,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import type { SessionDetail } from '../model/types';
 import { Avatar, Button, IconButton, Menu, Segmented, cx, shortcutText } from '../ui/primitives';
 
 export function SessionHeader({ d }: { d: SessionDetail | null }) {
-  const { sidebarOpen, inspectorOpen, build, sessions } = useApp();
+  const { sidebarOpen, inspectorOpen, build, sessions, liveStatus } = useApp();
   const app = useApp.getState();
   const mac = build?.platform === 'darwin';
   const summary = d ? sessions.find((s) => s.id === d.id) : undefined;
@@ -49,10 +49,13 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
             <Laptop size={12} aria-hidden />
             <span className="truncate">{d.hostName}</span>
           </span>
-          <span className="meta-item meta-hide-sm" title={`Worktree ${d.worktree}`}>
-            <GitBranch size={12} aria-hidden />
-            <span className="truncate">{d.baseline}</span>
-          </span>
+          {d.baseline && (
+            <span className="meta-item meta-hide-sm" title={`Worktree ${d.worktree}`}>
+              <GitBranch size={12} aria-hidden />
+              <span className="truncate">{d.baseline}</span>
+            </span>
+          )}
+          {d.source === 'live' && <LiveIndicator status={liveStatus[d.id]} />}
         </div>
       </div>
 
@@ -71,6 +74,11 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           ]}
         />
 
+        {d.source === 'live' ? (
+          <span className="no-ai-chip" title="This collaboration service has inference disabled. You can still plan and discuss together.">
+            <CloudOff size={13} aria-hidden /> No AI connected
+          </span>
+        ) : (
         <Menu
           label="Model and reasoning"
           align="end"
@@ -94,6 +102,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
             </button>
           )}
         />
+        )}
 
         <button
           type="button"
@@ -112,7 +121,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           <Button size="sm" icon={UserPlus} onClick={() => app.openOverlay('invite')}>Invite</Button>
         )}
 
-        {running ? (
+        {d.source === 'live' ? null : running ? (
           <Button size="sm" variant="danger" icon={Square} onClick={() => app.stop(d.id)} disabled={!owner} title={owner ? 'Stop the agent' : 'Only the host can stop the agent'}>
             Stop
           </Button>
@@ -125,7 +134,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           align="end"
           width={232}
           items={[
-            { id: 'rename', label: 'Rename', icon: Pencil, onSelect: () => renamePrompt(d) },
+            { id: 'rename', label: 'Rename', icon: Pencil, ...(d.source === 'live' ? { description: 'Only you see this name' } : {}), onSelect: () => renamePrompt(d) },
             { id: 'pin', label: summary?.pinned ? 'Unpin' : 'Pin to sidebar', icon: Pin, onSelect: () => app.togglePin(d.id) },
             { id: 'archive', label: 'Archive', icon: Archive, description: 'Hides it for you only', onSelect: () => app.setArchived(d.id, true) },
             { id: 'sep', separator: true },
@@ -155,4 +164,14 @@ function renamePrompt(d: SessionDetail) {
   const row = document.querySelector<HTMLButtonElement>('.chat-row.is-active .chat-link');
   row?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   if (!row) useApp.getState().toast(`Double-click “${d.title}” in the sidebar to rename it`);
+}
+
+function LiveIndicator({ status }: { status: string | undefined }) {
+  const label = status === 'live' ? 'Live' : status === 'reconnecting' ? 'Reconnecting…' : status === 'ended' ? 'Disconnected' : 'Connecting…';
+  return (
+    <span className={cx('live-chip', `is-${status ?? 'connecting'}`)} title={status === 'live' ? 'Receiving updates from your team in real time' : 'Updates will catch up automatically when the connection returns'}>
+      <Radio size={11} aria-hidden />
+      {label}
+    </span>
+  );
 }

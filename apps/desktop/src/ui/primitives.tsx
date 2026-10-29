@@ -77,17 +77,17 @@ export const shortcutText = (keys: string) =>
 /* ---------------------------------------------------------------- Avatar */
 
 export function Avatar({ name, initials, hue, size = 24, presence, ring }: {
-  name: string; initials: string; hue: number; size?: number; presence?: 'online' | 'idle' | 'offline'; ring?: boolean;
+  name: string; initials: string; hue: number; size?: number; presence?: 'online' | 'idle' | 'offline' | 'unknown'; ring?: boolean;
 }) {
   return (
     <span
       className={cx('avatar', ring && 'avatar-ring')}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.42), ['--hue' as string]: hue }}
       role="img"
-      aria-label={presence ? `${name}, ${presence}` : name}
+      aria-label={presence && presence !== 'unknown' ? `${name}, ${presence}` : name}
     >
       {initials}
-      {presence && <span className={cx('presence', `presence-${presence}`)} aria-hidden />}
+      {presence && presence !== 'unknown' && <span className={cx('presence', `presence-${presence}`)} aria-hidden />}
     </span>
   );
 }

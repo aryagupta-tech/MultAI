@@ -14,6 +14,7 @@ export function NewChat() {
   const projectId = useApp((s) => s.draftTarget.projectId);
   const project = useApp((s) => s.projects.find((p) => p.id === projectId));
   const draft = useApp((s) => s.drafts.new);
+  const dataMode = useApp((s) => s.dataMode);
   const app = useApp.getState();
 
   return (
@@ -43,7 +44,10 @@ export function NewChat() {
             })}
           </div>
         )}
-        <p className="new-chat-fine">Nothing starts until you send. The session becomes shareable once it exists.</p>
+        <p className="new-chat-fine">
+          Nothing starts until you send. The session becomes shareable once it exists.
+          {dataMode === 'live' && <> <button type="button" className="link-btn" onClick={() => app.openOverlay('join')}>Have an invitation?</button></>}
+        </p>
       </div>
     </div>
   );

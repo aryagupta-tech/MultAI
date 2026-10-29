@@ -18,6 +18,7 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
   const draft = useApp((s) => s.drafts[draftKey]);
   const defaultKind = useApp((s) => s.prefs.defaultKind);
   const account = useApp((s) => s.account);
+  const sending = useApp((s) => Boolean(s.sending[draftKey]));
   const app = useApp.getState();
   const text = draft?.text ?? '';
   const kind: MessageKind = draft?.kind ?? defaultKind;
@@ -200,12 +201,13 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
           type="button"
           className={cx('send-btn', instruction ? 'is-instruction' : 'is-discussion')}
           onClick={() => submit(kind)}
-          disabled={empty || tooLong}
-          aria-label={sendLabel}
+          disabled={empty || tooLong || sending}
+          aria-busy={sending}
+          aria-label={sending ? 'Sending' : sendLabel}
           data-tip={`${sendLabel}  ↵`}
           data-tip-side="top"
         >
-          {instruction ? <ArrowUp size={16} strokeWidth={2.2} aria-hidden /> : <MessageCircle size={15} strokeWidth={2} aria-hidden />}
+          {sending ? <span className="spinner" style={{ width: 14, height: 14 }} aria-hidden /> : instruction ? <ArrowUp size={16} strokeWidth={2.2} aria-hidden /> : <MessageCircle size={15} strokeWidth={2} aria-hidden />}
         </button>
       </div>
 

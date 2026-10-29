@@ -8,7 +8,7 @@ declare global {
 
 /** The preload bridge, or null when the renderer runs in a plain browser preview. */
 export function getBridge(): DesktopBridge | null {
-  return window.multai ?? null;
+  return typeof window === 'undefined' ? null : window.multai ?? null;
 }
 
 export async function loadBuildInfo(): Promise<BuildInfo> {
@@ -21,5 +21,6 @@ export async function loadBuildInfo(): Promise<BuildInfo> {
     builtAt: new Date().toISOString(),
     channel: import.meta.env.MODE === 'demo' ? 'demo' : 'development',
     platform: 'web',
+    serviceOrigin: 'http://127.0.0.1:4310',
   };
 }

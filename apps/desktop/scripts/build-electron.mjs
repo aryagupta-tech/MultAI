@@ -31,7 +31,8 @@ const shared = {
   platform: 'node',
   format: 'cjs',
   target: 'node22',
-  external: ['electron'],
+  // ws optionally loads these native accelerators; it falls back to JS when they're absent.
+  external: ['electron', 'bufferutil', 'utf-8-validate'],
   logLevel: 'warning',
   define: {
     __BUILD_INFO__: JSON.stringify(buildInfo),

@@ -778,3 +778,33 @@ ol.md-list { list-style: decimal; }
 .connect-option.is-selected .radio-dot { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .welcome-footer { position: absolute; bottom: 14px; left: 0; right: 0; display: flex; justify-content: center; gap: 10px; font-size: var(--fs-xs); color: var(--text-3); }
 .demo-inline { color: var(--warn); font-weight: 600; }
+
+/* ============================================================ Live service states */
+
+.session-loading { flex: 1; display: grid; place-items: center; color: var(--text-3); font-size: var(--fs-sm); }
+.waiting-row { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); color: var(--text-2); font-size: var(--fs-sm); }
+.welcome-actions { display: flex; gap: 8px; justify-content: space-between; }
+.welcome-footer { flex-wrap: wrap; align-items: center; }
+.service-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 20px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); }
+.service-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.service-pill.is-ok .service-dot { background: var(--ok); }
+.service-pill.is-warn .service-dot { background: var(--warn); }
+.service-pill.is-down { color: var(--danger); border-color: var(--danger-line); }
+.service-pill.is-down .service-dot { background: var(--danger); }
+.service-pill .link-btn { font-size: inherit; margin-left: 2px; }
+.connect-option.is-unavailable { opacity: 0.55; cursor: not-allowed; }
+.connect-option.is-unavailable:hover { border-color: var(--border-strong); }
+.soon-tag { margin-left: 8px; font-size: 10px; font-weight: 600; color: var(--text-3); border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 5px; vertical-align: 1px; }
+.no-ai-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: var(--r-sm); border: 1px dashed var(--border-strong); color: var(--text-3); font-size: var(--fs-sm); white-space: nowrap; }
+.live-chip { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--text-3); }
+.live-chip.is-live { color: var(--ok); }
+.live-chip.is-reconnecting, .live-chip.is-connecting { color: var(--warn); }
+.live-chip.is-reconnecting svg { animation: pulse 1.2s var(--ease) infinite; }
+.invite-result { display: grid; gap: 8px; }
+.invite-code { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-3); }
+.invite-code code { color: var(--text-2); }
+.join-note { margin: -2px 0 8px; }
+.offline-badge { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--r-md); background: var(--danger-soft); border: 1px solid var(--danger-line); color: var(--danger); font-size: var(--fs-xs); }
+.person-row .row-action { opacity: 0; }
+.person-row:hover .row-action, .person-row .row-action:focus-visible, .person-row .row-action[aria-expanded='true'] { opacity: 1; }
+@media (max-width: 1200px) { .no-ai-chip { font-size: 0; gap: 0; } .no-ai-chip svg { font-size: var(--fs-sm); } }

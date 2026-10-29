@@ -6,6 +6,7 @@ All source, styles and the logo in this package were written new for this reposi
 ## Brand
 
 - Stacked-layer mark (`src/ui/Logo.tsx`): new inline SVG of three isometric layers.
+- App icon (`build/icon.svg`, rendered to `build/icon.icns` with AppKit and `iconutil`): the same mark on a dark tile.
 - Colors and type: system font stacks only; no font files are bundled.
 
 ## Third-party dependencies
@@ -24,3 +25,7 @@ selection time; recheck before any distribution.
 | esbuild | 0.28.2 | MIT | Main/preload bundling |
 | vitest | 5.0.5 | MIT | Unit tests |
 | typescript | 7.0.2 | Apache-2.0 | Type checking |
+| ws | 8.18.3 | MIT | Live session stream from the main process |
+| zod | 4.6.7 | MIT | IPC and service response validation |
+| @types/ws | 8.18.2 | MIT | Types for ws |
+| @electron/packager | 20.3.0 | BSD-2-Clause | Builds the installable app |

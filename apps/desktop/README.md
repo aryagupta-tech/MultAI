@@ -6,14 +6,36 @@ fresh from the product requirements; nothing is imported from earlier implementa
 ## Run it
 
 ```bash
-npm run dev:demo -w @multai/desktop   # Electron + Vite, with labeled demo data
-npm run dev -w @multai/desktop        # Electron + Vite, no demo data (shows sign-in)
-npm run dev:web -w @multai/desktop    # Renderer only, in a browser, with demo data
-npm run build -w @multai/desktop && npm start -w @multai/desktop
+docker compose up -d database && npm run db:migrate   # from the repo root
+npm run dev:backend                                   # collaboration service on 127.0.0.1:4310
+npm run dev -w @multai/desktop                        # Electron + Vite against that service
+npm run dev:demo -w @multai/desktop                   # Electron + Vite with labeled demo data instead
+npm run package -w @multai/desktop                    # build release/MultAI-<platform>-<arch>/
 ```
+
+The app talks to `http://127.0.0.1:4310` by default. Set `MULTAI_SERVICE_ORIGIN` to another
+loopback port or an HTTPS origin to change it; anything else is refused.
+
+Google sign-in needs a Google web OAuth client on the backend (`GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` in the repo's `.env`, redirect URI
+`http://127.0.0.1:4310/v1/auth/google/callback`). Without it the app says sign-in isn't
+configured. The browser returns to the app through `multai-dev://auth/callback`, which the
+packaged app registers.
 
 The Electron binary is fetched by its install script. If `npm install` skipped it, run
 `node node_modules/electron/install.js` from the repository root.
+
+## How the service connection works
+
+- `electron/service/account.ts` runs the PKCE sign-in, keeps access, refresh and device secrets
+  in the main process, encrypts them with the OS keychain (`safeStorage`), serializes refresh,
+  and never retries a refresh whose outcome is unknown.
+- `electron/service/live.ts` follows each open session over the read-only WebSocket, resumes
+  from the last sequence and deduplicates by sequence.
+- `electron/service/router.ts` validates every renderer request before any network call.
+- `src/live/controller.ts` keeps the store in sync; `src/live/projection.ts` maps wire data to
+  view models. Sends carry a retry id saved with the draft, so retrying never duplicates.
+- Pins, archive state, private renames and projects are local to this account on this computer.
 
 ## Demo data
 
@@ -52,6 +74,7 @@ Implemented: shell, design system, sidebar, session header, conversation with ev
 composer, inspector (changes, activity, approvals, decisions, people), command menu, settings,
 invite, new project, delete confirmation and onboarding.
 
-Not yet wired: the collaboration service client, real sign-in, provider connections, the local
-runtime (file browser, terminals) and native notifications. Those controls are visibly disabled
-or say they're unavailable.
+Wired to the service: sign-in, sessions, messages, live updates, Plan/Build, invitations, join
+requests and admission, removing people, and deletion. Not available yet because the service
+doesn't offer them: inference and agent runs, approvals, decisions, diffs, the file browser, and
+other people's display names. Those panels say so plainly.

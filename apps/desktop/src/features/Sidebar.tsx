@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   Archive, ArchiveRestore, ChevronRight, Folder, FolderPlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plus,
-  Search, Settings, ShieldAlert, SquarePen, X, Keyboard, LogOut, Command,
+  Search, Settings, ShieldAlert, SquarePen, X, Keyboard, LogOut, Command, LogIn, WifiOff,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { recencyBucket } from '../model/format';
@@ -11,7 +11,7 @@ import { Avatar, IconButton, Kbd, Menu, cx, shortcutText } from '../ui/primitive
 import { LogoMark } from '../ui/Logo';
 
 export function Sidebar() {
-  const { sessions, projects, activeId, showArchived, account, dataMode, build } = useApp();
+  const { sessions, projects, activeId, showArchived, account, dataMode, build, connection } = useApp();
   const app = useApp.getState();
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -137,6 +137,12 @@ export function Sidebar() {
       </div>
 
       <div className="sidebar-footer">
+        {dataMode === 'live' && connection === 'offline' && (
+          <div className="offline-badge" role="status">
+            <WifiOff size={13} aria-hidden />
+            <span><strong>Offline</strong> · changes will sync when the service is back</span>
+          </div>
+        )}
         {dataMode === 'demo' && (
           <div className="demo-badge" role="note">
             <ShieldAlert size={13} aria-hidden />
@@ -149,7 +155,8 @@ export function Sidebar() {
             side="top"
             width={248}
             items={[
-              { id: 'acct', separator: true, label: account.email },
+              { id: 'acct', separator: true, label: account.email || `${account.name} · ${account.workspace} workspace` },
+              ...(dataMode === 'live' ? [{ id: 'join', label: 'Join a session…', icon: LogIn, onSelect: () => app.openOverlay('join') }] : []),
               { id: 'settings', label: 'Settings', icon: Settings, hint: shortcutText('Mod+,'), onSelect: () => app.openOverlay('settings', 'general') },
               { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, hint: shortcutText('Mod+/'), onSelect: () => app.openOverlay('shortcuts') },
               { id: 'palette', label: 'Command menu', icon: Command, hint: shortcutText('Mod+K'), onSelect: () => app.openOverlay('palette') },
