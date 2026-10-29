@@ -52,6 +52,24 @@
   --diff-del: rgba(255, 111, 111, 0.1);
   --diff-del-strong: rgba(255, 111, 111, 0.22);
 
+  /* Welcome slider stage and its 3D slabs. */
+  --stage: radial-gradient(120% 95% at 68% 42%, #2a2a2f 0%, #141416 52%, #060607 100%);
+  --slab-top: #1e1e23;
+  --slab-a: #101013;
+  --slab-b: #0b0b0d;
+  --slab-c: #16161a;
+  --slab-ink: #8f8f99;
+  --slab-line: rgba(255, 255, 255, 0.08);
+  --slab-lit-top: #ececf0;
+  --slab-lit-a: #b8b8c0;
+  --slab-lit-b: #8d8d96;
+  --slab-lit-ink: #1b1b20;
+  --slab-lit-line: rgba(10, 10, 14, 0.22);
+  --key-a: #7c5bd6;
+  --key-b: #6a48c4;
+  --key-c: #5a3bb0;
+  --key-ink: #1b1033;
+
   --shadow-pop: 0 0 0 1px var(--border-strong), 0 18px 48px -12px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.5);
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
@@ -105,6 +123,23 @@
   --diff-add-strong: rgba(24, 136, 74, 0.18);
   --diff-del: rgba(201, 48, 44, 0.07);
   --diff-del-strong: rgba(201, 48, 44, 0.16);
+
+  --stage: radial-gradient(120% 95% at 68% 42%, #f4f4f6 0%, #dcdce1 55%, #c6c6cd 100%);
+  --slab-top: #f7f7f9;
+  --slab-a: #d4d4da;
+  --slab-b: #c2c2ca;
+  --slab-c: #e2e2e7;
+  --slab-ink: #5c5c66;
+  --slab-line: rgba(20, 16, 40, 0.1);
+  --slab-lit-top: #17171c;
+  --slab-lit-a: #2c2c33;
+  --slab-lit-b: #222228;
+  --slab-lit-ink: #e6e6ea;
+  --slab-lit-line: rgba(255, 255, 255, 0.16);
+  --key-a: #8b5cf6;
+  --key-b: #7c3aed;
+  --key-c: #6d28d9;
+  --key-ink: #ffffff;
 
   --shadow-pop: 0 0 0 1px var(--border-strong), 0 18px 40px -12px rgba(16, 16, 24, 0.22), 0 4px 10px rgba(16, 16, 24, 0.06);
   --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);

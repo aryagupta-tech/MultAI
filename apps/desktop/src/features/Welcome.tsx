@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Check, CircleX, Cpu, KeyRound, Laptop, Loader2, RefreshCw, ShieldCheck, Users, WifiOff } from 'lucide-react';
+import { ArrowRight, Check, CircleX, Cpu, KeyRound, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import { useApp } from '../model/store';
 import { getBridge } from '../bridge/client';
 import * as live from '../live/controller';
 import { Button, Spinner, cx } from '../ui/primitives';
 import { LogoMark } from '../ui/Logo';
+import { WelcomeSlider } from './WelcomeSlider';
 
 export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
   const { onboarding, dataMode, build, auth, health, account } = useApp();
@@ -49,6 +50,40 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
     else onDemoSignIn();
   };
 
+  const meta = (
+    <>
+      {isLive && (
+        <span className={cx('service-pill', health?.reachable ? (health.identity === 'configured_unverified' ? 'is-ok' : 'is-warn') : 'is-down')}>
+          <span className="service-dot" aria-hidden />
+          {!health ? 'Checking service…' : !health.reachable ? `Service unreachable at ${health.origin}` : health.identity === 'not_configured' ? `Connected to ${health.origin} · Google sign-in not configured` : `Connected to ${health.origin}`}
+          {health && !health.reachable && <button type="button" className="link-btn" onClick={() => void live.checkHealth()}>Retry</button>}
+        </span>
+      )}
+      <span className="mono">MultAI {build?.version ?? ''} · {build?.commit ?? ''}</span>
+      {dataMode === 'demo' && <span className="demo-inline">Demo data</span>}
+    </>
+  );
+
+  if (step === 'signin' && !signingIn) {
+    return (
+      <div className={cx('welcome-hero drag', build?.platform === 'darwin' && 'is-mac')}>
+        <WelcomeSlider
+          brand={<><LogoMark size={26} /><span>MultAI<em>/ Shared sessions</em></span></>}
+          action={
+            <>
+              <Button variant="primary" size="lg" className="hero-cta" onClick={() => void signIn()} disabled={busy} trailing={busy ? <Spinner /> : <ArrowRight size={16} aria-hidden />}>
+                Continue with Google
+              </Button>
+              <p className="hero-fine">Opens your browser to sign in, then brings you back here.</p>
+              {error && <p className="welcome-error" role="alert"><CircleX size={14} aria-hidden />{error}</p>}
+            </>
+          }
+          footer={meta}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={cx('welcome drag', build?.platform === 'darwin' && 'is-mac')}>
       <div className="welcome-glow" aria-hidden />
@@ -66,24 +101,7 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
                 <Button variant="secondary" icon={RefreshCw} onClick={() => void signIn()}>Open the browser again</Button>
               </div>
             </>
-          ) : (
-            <>
-              <h1 className="welcome-title">One agent. The whole team.</h1>
-              <p className="welcome-sub">Work on the same AI coding session together. Everyone sees the conversation, decisions and changes, while your files and commands stay on your computer.</p>
-
-              <ul className="welcome-points">
-                <li><span><Users size={15} aria-hidden /></span><div><strong>Join mid-task</strong>Pick up a teammate’s session with its full context.</div></li>
-                <li><span><ShieldCheck size={15} aria-hidden /></span><div><strong>You approve every command</strong>The host reviews exactly what runs, every time.</div></li>
-                <li><span><Laptop size={15} aria-hidden /></span><div><strong>Code stays local</strong>Each chat gets its own private worktree. Your checkout is never touched.</div></li>
-              </ul>
-
-              <Button variant="primary" size="lg" className="btn-block" onClick={() => void signIn()} disabled={busy} trailing={busy ? <Spinner /> : <ArrowRight size={16} aria-hidden />}>
-                Continue with Google
-              </Button>
-              <p className="welcome-fine">Opens your browser to sign in, then brings you back here.</p>
-              {error && <p className="welcome-error" role="alert"><CircleX size={14} aria-hidden />{error}</p>}
-            </>
-          )
+          ) : null
         ) : (
           <>
             <span className="step-kicker">{isLive ? 'Almost done' : 'Step 2 of 2'}</span>
@@ -127,17 +145,7 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
           </>
         )}
       </main>
-      <footer className="welcome-footer no-drag">
-        {isLive && (
-          <span className={cx('service-pill', health?.reachable ? (health.identity === 'configured_unverified' ? 'is-ok' : 'is-warn') : 'is-down')}>
-            <span className="service-dot" aria-hidden />
-            {!health ? 'Checking service…' : !health.reachable ? `Service unreachable at ${health.origin}` : health.identity === 'not_configured' ? `Connected to ${health.origin} · Google sign-in not configured` : `Connected to ${health.origin}`}
-            {health && !health.reachable && <button type="button" className="link-btn" onClick={() => void live.checkHealth()}>Retry</button>}
-          </span>
-        )}
-        <span className="mono">MultAI {build?.version ?? ''} · {build?.commit ?? ''}</span>
-        {dataMode === 'demo' && <span className="demo-inline">Demo data</span>}
-      </footer>
+      <footer className="welcome-footer no-drag">{meta}</footer>
     </div>
   );
 }
