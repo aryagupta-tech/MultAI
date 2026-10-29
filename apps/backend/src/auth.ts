@@ -275,7 +275,16 @@ export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService
   });
   app.get('/v1/auth/google/callback', async (request, reply) => {
     const query = z.object({ state: opaqueSecret, code: z.string().min(1).max(4_096), scope: z.string().optional(), authuser: z.string().optional(), prompt: z.string().optional() }).parse(request.query);
-    return reply.redirect(await auth.callback(query.state, query.code));
+    // Answer with a page instead of a bare redirect to the custom scheme: Chrome hands the
+    // scheme to the app but never commits a navigation, so Google's tab sat on its loading
+    // overlay forever. The page commits, opens the app, and leaves a button as a fallback.
+    const deepLink = await auth.callback(query.state, query.code);
+    return reply
+      .header('cache-control', 'no-store')
+      .header('referrer-policy', 'no-referrer')
+      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+      .type('text/html; charset=utf-8')
+      .send(signInCompletePage(deepLink));
   });
   app.post('/v1/auth/google/exchange', async (request) => {
     const body = z.object({
@@ -299,4 +308,37 @@ export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService
     await auth.revokeDevice(await auth.authenticateRequest(request), deviceId);
     return reply.code(204).send();
   });
+}
+
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+
+export function signInCompletePage(deepLink: string): string {
+  const href = escapeHtml(deepLink);
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0;url=${href}">
+<title>Signed in to MultAI</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #000; color: #fff; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 360px; padding: 32px 24px; text-align: center; }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  p { margin: 0 0 24px; color: #9a9a9a; }
+  a { display: inline-block; padding: 10px 18px; border-radius: 999px; background: #fff; color: #000; font-weight: 600; text-decoration: none; }
+  small { display: block; margin-top: 16px; color: #6b6b6b; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>You’re signed in</h1>
+  <p>MultAI is opening. You can close this tab.</p>
+  <a href="${href}">Open MultAI</a>
+  <small>Didn’t open? Use the button above.</small>
+</main>
+</body>
+</html>
+`;
 }

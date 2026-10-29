@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import test from 'node:test';
 import type { FastifyRequest } from 'fastify';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { AuthService } from '../src/auth.js';
+import { AuthService, signInCompletePage } from '../src/auth.js';
 import type { Config } from '../src/config.js';
 import { ApiError } from '../src/errors.js';
 import { pkceChallenge, verifyGoogleIdentity, type OidcClient } from '../src/oidc.js';
@@ -200,4 +200,12 @@ test('unconfigured real Google sign-in is unavailable and cannot become a develo
   assert.equal(response.statusCode, 503);
   const bypass = await context.app.inject({ method: 'POST', url: '/v1/auth/development-login', payload: { userId: 'synthetic-person' } });
   assert.equal(bypass.statusCode, 404);
+});
+
+test('sign-in completion page opens the app with an escaped link and runs no script', () => {
+  const page = signInCompletePage('multai-dev://auth/callback?flowId=a&completionCode="<x>');
+  assert.match(page, /content="0;url=multai-dev:\/\/auth\/callback\?flowId=a&#38;completionCode=&#34;&#60;x&#62;"/);
+  assert.match(page, /href="multai-dev:\/\/auth\/callback\?flowId=a&#38;completionCode=&#34;&#60;x&#62;"/);
+  assert.doesNotMatch(page, /<script/i);
+  assert.doesNotMatch(page, /"<x>/);
 });
