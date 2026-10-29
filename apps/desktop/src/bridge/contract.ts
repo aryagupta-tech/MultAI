@@ -4,6 +4,8 @@
 import type {
   WireEvent, WireInvitation, WireJoinRequest, WireJoinResult, WireMe, WireMessageKind, WireMode, WireParticipant, WireSession,
 } from './wire';
+import type {InferenceConnectionsApi} from './inference';
+import type {HostExecutionApi} from './execution';
 
 export type BuildChannel = 'development' | 'demo' | 'production';
 
@@ -72,6 +74,7 @@ export interface ServiceApi {
   admit(sessionId: string, requestId: string, role: 'collaborator' | 'viewer'): Promise<Result<{ admitted: true; userId: string; role: string }>>;
   revokeParticipant(sessionId: string, userId: string): Promise<Result<{ revoked: true }>>;
   deleteSession(sessionId: string): Promise<Result<null>>;
+  saveDecision(sessionId:string,input:{text:string;reason?:string;replacesId?:string}):Promise<Result<{id:string}>>;
   subscribe(sessionId: string, after: number): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;
   onAuthChange(listener: (state: AuthState) => void): () => void;
@@ -84,6 +87,7 @@ export interface DesktopBridge {
   getBuildInfo(): Promise<BuildInfo>;
   pickProjectFolder(): Promise<FolderPick>;
   service: ServiceApi;
+  inference: InferenceConnectionsApi & HostExecutionApi;
 }
 
 export const IPC = {
@@ -100,4 +104,4 @@ export const IPC = {
 export type ServiceOp =
   | 'health' | 'authState' | 'signIn' | 'cancelSignIn' | 'signOut' | 'listSessions' | 'getSession' | 'readEvents'
   | 'createSession' | 'postMessage' | 'setMode' | 'createInvitation' | 'joinInvitation' | 'listJoinRequests' | 'admit'
-  | 'revokeParticipant' | 'deleteSession' | 'subscribe' | 'unsubscribe';
+  | 'revokeParticipant' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe';

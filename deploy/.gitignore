@@ -1,0 +1,7 @@
+.env
+secrets/
+backups/
+*.age
+*.key
+*.dump
+resource-inventory.local.json

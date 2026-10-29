@@ -1,0 +1,18 @@
+services:
+  database:
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+    environment:
+      POSTGRES_USER: multai
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: multai
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - multai_development_database:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U multai -d multai"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+volumes:
+  multai_development_database:

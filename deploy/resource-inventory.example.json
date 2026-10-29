@@ -1,0 +1,20 @@
+{
+  "status": "proposed-not-provisioned",
+  "owner": "<owner-selected-operator>",
+  "purpose": "MultAI collaboration service only",
+  "region": "ap-south-1",
+  "recurringBaselineUsd": 13,
+  "resources": {
+    "lightsailInstance": "<new-instance-id>",
+    "lightsailStaticIp": "<new-attached-static-ip-name>",
+    "privateBackupBucket": "<new-bucket-name>",
+    "dnsZone": "<owner-controlled-zone>",
+    "dnsRecord": "<new-collaboration-domain>",
+    "googleWebOAuthClient": "<new-client-id-no-secret>",
+    "sourceCommit": "<reviewed-source-commit>",
+    "backendImageDigest": "<verified-image-digest>",
+    "backupRecipient": "<public-age-recipient-no-private-key>"
+  },
+  "retention": {"dailyDays": 7, "weeklyDays": 28, "maximumDumpBytes": 268435456},
+  "teardown": "Review inventory, verify any required encrypted archive, then delete only these owned resources. Stopping an instance does not delete billable storage/backups."
+}

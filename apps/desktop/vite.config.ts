@@ -31,5 +31,5 @@ export default defineConfig({
   plugins: [react(), contentSecurityPolicy()],
   build: { outDir: 'dist/renderer', emptyOutDir: true, sourcemap: false },
   server: { port: 5199, strictPort: true },
-  test: { include: ['src/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.ts', 'electron/**/*.test.ts'] },
 });

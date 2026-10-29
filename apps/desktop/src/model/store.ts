@@ -329,15 +329,18 @@ export const useApp = create<State & Actions>()((set, get) => {
     },
     setReasoning: (sessionId, reasoning) => patchDetail(sessionId, (d) => ({ ...d, reasoning })),
     stop: (sessionId) => {
+      if(get().dataMode==='live')return void import('../live/execution').then(module=>module.stopRun(sessionId));
       setStatus(sessionId, 'paused');
       patchDetail(sessionId, (d) => ({ ...d, timeline: d.timeline.map((t) => (t.type === 'agent' && t.streaming ? { ...t, streaming: false } : t)) }));
       append(sessionId, { id: nextId('t'), type: 'system', tone: 'warn', text: 'Stopped by host. Pending authority was revoked; nothing will resume automatically.' });
     },
     resume: (sessionId) => {
+      if(get().dataMode==='live')return void import('../live/execution').then(module=>module.runPending(sessionId));
       setStatus(sessionId, 'inactive');
       append(sessionId, { id: nextId('t'), type: 'system', tone: 'info', text: 'Resumed. The agent will continue on the next instruction.' });
     },
     saveDecision: (sessionId, text, reason, replaces) => {
+      if(get().dataMode==='live')return void live.saveDecision(sessionId,text,reason,replaces);
       const account = get().account;
       if (!account) return;
       const decision: Decision = { id: nextId('d'), text, ...(reason ? { reason } : {}), authorId: account.id, source: 'Saved manually', status: 'current', createdAt: now() };

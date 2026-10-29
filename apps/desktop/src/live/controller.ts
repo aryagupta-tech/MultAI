@@ -8,7 +8,8 @@ import { hueFor } from '../model/format';
 import type { Draft } from '../model/store';
 import { useApp } from '../model/store';
 import type { MessageKind, Project, SessionMode } from '../model/types';
-import { mergeEvents, projectSession, projectSummary, titleFromMessage, type LocalSessionMeta } from './projection';
+import { mergeEvents, projectSession, projectSummary, projectSessionState, titleFromMessage, type LocalSessionMeta } from './projection';
+import * as execution from './execution';
 
 interface Cached {
   session: WireSession;
@@ -148,6 +149,7 @@ async function applyAuth(state: AuthState): Promise<void> {
   const prevId = me?.id ?? null;
   useApp.setState({ auth: state });
   if (state.status !== 'signed-in') {
+    execution.resetExecutionState();
     if (prevId) resetAccountState();
     return;
   }
@@ -164,6 +166,7 @@ async function applyAuth(state: AuthState): Promise<void> {
     connection: 'connected',
   });
   await refreshSessions();
+  await execution.loadConnections();
 }
 
 function readDrafts(userId: string): Record<string, Draft> {
@@ -312,6 +315,7 @@ function onLiveEvents(batch: LiveBatch): void {
   c.events = mergeEvents(c.events, batch.events);
   const last = c.events.at(-1);
   if (last) c.session = { ...c.session, lastSequence: last.sequence, updatedAt: last.createdAt };
+  c.session=projectSessionState(c.session,c.events);
   let membershipChanged = false;
   for (const e of batch.events) {
     if (e.type === 'session.mode_changed') {
@@ -396,6 +400,12 @@ export async function setMode(id: string, mode: SessionMode): Promise<void> {
   }
   c.session = value.session;
   publish(id);
+}
+
+export async function saveDecision(sessionId:string,text:string,reason?:string,replacesId?:string):Promise<void>{
+  const result=await api().saveDecision(sessionId,{text,...(reason?{reason}:{}),...(replacesId?{replacesId}:{})});
+  if(!result.ok)return fail(result.error);
+  await open(sessionId);
 }
 
 export async function deleteSession(id: string): Promise<void> {

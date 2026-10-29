@@ -21,9 +21,9 @@ const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
 const buildInfo = {
   version: pkg.version,
   commit: git('rev-parse', '--short=12', 'HEAD') || 'unknown',
-  dirty: git('status', '--porcelain', '--', '.') !== '',
+  dirty: git('status', '--porcelain') !== '',
   builtAt: new Date().toISOString(),
-  channel: devServerUrl ? 'development' : args.has('--demo') ? 'demo' : 'production',
+  channel: devServerUrl ? 'development' : args.has('--demo') ? 'demo' : args.has('--release') ? 'production' : 'development',
 };
 
 const shared = {

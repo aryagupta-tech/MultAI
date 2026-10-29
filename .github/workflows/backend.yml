@@ -1,0 +1,22 @@
+name: Backend and desktop integration
+on:
+  push:
+    branches: [backend]
+  pull_request:
+    branches: [backend, main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run test:integration
+      - run: npm run build

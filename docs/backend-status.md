@@ -1,0 +1,22 @@
+# Implementation status · 29 October 2026
+
+The repository began at empty commit d8d6f36. The newly written backend/runtime and fresh frontend are integrated on **backend**; this task's new commits belong only to that branch. The public repository's chosen [MIT license](../LICENSE) is preserved. Development identity remains 0.0.0-dev.1 with desktop callback multai-dev://auth/callback.
+
+| Area | Implemented and checked | Remaining acceptance or capability |
+| --- | --- | --- |
+| Collaboration identity | Google claim/signature checks, fixed PKCE flow, hashed service credentials, refresh-reuse fencing, device proof/revocation. Fresh unbilled project/client configured locally. Real Google sign-in and browser-to-native callback succeeded for the owner's test account on 29 October 2026. | Cold restart and live refresh, native sign-out/account-switch/revocation acceptance and additional accounts/installations. |
+| Desktop | Electron/React UI, validated top-frame IPC, renderer sandbox, secure account generations, encrypted-store implementation and live event projections. Actual macOS arm64 compiled-app smoke passed; real OS protocol callback and OS-encrypted credential write passed in the packaged app. | Cold-start credential decryption/persistence, two installations, signed/notarized installers and other targets. |
+| Collaboration | PostgreSQL locking, durable first-send/message identities, attributed discussion/instructions, admission/roles, replay/revocation and confirmed deletion. | Leadership handoff and complete team/project administration. |
+| Shared direction | Explicit instruction selection, attributed applied history, current/replaced decisions and required owner resolution for pending directions from several authors. | Queue editing/reordering, broader safe-boundary steering, structured questions/plans. |
+| Inference | Host-only OpenAI Responses, Claude Messages and compatible Chat Completions/Kimi adapters; official ChatGPT public-client connection; real catalog discovery and bounded/cancelable streams. | Authorized live provider credentials, ChatGPT plan eligibility/permission and completed live requests. |
+| Authority | Original-host 30-second leases, 8-second native heartbeats, turn/tool authority checks, central/local Plan denial, exact native approval, one-use dispatch, Stop and capacity guards. | Full multi-client/native acceptance with real inference. Windows shell process control is unavailable. |
+| Workspaces/recovery | Deterministic private blank workspace, bounded safe file tools, stale-write checks, POSIX process limits, SQLite effect/outbox journal and crash-to-uncertain behavior. | Project Git worktrees and dirty originals, ordinary-folder baselines, complete human reconciliation UI for uncertain effects. |
+| Deployment | Non-root service/database/proxy images, private-container verification, restart fencing and actual encrypted dump/restore with wrong-key/tamper rejection. | AWS resources/bucket access, public DNS/TLS, production OAuth, alerting and live operations. |
+
+**Sending queues; explicit Run instruction/Resume starts inference.** Configuration, model selection, project registration and restart do not. Plan runs may inspect the private workspace; writes/commands require Build and exact original-host approval at both the service and native runtime.
+
+The collaboration service holds authority and shared events, never provider credentials or a shell/filesystem capability. Action review details stay private to the host; participants see bounded summaries. Approved commands retain the host OS user's access. Complete native file-write previews are limited to 16,000 characters.
+
+Only blank private workspaces execute today. A project picker/sidebar registration does not establish isolated Git project execution. Goals, schedules, rendered documents, managed MCP, native agent adapters, devices, attachments and rewind are not enabled by these changes.
+
+Google is used only for authentication and its new project is unbilled. Its successful local sign-in is recorded separately from the readiness probe, which remains **identity: configured_unverified** and reports configuration only. No AWS resources or public listener were created. The [small AWS plan](aws-deployment.md) remains prepared, not deployed. The current full suite passed **179 tests**; [verification](verification.md) separates that evidence from real Google sign-in, remaining native checks, live provider and public release acceptance.

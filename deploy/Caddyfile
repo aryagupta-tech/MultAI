@@ -1,0 +1,50 @@
+{
+	admin off
+	persist_config off
+	email {$ACME_EMAIL}
+	http_port 8080
+	https_port 8443
+	servers {
+		protocols h1 h2
+		max_header_size 32KB
+	}
+	# Access logging stays disabled. Sanitize runtime errors that carry a request.
+	log {
+		level WARN
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				uri delete
+				url delete
+			}
+		}
+	}
+}
+
+{$COLLABORATION_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+	request_body {
+		max_size 64KB
+	}
+	reverse_proxy backend:4310 {
+		header_up -Forwarded
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 20s
+		}
+	}
+}
+
+http://127.0.0.1:9080 {
+	bind 127.0.0.1
+	respond /health/proxy "ok" 200
+}

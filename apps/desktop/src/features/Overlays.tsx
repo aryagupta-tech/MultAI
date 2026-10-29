@@ -7,6 +7,8 @@ import { useApp, type Preferences } from '../model/store';
 import { fuzzyFilter } from '../model/fuzzy';
 import { getBridge } from '../bridge/client';
 import * as live from '../live/controller';
+import * as execution from '../live/execution';
+import {AiConnections} from './AiConnections';
 import { Button, Dialog, Kbd, Segmented, Switch, cx, isMac, shortcutText } from '../ui/primitives';
 
 /* ---------------------------------------------------------------- Command palette */
@@ -158,6 +160,7 @@ export function SettingsDialog() {
   const { prefs, build, account, dataMode, health } = useApp();
   const app = useApp.getState();
   const set = (p: Partial<Preferences>) => app.setPrefs(p);
+  const inference = getBridge()?.inference;
 
   return (
     <Dialog open={open} onClose={app.closeOverlay} title="Settings" width={820} className="settings">
@@ -218,10 +221,11 @@ export function SettingsDialog() {
                     <div className="conn-main"><span className="conn-name">Demo connection</span><span className="conn-sub">App coding loop · no provider is contacted</span></div>
                     <span className="pill pill-approved">Demo</span>
                   </div>
+                ) : inference ? (
+                  <AiConnections api={inference} onSelect={(connectionId,model) => {void execution.selectConnection(connectionId,model.id,model.name);}} />
                 ) : (
-                  <p className="settings-note">No AI connection on this computer yet, and this collaboration service has inference disabled. You can still create sessions, invite people and discuss together; teammates never need their own key.</p>
+                  <p className="settings-note">AI connections need the native desktop app. You can still read this preview.</p>
                 )}
-                <Button size="sm" disabled title="Provider connections arrive with the local runtime">Connect a provider</Button>
               </SettingsGroup>
               <SettingsGroup title="How payment works">
                 <p className="settings-note">Your MultAI account identifies you to the team. The host’s selected connection decides which provider is used and who pays. Joining someone else’s session never uses your key.</p>
@@ -255,7 +259,7 @@ export function SettingsDialog() {
                 <div><dt>Channel</dt><dd>{build?.channel ?? 'unknown'}{dataMode === 'demo' && ' · demo data'}</dd></div>
                 <div><dt>Account</dt><dd>{account ? account.email || account.name : 'Signed out'}</dd></div>
                 {dataMode === 'live' && <div><dt>Service</dt><dd className="mono">{build?.serviceOrigin ?? 'unknown'}{health ? ` · ${health.reachable ? `database ${health.database}` : 'unreachable'}` : ''}</dd></div>}
-                {dataMode === 'live' && <div><dt>Credentials</dt><dd>{useApp.getState().auth?.status === 'signed-in' && (useApp.getState().auth as { persisted?: boolean }).persisted ? 'Encrypted with the system keychain' : 'Kept in memory only'}</dd></div>}
+                {dataMode === 'live' && <div><dt>Credentials</dt><dd>{useApp.getState().auth?.status === 'signed-in' && (useApp.getState().auth as { persisted?: boolean }).persisted ? 'Encrypted with the system keychain' : 'Sign in with an unlocked operating system credential store'}</dd></div>}
               </dl>
             </SettingsGroup>
           )}

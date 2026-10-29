@@ -26,6 +26,7 @@ const schemas = {
   admit: z.tuple([uuid, uuid, z.enum(['collaborator', 'viewer'])]),
   revokeParticipant: z.tuple([uuid, uuid]),
   deleteSession: z.tuple([uuid]),
+  saveDecision:z.tuple([uuid,z.object({text:z.string().trim().min(1).max(8000),reason:z.string().trim().min(1).max(2000).optional(),replacesId:uuid.optional()}).strict()]),
   subscribe: z.tuple([uuid, z.number().int().min(0)]),
   unsubscribe: z.tuple([uuid]),
 } satisfies Record<ServiceOp, z.ZodType>;
@@ -72,6 +73,7 @@ export async function route(account: Account, live: LiveHub, op: ServiceOp, rawA
       return { sessions };
     });
     case 'getSession': return wrap(() => req('GET', `/v1/sessions/${s(0)}`));
+    case 'saveDecision':return wrap(()=>req('POST',`/v1/sessions/${s(0)}/decisions`,args[1]));
     case 'readEvents': return wrap(() => req('GET', `/v1/sessions/${s(0)}/events?after=${args[1] as number}&limit=100`));
     case 'createSession': return wrap(() => req('POST', '/v1/sessions', args[0]));
     case 'postMessage': return wrap(() => req('POST', `/v1/sessions/${s(0)}/messages`, args[1]));

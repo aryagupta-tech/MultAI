@@ -3,6 +3,8 @@ import { ArrowRight, Check, CircleX, Cpu, KeyRound, Laptop, Loader2, RefreshCw, 
 import { useApp } from '../model/store';
 import { getBridge } from '../bridge/client';
 import * as live from '../live/controller';
+import * as execution from '../live/execution';
+import {AiConnections} from './AiConnections';
 import { Button, Spinner, cx } from '../ui/primitives';
 import { LogoMark } from '../ui/Logo';
 
@@ -13,6 +15,7 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [choice, setChoice] = useState<'account' | 'api' | 'later'>('later');
   const isLive = dataMode === 'live';
+  const inference = getBridge()?.inference;
   const signingIn = auth?.status === 'signing-in';
   const step = isLive ? (account ? 'connect' : 'signin') : onboarding === 'connect' ? 'connect' : 'signin';
 
@@ -90,13 +93,15 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
             <h1 className="welcome-title">Connect your AI</h1>
             <p className="welcome-sub">Pick how sessions you host get inference. Teammates who join your sessions never need their own.</p>
 
-            <div className="connect-options" role="radiogroup" aria-label="AI connection">
+            {isLive && inference ? <div style={{maxHeight:'50vh',overflowY:'auto',paddingRight:4}}>
+              <AiConnections api={inference} onSelect={(connectionId,model) => {void execution.selectConnection(connectionId,model.id,model.name);}} />
+            </div> : <div className="connect-options" role="radiogroup" aria-label="AI connection">
               {([
                 ['account', Cpu, 'Sign in to a provider account', 'Use a subscription you already have. Only works with that provider’s own agent.'],
                 ['api', KeyRound, 'Use an API key', 'Stored encrypted on this computer and never shown to teammates.'],
                 ['later', WifiOff, 'Set up later', 'You can still create and join sessions and talk with your team.'],
               ] as const).map(([v, Icon, title, desc]) => {
-                const unavailable = isLive && v !== 'later';
+                const unavailable = isLive && !inference && v !== 'later';
                 return (
                   <button
                     key={v}
@@ -116,14 +121,15 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
                   </button>
                 );
               })}
-            </div>
+            </div>}
 
             <Button variant="primary" size="lg" className="btn-block" onClick={() => {
               if (!isLive && choice !== 'later') app.toast('Provider connections arrive with the local runtime. Continuing without one.', 'info');
               finishConnect();
             }}>
-              Continue
+              {isLive ? 'Continue to workspace' : 'Continue'}
             </Button>
+            {isLive && inference && <Button variant="ghost" onClick={finishConnect}>Set up later</Button>}
           </>
         )}
       </main>

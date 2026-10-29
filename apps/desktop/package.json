@@ -3,7 +3,7 @@
   "version": "0.0.0-dev.1",
   "private": true,
   "description": "MultAI desktop shell and renderer",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "main": "dist/electron/main.cjs",
   "scripts": {
@@ -18,10 +18,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@multai/runtime": "0.0.0-dev.1",
+    "jose": "6.2.13",
     "lucide-react": "1.60.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "ws": "8.18.3",
+    "ws": "8.22.0",
     "zod": "4.6.7",
     "zustand": "5.0.16"
   },

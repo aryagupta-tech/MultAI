@@ -1,16 +1,35 @@
+import {useEffect, useState} from 'react';
 import {
   Archive, ChevronDown, Cpu, Hammer, Laptop, ListChecks, MoreHorizontal, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain, CloudOff, Radio,
+  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain, Radio,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import type { SessionDetail } from '../model/types';
 import { Avatar, Button, IconButton, Menu, Segmented, cx, shortcutText } from '../ui/primitives';
+import * as execution from '../live/execution';
+import {getBridge} from '../bridge/client';
+import {ChatGPTPlanUsage,isChatGPTUsageLimit} from './ChatGPTPlanUsage';
 
 export function SessionHeader({ d }: { d: SessionDetail | null }) {
   const { sidebarOpen, inspectorOpen, build, sessions, liveStatus } = useApp();
   const app = useApp.getState();
   const mac = build?.platform === 'darwin';
   const summary = d ? sessions.find((s) => s.id === d.id) : undefined;
+  const [selection,setSelection] = useState(() => execution.getSelection());
+  const [connection,setConnection] = useState(() => execution.getSelectedConnection());
+  const [runIssue,setRunIssue] = useState(() => d ? execution.getRunIssue(d.id) : null);
+  const [dispatching,setDispatching] = useState(false);
+  const inference=getBridge()?.inference;
+  useEffect(() => {
+    const update = () => {
+      setSelection(execution.getSelection());
+      setConnection(execution.getSelectedConnection());
+      setRunIssue(d ? execution.getRunIssue(d.id) : null);
+    };
+    update();
+    window.addEventListener('multai:selection-changed',update);
+    return () => window.removeEventListener('multai:selection-changed',update);
+  },[d?.id]);
 
   const leading = !sidebarOpen && (
     <div className="header-leading no-drag">
@@ -34,6 +53,12 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
   const modeLock = !owner ? 'Only the session owner can switch modes' : running ? 'Stop the agent to switch modes' : false;
   const statusLabel = running ? 'Working' : d.status === 'paused' ? 'Paused' : 'Ready';
   const others = d.participants.filter((p) => p.presence !== 'offline');
+  const run = async () => {
+    if (dispatching) return;
+    setDispatching(true);
+    try {await execution.runPending(d.id);}
+    finally {setDispatching(false);}
+  };
 
   return (
     <header className={cx('session-header drag', !sidebarOpen && mac && 'has-traffic-lights')}>
@@ -45,7 +70,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
             <span className="state-pulse" aria-hidden />
             {statusLabel}
           </span>
-          <span className="meta-item" title="Where the agent runs. Files never leave this computer.">
+          <span className="meta-item" title="Files are stored and tools run on the original host. Selected text may be sent to the chosen AI provider.">
             <Laptop size={12} aria-hidden />
             <span className="truncate">{d.hostName}</span>
           </span>
@@ -75,9 +100,11 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
         />
 
         {d.source === 'live' ? (
-          <span className="no-ai-chip" title="This collaboration service has inference disabled. You can still plan and discuss together.">
-            <CloudOff size={13} aria-hidden /> No AI connected
-          </span>
+          <button type="button" className="model-btn" onClick={() => app.openOverlay('settings','models')} title="Choose an AI connection and model. This does not start inference.">
+            <Brain size={14} strokeWidth={1.8} aria-hidden />
+            <span className="model-name">{selection ? selection.modelName ?? selection.model : 'Connect AI'}</span>
+            <ChevronDown size={13} aria-hidden />
+          </button>
         ) : (
         <Menu
           label="Model and reasoning"
@@ -104,6 +131,10 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
         />
         )}
 
+        {d.source==='live'&&connection?.provider==='chatgpt'&&inference&&(
+          <ChatGPTPlanUsage api={inference} limited={Boolean(runIssue&&isChatGPTUsageLimit(runIssue.code))}/>
+        )}
+
         <button
           type="button"
           className="people-btn"
@@ -121,7 +152,13 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           <Button size="sm" icon={UserPlus} onClick={() => app.openOverlay('invite')}>Invite</Button>
         )}
 
-        {d.source === 'live' ? null : running ? (
+        {d.source === 'live' ? (running ? (
+          <Button size="sm" variant="danger" icon={Square} disabled={!owner || dispatching} onClick={() => void execution.stopRun(d.id)}>Stop</Button>
+        ) : owner && (
+          <Button size="sm" icon={Play} disabled={!selection || !d.capabilities.configure || dispatching} onClick={() => void run()} title={!selection ? 'Connect an AI provider and choose a model first' : !d.capabilities.configure ? 'Only the original host can run this task' : 'Run the next pending instruction with the selected AI connection'}>
+            {dispatching ? 'Starting…' : d.status === 'paused' ? 'Resume' : 'Run instruction'}
+          </Button>
+        )) : running ? (
           <Button size="sm" variant="danger" icon={Square} onClick={() => app.stop(d.id)} disabled={!owner} title={owner ? 'Stop the agent' : 'Only the host can stop the agent'}>
             Stop
           </Button>

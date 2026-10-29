@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createThirdPartyNotices } from './third-party-notices.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const stage = path.join(root, 'release', 'stage');
@@ -19,6 +20,10 @@ execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' });
 await rm(stage, { recursive: true, force: true });
 await mkdir(stage, { recursive: true });
 await cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true });
+const repositoryRoot = path.resolve(root, '../..');
+const notices = await createThirdPartyNotices({ desktopRoot: root, repositoryRoot });
+await cp(path.join(repositoryRoot, 'LICENSE'), path.join(stage, 'LICENSE'));
+await writeFile(path.join(stage, 'THIRD_PARTY_NOTICES.txt'), notices.content);
 await writeFile(path.join(stage, 'package.json'), JSON.stringify({
   name: 'multai-desktop',
   productName: 'MultAI',
@@ -46,6 +51,9 @@ const [appDir] = await packager({
   protocols: [{ name: 'MultAI development links', schemes: ['multai-dev'] }],
   extendInfo: { LSApplicationCategoryType: 'public.app-category.developer-tools' },
 });
+// Keep readable standalone copies beside the application as well as inside app.asar.
+await cp(path.join(stage, 'LICENSE'), path.join(appDir, 'LICENSE.multai.txt'));
+await cp(path.join(stage, 'THIRD_PARTY_NOTICES.txt'), path.join(appDir, 'THIRD_PARTY_NOTICES.txt'));
 
 if (process.platform === 'darwin') {
   const app = path.join(appDir, 'MultAI.app');
@@ -60,11 +68,13 @@ const git = (...a) => { try { return execFileSync('git', a, { cwd: root, encodin
 await writeFile(path.join(appDir, 'build-manifest.json'), JSON.stringify({
   version: pkg.version,
   commit: git('rev-parse', 'HEAD'),
-  dirty: git('status', '--porcelain', '--', '.') !== '',
+  dirty: git('status', '--porcelain') !== '',
   builtAt: new Date().toISOString(),
   electron: electronVersion,
   platform: `${process.platform}-${process.arch}`,
   appAsarSha256: createHash('sha256').update(await readFile(asar)).digest('hex'),
+  thirdPartyNoticesSha256: notices.sha256,
+  thirdPartyPackages: notices.packages.map(({ name, version, license }) => ({ name, version, license })),
   signing: process.platform === 'darwin' ? 'ad-hoc (not notarized)' : 'unsigned',
 }, null, 2));
 
