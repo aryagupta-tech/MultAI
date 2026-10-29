@@ -90,7 +90,7 @@
 
 /* Hosting containers */
 .connect-panel { margin: 4px 0 6px; }
-.welcome-card.is-wide { width: min(520px, 100%); }
+.welcome-card.is-wide { width: min(580px, 100%); }
 .welcome-secondary { justify-self: center; }
 
 /* ChatGPT plan usage (ChatGPTPlanUsage.tsx) */

@@ -19,6 +19,14 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
   const signingIn = auth?.status === 'signing-in';
   const step = isLive ? (account ? 'connect' : 'signin') : onboarding === 'connect' ? 'connect' : 'signin';
 
+  // Keep the service status honest: re-check often while unreachable, occasionally otherwise.
+  const reachable = health?.reachable ?? false;
+  useEffect(() => {
+    if (!isLive) return;
+    const timer = setInterval(() => void live.checkHealth(), reachable ? 30_000 : 5_000);
+    return () => clearInterval(timer);
+  }, [isLive, reachable]);
+
   // Show the reason a sign-in ended (expired flow, rejected proof, offline).
   useEffect(() => {
     if (auth?.status === 'signed-out' && auth.error) setError(live.describe(auth.error));
@@ -55,7 +63,7 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
   return (
     <div className={cx('welcome drag', build?.platform === 'darwin' && 'is-mac')}>
       <div className="welcome-glow" aria-hidden />
-      <main className="welcome-card no-drag">
+      <main className={cx('welcome-card no-drag', step === 'connect' && isLive && inference && 'is-wide')}>
         <div className="welcome-mark"><LogoMark size={36} /></div>
 
         {step === 'signin' ? (
@@ -93,7 +101,7 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
             <h1 className="welcome-title">Connect your AI</h1>
             <p className="welcome-sub">Pick how sessions you host get inference. Teammates who join your sessions never need their own.</p>
 
-            {isLive && inference ? <div style={{maxHeight:'50vh',overflowY:'auto',paddingRight:4}}>
+            {isLive && inference ? <div className="connect-panel">
               <AiConnections api={inference} onSelect={(connectionId,model) => {void execution.selectConnection(connectionId,model.id,model.name);}} />
             </div> : <div className="connect-options" role="radiogroup" aria-label="AI connection">
               {([
