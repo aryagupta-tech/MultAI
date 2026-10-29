@@ -64,7 +64,7 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
     <div className={cx('welcome drag', build?.platform === 'darwin' && 'is-mac')}>
       <div className="welcome-glow" aria-hidden />
       <main className={cx('welcome-card no-drag', step === 'connect' && isLive && inference && 'is-wide')}>
-        <div className="welcome-mark"><LogoMark size={36} /></div>
+        <div className="welcome-mark"><LogoMark size={56} /></div>
 
         {step === 'signin' ? (
           signingIn ? (
