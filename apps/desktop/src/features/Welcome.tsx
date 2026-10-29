@@ -4,7 +4,7 @@ import { useApp } from '../model/store';
 import { getBridge } from '../bridge/client';
 import * as live from '../live/controller';
 import { Button, Spinner, cx } from '../ui/primitives';
-import { LogoMark } from '../ui/Logo';
+import { Orb } from '../ui/Logo';
 
 export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
   const { onboarding, dataMode, build, auth, health, account } = useApp();
@@ -53,7 +53,7 @@ export function Welcome({ onDemoSignIn }: { onDemoSignIn: () => void }) {
     <div className={cx('welcome drag', build?.platform === 'darwin' && 'is-mac')}>
       <div className="welcome-glow" aria-hidden />
       <main className="welcome-card no-drag">
-        <div className="welcome-mark"><LogoMark size={44} /></div>
+        <div className="welcome-mark"><Orb size={56} /></div>
 
         {step === 'signin' ? (
           signingIn ? (

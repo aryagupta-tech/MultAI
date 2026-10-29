@@ -4,10 +4,10 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #000000;
-  --surface-1: #08080a;
-  --surface-2: #0f0f12;
-  --surface-3: #16161a;
-  --surface-4: #1e1e23;
+  --surface-1: #0b0a0e;
+  --surface-2: #121117;
+  --surface-3: #1a1920;
+  --surface-4: #23222a;
   --overlay: rgba(0, 0, 0, 0.62);
   --border: #1c1c21;
   --border-strong: #2a2a31;
@@ -16,15 +16,26 @@
   --text-3: #6c6c76;
   --text-inverse: #050506;
 
-  --accent: #7cf2c6;
-  --accent-hover: #9af7d4;
-  --accent-ink: #03140d;
-  --accent-soft: rgba(124, 242, 198, 0.1);
-  --accent-line: rgba(124, 242, 198, 0.32);
+  --accent: #a78bfa;
+  --accent-strong: #8b5cf6;
+  --accent-hover: #b9a2fc;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(167, 139, 250, 0.12);
+  --accent-line: rgba(167, 139, 250, 0.38);
 
-  --discuss: #b8a6ff;
-  --discuss-soft: rgba(184, 166, 255, 0.1);
-  --discuss-line: rgba(184, 166, 255, 0.3);
+  --discuss: #8cc8ff;
+  --discuss-soft: rgba(140, 200, 255, 0.1);
+  --discuss-line: rgba(140, 200, 255, 0.3);
+
+  /* Floating panels and their atmospheric glow. */
+  --panel: #0a090d;
+  --panel-border: rgba(255, 255, 255, 0.07);
+  --glow-a: rgba(124, 58, 237, 0.42);
+  --glow-b: rgba(91, 33, 182, 0.22);
+  --glass: rgba(22, 20, 28, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --chip: rgba(255, 255, 255, 0.04);
+  --chip-hover: rgba(255, 255, 255, 0.08);
 
   --warn: #f6bd5c;
   --warn-soft: rgba(246, 189, 92, 0.1);
@@ -47,7 +58,7 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #ffffff;
+  --bg: #f3f2f6;
   --surface-1: #f7f7f8;
   --surface-2: #f1f1f3;
   --surface-3: #e9e9ec;
@@ -60,15 +71,25 @@
   --text-3: #85858f;
   --text-inverse: #ffffff;
 
-  --accent: #0b8a63;
-  --accent-hover: #097553;
+  --accent: #7c3aed;
+  --accent-strong: #6d28d9;
+  --accent-hover: #6d28d9;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(11, 138, 99, 0.09);
-  --accent-line: rgba(11, 138, 99, 0.3);
+  --accent-soft: rgba(124, 58, 237, 0.08);
+  --accent-line: rgba(124, 58, 237, 0.3);
 
-  --discuss: #6747d9;
-  --discuss-soft: rgba(103, 71, 217, 0.08);
-  --discuss-line: rgba(103, 71, 217, 0.28);
+  --discuss: #1d6fd1;
+  --discuss-soft: rgba(29, 111, 209, 0.07);
+  --discuss-line: rgba(29, 111, 209, 0.26);
+
+  --panel: #ffffff;
+  --panel-border: rgba(20, 16, 40, 0.08);
+  --glow-a: rgba(167, 139, 250, 0.22);
+  --glow-b: rgba(196, 181, 253, 0.16);
+  --glass: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(20, 16, 40, 0.1);
+  --chip: rgba(20, 16, 40, 0.03);
+  --chip-hover: rgba(20, 16, 40, 0.06);
 
   --warn: #a8650a;
   --warn-soft: rgba(214, 140, 20, 0.1);
@@ -105,13 +126,16 @@
   --r-md: 8px;
   --r-lg: 12px;
   --r-xl: 16px;
+  --r-2xl: 22px;
+  --r-pill: 999px;
 
   --row: 30px;
   --gap: 12px;
   --pad: 16px;
 
   --titlebar: 48px;
-  --sidebar-w: 268px;
+  --sidebar-w: 256px;
+  --frame: 8px;
   --inspector-w: 400px;
   --content-w: 780px;
 
