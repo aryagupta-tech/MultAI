@@ -98,7 +98,7 @@ test('same-device proof restores the original device after signout without cross
   assert.equal((await context.db.query('SELECT * FROM devices WHERE user_id=$1', [firstActor.userId])).rowCount, 1);
   await assert.rejects(signIn(auth, 'Wrong secret', { ...proof, deviceSecret: randomBytes(32).toString('base64url') }), rejectedWith('invalid_device_proof'));
   const otherAuth = new AuthService(context.db, syntheticConfig, syntheticOidc('different-synthetic-account'));
-  await assert.rejects(signIn(otherAuth, 'Other account', proof), rejectedWith('invalid_device_proof'));
+  await assert.rejects(signIn(otherAuth, 'Other account', proof), rejectedWith('device_account_mismatch'));
   await auth.revokeDevice(resumedActor, resumedActor.deviceId);
   await assert.rejects(signIn(auth, 'Revoked original device', proof), rejectedWith('invalid_device_proof'));
 });

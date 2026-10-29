@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, Bell, Bookmark, Check, CircleCheck, CircleX, Copy, Cpu, FileDiff, Folder, FolderOpen, FolderPlus, Info, Keyboard, Link2,
-  ListChecks, Hammer, MessageSquare, Monitor, Moon, PanelLeft, PanelRight, Palette, Search, Settings, Shield, SquarePen, Sun, Trash2, Users, X, Stethoscope,
+  ListChecks, Hammer, LogIn, MessageSquare, Monitor, Moon, PanelLeft, PanelRight, Palette, Search, Settings, Shield, SquarePen, Sun, Trash2, Users, X, Stethoscope,
 } from 'lucide-react';
 import { useApp, type Preferences } from '../model/store';
 import { fuzzyFilter } from '../model/fuzzy';
 import { getBridge } from '../bridge/client';
+import * as live from '../live/controller';
+import * as execution from '../live/execution';
+import {AiConnections} from './AiConnections';
 import { Button, Dialog, Kbd, Segmented, Switch, cx, isMac, shortcutText } from '../ui/primitives';
 
 /* ---------------------------------------------------------------- Command palette */
@@ -42,6 +45,7 @@ export function CommandPalette() {
     const cmds: Command[] = [
       { id: 'new-chat', label: 'New chat', group: 'Actions', icon: SquarePen, hint: 'Mod+N', run: () => app.newChat(null) },
       { id: 'new-project', label: 'New project…', group: 'Actions', icon: FolderPlus, hint: 'Mod+Shift+N', run: () => app.openOverlay('new-project') },
+      { id: 'join', label: 'Join a session…', group: 'Actions', icon: LogIn, disabled: useApp.getState().dataMode === 'demo' && 'Not available with demo data', run: () => app.openOverlay('join') },
       { id: 'invite', label: 'Invite people…', group: 'Actions', icon: Users, disabled: !d ? 'Open a chat first' : !owner && 'Only the owner can invite', run: () => app.openOverlay('invite') },
       { id: 'plan', label: 'Switch to Plan mode', group: 'Actions', icon: ListChecks, disabled: !d ? 'Open a chat first' : !owner ? 'Only the owner can switch modes' : running ? 'Stop the agent first' : d.mode === 'plan' && 'Already in Plan', run: () => d && app.setMode(d.id, 'plan') },
       { id: 'build', label: 'Switch to Build mode', group: 'Actions', icon: Hammer, disabled: !d ? 'Open a chat first' : !owner ? 'Only the owner can switch modes' : running ? 'Stop the agent first' : d.mode === 'build' && 'Already in Build', run: () => d && app.setMode(d.id, 'build') },
@@ -153,9 +157,10 @@ const SECTIONS = [
 export function SettingsDialog() {
   const open = useApp((s) => s.overlay === 'settings');
   const section = useApp((s) => s.settingsSection);
-  const { prefs, build, account, dataMode } = useApp();
+  const { prefs, build, account, dataMode, health } = useApp();
   const app = useApp.getState();
   const set = (p: Partial<Preferences>) => app.setPrefs(p);
+  const inference = getBridge()?.inference;
 
   return (
     <Dialog open={open} onClose={app.closeOverlay} title="Settings" width={820} className="settings">
@@ -216,10 +221,11 @@ export function SettingsDialog() {
                     <div className="conn-main"><span className="conn-name">Demo connection</span><span className="conn-sub">App coding loop · no provider is contacted</span></div>
                     <span className="pill pill-approved">Demo</span>
                   </div>
+                ) : inference ? (
+                  <AiConnections api={inference} onSelect={(connectionId,model) => {void execution.selectConnection(connectionId,model.id,model.name);}} />
                 ) : (
-                  <p className="settings-note">No AI connection on this computer yet. Teammates can still join your sessions; they never need their own key.</p>
+                  <p className="settings-note">AI connections need the native desktop app. You can still read this preview.</p>
                 )}
-                <Button size="sm" disabled title="Provider connections arrive with the local runtime">Connect a provider</Button>
               </SettingsGroup>
               <SettingsGroup title="How payment works">
                 <p className="settings-note">Your MultAI account identifies you to the team. The host’s selected connection decides which provider is used and who pays. Joining someone else’s session never uses your key.</p>
@@ -251,7 +257,9 @@ export function SettingsDialog() {
                 <div><dt>Source</dt><dd className="mono">{build ? `${build.commit}${build.dirty ? ' (uncommitted changes)' : ''}` : 'unknown'}</dd></div>
                 <div><dt>Built</dt><dd>{build ? new Date(build.builtAt).toLocaleString() : 'unknown'}</dd></div>
                 <div><dt>Channel</dt><dd>{build?.channel ?? 'unknown'}{dataMode === 'demo' && ' · demo data'}</dd></div>
-                <div><dt>Account</dt><dd>{account?.email ?? 'Signed out'}</dd></div>
+                <div><dt>Account</dt><dd>{account ? account.email || account.name : 'Signed out'}</dd></div>
+                {dataMode === 'live' && <div><dt>Service</dt><dd className="mono">{build?.serviceOrigin ?? 'unknown'}{health ? ` · ${health.reachable ? `database ${health.database}` : 'unreachable'}` : ''}</dd></div>}
+                {dataMode === 'live' && <div><dt>Credentials</dt><dd>{useApp.getState().auth?.status === 'signed-in' && (useApp.getState().auth as { persisted?: boolean }).persisted ? 'Encrypted with the system keychain' : 'Sign in with an unlocked operating system credential store'}</dd></div>}
               </dl>
             </SettingsGroup>
           )}
@@ -321,56 +329,87 @@ export function InviteDialog() {
   const { activeId, details, dataMode } = useApp();
   const app = useApp.getState();
   const d = activeId ? details[activeId] : undefined;
+  const isLive = d?.source === 'live';
   const [role, setRole] = useState<'collaborator' | 'viewer'>('collaborator');
   const [expiry, setExpiry] = useState<'1h' | '24h' | '7d'>('24h');
-  const [link, setLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [invite, setInvite] = useState<{ code: string; link: string; expiresAt?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState<'link' | 'code' | null>(null);
 
   useEffect(() => {
     if (open) {
-      setLink(null);
-      setCopied(false);
+      setInvite(null);
+      setCopied(null);
     }
   }, [open]);
 
-  const create = () => {
-    if (dataMode !== 'demo') {
-      app.toast('Invitations need the collaboration service, which isn’t connected.', 'error');
+  const create = async () => {
+    if (!d) return;
+    if (dataMode === 'demo') {
+      const code = `demo-${Math.random().toString(36).slice(2, 10)}`;
+      setInvite({ code, link: `https://collab.example.test/join/${code}` });
       return;
     }
-    setLink(`https://collab.example.test/join/demo-${Math.random().toString(36).slice(2, 10)}`);
+    setBusy(true);
+    const seconds = expiry === '1h' ? 3600 : 86_400;
+    const created = await live.createInvitation(d.id, seconds);
+    setBusy(false);
+    if (created) setInvite({ code: created.token, link: `multai-dev://join?token=${created.token}`, expiresAt: created.expiresAt });
+  };
+
+  const copy = (what: 'link' | 'code', value: string) => {
+    void navigator.clipboard?.writeText(value).catch(() => undefined);
+    setCopied(what);
   };
 
   return (
-    <Dialog open={open} onClose={app.closeOverlay} title="Invite to this session" description={d?.title} width={500}>
+    <Dialog open={open} onClose={app.closeOverlay} title="Invite to this session" description={d?.title} width={520}>
       <div className="dialog-body">
-        <div className="field">
-          <span className="field-label">They’ll join as</span>
-          <div className="role-cards" role="radiogroup" aria-label="Role">
-            {([['collaborator', 'Collaborator', 'Can send instructions and discussion, and save decisions.'], ['viewer', 'Viewer', 'Can read everything but can’t send.']] as const).map(([v, label, desc]) => (
-              <button key={v} type="button" role="radio" aria-checked={role === v} className={cx('role-card', role === v && 'is-selected')} onClick={() => { setRole(v); setLink(null); }}>
-                <span className="role-card-title">{label}{role === v && <Check size={14} aria-hidden />}</span>
-                <span className="role-card-desc">{desc}</span>
-              </button>
-            ))}
+        {!isLive && (
+          <div className="field">
+            <span className="field-label">They’ll join as</span>
+            <div className="role-cards" role="radiogroup" aria-label="Role">
+              {([['collaborator', 'Collaborator', 'Can send instructions and discussion, and save decisions.'], ['viewer', 'Viewer', 'Can read everything but can’t send.']] as const).map(([v, label, desc]) => (
+                <button key={v} type="button" role="radio" aria-checked={role === v} className={cx('role-card', role === v && 'is-selected')} onClick={() => { setRole(v); setInvite(null); }}>
+                  <span className="role-card-title">{label}{role === v && <Check size={14} aria-hidden />}</span>
+                  <span className="role-card-desc">{desc}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         <div className="settings-row">
-          <div><div className="switch-label">Link expires</div></div>
-          <Segmented label="Link expiry" size="sm" value={expiry} onChange={(v) => { setExpiry(v); setLink(null); }} options={[{ value: '1h', label: '1 hour' }, { value: '24h', label: '1 day' }, { value: '7d', label: '7 days' }]} />
+          <div><div className="switch-label">Link expires</div>{isLive && <p className="switch-desc">You’ll choose collaborator or viewer when you admit each person.</p>}</div>
+          <Segmented
+            label="Link expiry"
+            size="sm"
+            value={expiry}
+            onChange={(v) => { setExpiry(v); setInvite(null); }}
+            options={isLive
+              ? [{ value: '1h', label: '1 hour' }, { value: '24h', label: '1 day' }]
+              : [{ value: '1h', label: '1 hour' }, { value: '24h', label: '1 day' }, { value: '7d', label: '7 days' }]}
+          />
         </div>
 
-        {link ? (
-          <div className="invite-link">
-            <Link2 size={14} aria-hidden className="tone-muted" />
-            <input readOnly value={link} aria-label="Invitation link" onFocus={(e) => e.currentTarget.select()} />
-            <Button size="sm" variant={copied ? 'secondary' : 'primary'} icon={copied ? Check : Copy} onClick={() => {
-              void navigator.clipboard?.writeText(link).catch(() => undefined);
-              setCopied(true);
-            }}>{copied ? 'Copied' : 'Copy'}</Button>
+        {invite ? (
+          <div className="invite-result">
+            <div className="invite-link">
+              <Link2 size={14} aria-hidden className="tone-muted" />
+              <input readOnly value={invite.link} aria-label="Invitation link" onFocus={(e) => e.currentTarget.select()} />
+              <Button size="sm" variant={copied === 'link' ? 'secondary' : 'primary'} icon={copied === 'link' ? Check : Copy} onClick={() => copy('link', invite.link)}>{copied === 'link' ? 'Copied' : 'Copy link'}</Button>
+            </div>
+            {isLive && (
+              <p className="invite-code">
+                Or share the code: <code>{invite.code.slice(0, 10)}…</code>
+                <button type="button" className="link-btn" onClick={() => copy('code', invite.code)}>{copied === 'code' ? 'Copied' : 'Copy code'}</button>
+              </p>
+            )}
+            {invite.expiresAt && <p className="field-help">Expires {new Date(invite.expiresAt).toLocaleString()}. Anyone with it can ask to join; nobody gets in until you admit them.</p>}
           </div>
         ) : (
-          <Button variant="primary" icon={Link2} onClick={create} className="btn-block">Create invitation link</Button>
+          <Button variant="primary" icon={Link2} onClick={() => void create()} className="btn-block" disabled={busy}>
+            {busy ? 'Creating…' : 'Create invitation link'}
+          </Button>
         )}
 
         <p className="callout">
@@ -378,6 +417,77 @@ export function InviteDialog() {
           <span>Having the link isn’t enough. You’ll admit each person before they see anything. Teammates never get access to your files or shell.</span>
         </p>
       </div>
+    </Dialog>
+  );
+}
+
+/* ---------------------------------------------------------------- Join */
+
+export function JoinDialog() {
+  const open = useApp((s) => s.overlay === 'join');
+  const prompt = useApp((s) => s.joinPrompt);
+  const signedIn = useApp((s) => Boolean(s.account));
+  const app = useApp.getState();
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<'pending' | 'admitted' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setInput(prompt ? `multai-dev://join?token=${prompt}` : '');
+      setResult(null);
+      setError(null);
+    }
+  }, [open, prompt]);
+
+  const close = () => {
+    useApp.setState({ joinPrompt: null });
+    app.closeOverlay();
+  };
+
+  const submit = async () => {
+    const token = live.parseInvite(input);
+    if (!token) {
+      setError('That doesn’t look like a MultAI invitation link or code.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    const status = await live.join(token);
+    setBusy(false);
+    if (status === 'admitted') close();
+    else if (status) setResult(status);
+  };
+
+  return (
+    <Dialog open={open} onClose={close} title="Join a session" description="Paste the invitation link or code a teammate sent you." width={480}>
+      <form className="dialog-body" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+        {result === 'pending' ? (
+          <>
+            <p className="callout callout-ok"><Check size={14} aria-hidden /><span>Request sent. The session owner needs to admit you. It’ll appear in your sidebar once they do.</span></p>
+            <div className="form-actions"><Button variant="primary" onClick={close}>Done</Button></div>
+          </>
+        ) : !signedIn ? (
+          <>
+            <p className="dialog-text">Sign in first, then open the invitation again.</p>
+            <div className="form-actions"><Button variant="primary" onClick={close}>OK</Button></div>
+          </>
+        ) : (
+          <>
+            <label className="field">
+              <span className="field-label">Invitation</span>
+              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="multai-dev://join?token=…" autoFocus spellCheck={false} autoComplete="off" />
+              {error && <span className="field-error" role="alert">{error}</span>}
+            </label>
+            <p className="field-help">Joining only sends a request. You’ll see the conversation after the owner admits you.</p>
+            <div className="form-actions">
+              <Button variant="ghost" onClick={close}>Cancel</Button>
+              <Button variant="primary" type="submit" disabled={busy || !input.trim()}>{busy ? 'Sending…' : 'Ask to join'}</Button>
+            </div>
+          </>
+        )}
+      </form>
     </Dialog>
   );
 }

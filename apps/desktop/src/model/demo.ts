@@ -104,6 +104,7 @@ const changes: FileChange[] = [
 export function demoSessionDetail(): SessionDetail {
   return {
     id: 's-rate',
+    source: 'demo',
     title: 'Add rate limiting to payment webhooks',
     objective: 'Protect the webhook endpoint from bursty retries without dropping legitimate events.',
     mode: 'build',

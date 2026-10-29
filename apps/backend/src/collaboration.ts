@@ -7,7 +7,7 @@ import { ApiError } from './errors.js';
 import type { Actor } from './types.js';
 
 type Role = 'owner' | 'collaborator' | 'viewer';
-interface SessionRow {
+export interface SessionRow {
   id: string;
   workspace_id: string;
   owner_id: string;
@@ -21,7 +21,7 @@ interface SessionRow {
   created_at: Date;
   updated_at: Date;
 }
-interface AuthorizedSession { session: SessionRow; role: Role }
+export interface AuthorizedSession { session: SessionRow; role: Role }
 export interface SharedEvent {
   id: string;
   sessionId: string;
@@ -57,11 +57,11 @@ function sessionView({ session, role }: AuthorizedSession, actor: Actor) {
     title: session.title, mode: session.mode, status: session.status,
     runtimeGeneration: session.runtime_generation, lastSequence: session.event_sequence, role,
     createdAt: session.created_at.toISOString(), updatedAt: session.updated_at.toISOString(),
-    capabilities: { submit: role !== 'viewer', manage: hostOwner, execute: false },
+    capabilities: { submit: role !== 'viewer', manage: hostOwner, execute: hostOwner },
   };
 }
 
-function requireOriginalHost(authorized: AuthorizedSession, actor: Actor) {
+export function requireOriginalHost(authorized: AuthorizedSession, actor: Actor) {
   if (authorized.session.owner_id !== actor.userId || authorized.session.host_device_id !== actor.deviceId) {
     throw new ApiError(403, 'original_host_required', 'Only the original owner on the original host can do this.');
   }
@@ -72,9 +72,9 @@ function requireInactive(session: SessionRow) {
 
 /** All shared writes serialize on the session row, including membership changes. */
 export class CollaborationService {
-  constructor(private readonly db: Database) {}
+  constructor(protected readonly db: Database) {}
 
-  private async authorize(client: PoolClient, actor: Actor, sessionId: string): Promise<AuthorizedSession> {
+  protected async authorize(client: PoolClient, actor: Actor, sessionId: string): Promise<AuthorizedSession> {
     const found = await client.query<SessionRow>('SELECT * FROM sessions WHERE id = $1 FOR UPDATE', [sessionId]);
     const session = found.rows[0];
     if (!session) throw new ApiError(404, 'session_not_found', 'Session not found.');
@@ -92,7 +92,7 @@ export class CollaborationService {
     return { session, role: member.rows[0].role };
   }
 
-  private async append(client: PoolClient, session: SessionRow, actor: Actor, type: string, payload: unknown): Promise<SharedEvent> {
+  protected async append(client: PoolClient, session: SessionRow, actor: Actor, type: string, payload: unknown): Promise<SharedEvent> {
     // Reserve 256 control events: a full session has at most 99 other active
     // participants and 100 active invitations. Capacity must never trap a grant.
     const capacity = type === 'participant.revoked' || type === 'invitation.revoked' ? 100000 : 99744;
@@ -395,6 +395,8 @@ export class CollaborationService {
       await client.query('DELETE FROM session_participants WHERE session_id=$1', [sessionId]);
       await client.query('DELETE FROM invitations WHERE session_id=$1', [sessionId]);
       await client.query('DELETE FROM shared_events WHERE session_id=$1', [sessionId]);
+      await client.query('DELETE FROM execution_runs WHERE session_id=$1', [sessionId]);
+      await client.query('DELETE FROM decisions WHERE session_id=$1', [sessionId]);
       await client.query('UPDATE request_results SET response=NULL WHERE session_id=$1', [sessionId]);
       await client.query("UPDATE sessions SET deleted_at=now(),title=NULL,mode='plan',status='inactive',runtime_generation=runtime_generation+1,updated_at=now() WHERE id=$1", [sessionId]);
       return { deleted: true, sessionId };

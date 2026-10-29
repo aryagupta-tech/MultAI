@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import {
-  ArrowUp, Bold, BookMarked, Code, Eye, EyeOff, Italic, List, ListChecks, Lock, MessageCircle, Quote, SquareCode, TerminalSquare, Type,
+  ArrowUp, Sparkles, Bold, BookMarked, Code, Eye, EyeOff, Italic, List, ListChecks, Lock, MessageCircle, Quote, SquareCode, TerminalSquare, Type,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { DRAFT_LIMIT, applyFormat, draftMeter, resolveEnter, type FormatKind } from '../model/composer';
@@ -18,6 +18,7 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
   const draft = useApp((s) => s.drafts[draftKey]);
   const defaultKind = useApp((s) => s.prefs.defaultKind);
   const account = useApp((s) => s.account);
+  const sending = useApp((s) => Boolean(s.sending[draftKey]));
   const app = useApp.getState();
   const text = draft?.text ?? '';
   const kind: MessageKind = draft?.kind ?? defaultKind;
@@ -133,6 +134,8 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
         </div>
       )}
 
+      <div className="composer-field">
+      <Sparkles className="composer-spark" size={16} strokeWidth={1.8} aria-hidden />
       {preview ? (
         <div className="composer-preview" aria-label="Preview">
           {empty ? <p className="tone-muted">Nothing to preview</p> : <Markdown text={text} />}
@@ -152,8 +155,38 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
           onCompositionEnd={() => { composing.current = false; }}
         />
       )}
+      </div>
 
       <div className="composer-bar">
+        <Menu
+          label="Saved prompts"
+          side="top"
+          align="start"
+          width={280}
+          items={SAVED_PROMPTS.map((p) => ({
+            id: p.id, label: p.label, description: 'Inserts into your draft. Doesn’t send.',
+            onSelect: () => {
+              const next = text ? `${text}\n\n${p.text}` : p.text;
+              if (next.length > DRAFT_LIMIT) app.toast('That would make the draft longer than the limit.', 'error');
+              else app.setDraft(draftKey, { text: next });
+              requestAnimationFrame(() => ta.current?.focus());
+            },
+          }))}
+          trigger={(t) => <button type="button" {...t} className="composer-action"><BookMarked size={14} strokeWidth={1.8} aria-hidden />Prompts</button>}
+        />
+        <button type="button" className={cx('composer-action', formatBar && 'is-on')} aria-pressed={formatBar} onClick={() => setFormatBar(!formatBar)}>
+          <Type size={14} strokeWidth={1.8} aria-hidden />Format
+        </button>
+        <button type="button" className={cx('composer-action', preview && 'is-on')} aria-pressed={preview} onClick={() => setPreview(!preview)}>
+          {preview ? <EyeOff size={14} strokeWidth={1.8} aria-hidden /> : <Eye size={14} strokeWidth={1.8} aria-hidden />}{preview ? 'Edit' : 'Preview'}
+        </button>
+        <span className="spacer" />
+        {meter.show && (
+          <span className={cx('meter', `tone-${meter.tone}`)} aria-live="polite">
+            {text.length.toLocaleString()} / {DRAFT_LIMIT.toLocaleString()}
+          </span>
+        )}
+
         <Segmented
           label="Who is this for"
           size="sm"
@@ -169,43 +202,18 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
             <ListChecks size={12} aria-hidden /> Plan mode
           </span>
         )}
-        <span className="spacer" />
-
-        {meter.show && (
-          <span className={cx('meter', `tone-${meter.tone}`)} aria-live="polite">
-            {text.length.toLocaleString()} / {DRAFT_LIMIT.toLocaleString()}
-          </span>
-        )}
-
-        <Menu
-          label="Saved prompts"
-          side="top"
-          align="end"
-          width={280}
-          items={SAVED_PROMPTS.map((p) => ({
-            id: p.id, label: p.label, description: 'Inserts into your draft. Doesn’t send.',
-            onSelect: () => {
-              const next = text ? `${text}\n\n${p.text}` : p.text;
-              if (next.length > DRAFT_LIMIT) app.toast('That would make the draft longer than the limit.', 'error');
-              else app.setDraft(draftKey, { text: next });
-              requestAnimationFrame(() => ta.current?.focus());
-            },
-          }))}
-          trigger={(t) => <IconButton {...t} size="sm" icon={BookMarked} label="Saved prompts" tipSide="top" />}
-        />
-        <IconButton size="sm" icon={Type} label={formatBar ? 'Hide formatting' : 'Formatting'} active={formatBar} onClick={() => setFormatBar(!formatBar)} tipSide="top" />
-        <IconButton size="sm" icon={preview ? EyeOff : Eye} label={preview ? 'Edit' : 'Preview'} active={preview} onClick={() => setPreview(!preview)} tipSide="top" />
 
         <button
           type="button"
           className={cx('send-btn', instruction ? 'is-instruction' : 'is-discussion')}
           onClick={() => submit(kind)}
-          disabled={empty || tooLong}
-          aria-label={sendLabel}
+          disabled={empty || tooLong || sending}
+          aria-busy={sending}
+          aria-label={sending ? 'Sending' : sendLabel}
           data-tip={`${sendLabel}  ↵`}
           data-tip-side="top"
         >
-          {instruction ? <ArrowUp size={16} strokeWidth={2.2} aria-hidden /> : <MessageCircle size={15} strokeWidth={2} aria-hidden />}
+          {sending ? <span className="spinner" style={{ width: 14, height: 14 }} aria-hidden /> : instruction ? <ArrowUp size={16} strokeWidth={2.2} aria-hidden /> : <MessageCircle size={15} strokeWidth={2} aria-hidden />}
         </button>
       </div>
 

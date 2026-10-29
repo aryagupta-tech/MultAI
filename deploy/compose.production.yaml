@@ -1,0 +1,143 @@
+name: multai-${RESOURCE_ID:?Set a fresh resource id}
+
+x-bounded-logs: &bounded-logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  database:
+    image: ${DATABASE_IMAGE:?Use the reviewed database image}
+    build:
+      context: ..
+      dockerfile: deploy/database.Dockerfile
+    user: postgres
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 640m
+    cpus: 0.9
+    environment:
+      POSTGRES_USER: multai_admin
+      POSTGRES_DB: multai
+      POSTGRES_PASSWORD_FILE: /run/secrets/db-admin-password
+    secrets: [db-admin-password, db-app-password]
+    volumes:
+      - database:/var/lib/postgresql
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - max_connections=40
+      - -c
+      - max_wal_size=512MB
+      - -c
+      - log_statement=none
+      - -c
+      - log_min_error_statement=panic
+      - -c
+      - log_error_verbosity=terse
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U multai_admin -d multai"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging: *bounded-logs
+    networks: [database]
+
+  backend:
+    image: ${BACKEND_IMAGE:?Use the reviewed backend image}
+    # Build off the small production machine, then transfer/load this exact image.
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+      args:
+        SOURCE_COMMIT: ${SOURCE_COMMIT:?Set the reviewed full source commit}
+        SOURCE_DIRTY: ${SOURCE_DIRTY:-true}
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 384m
+    cpus: 0.6
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "4310"
+      PUBLIC_ORIGIN: https://${COLLABORATION_DOMAIN:?Set the collaboration domain}
+      NODE_OPTIONS: --max-old-space-size=256
+    secrets: [db-app-password, google-client-id, google-client-secret]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    depends_on:
+      database:
+        condition: service_healthy
+    stop_grace_period: 20s
+    logging: *bounded-logs
+    networks: [application, database, identity-egress]
+
+  proxy:
+    image: ${PROXY_IMAGE:?Use the reviewed proxy image}
+    build:
+      context: ..
+      dockerfile: deploy/proxy.Dockerfile
+    user: "10001:10001"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.2
+    environment:
+      COLLABORATION_DOMAIN: ${COLLABORATION_DOMAIN:?Set the collaboration domain}
+      ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    tmpfs:
+      - /config:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001,mode=0700
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:9080/health/proxy"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    logging: *bounded-logs
+    networks: [application, certificate-egress]
+
+secrets:
+  db-admin-password:
+    file: ${SECRETS_DIRECTORY:?Set a private secret directory}/db-admin-password
+  db-app-password:
+    file: ${SECRETS_DIRECTORY:?Set a private secret directory}/db-app-password
+  google-client-id:
+    file: ${SECRETS_DIRECTORY:?Set a private secret directory}/google-client-id
+  google-client-secret:
+    file: ${SECRETS_DIRECTORY:?Set a private secret directory}/google-client-secret
+
+volumes:
+  database:
+  certificates:
+networks:
+  database:
+    internal: true
+  application:
+    internal: true
+  identity-egress:
+  certificate-egress:

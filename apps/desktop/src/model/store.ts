@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import type { BuildInfo } from '../bridge/contract';
+import type { AuthState, BuildInfo, LiveStatus, ServiceHealth } from '../bridge/contract';
+import type { WireJoinRequest } from '../bridge/wire';
+import * as live from '../live/controller';
+import { getBridge } from '../bridge/client';
 import type {
   Account, ConnectionState, Decision, InspectorTab, MessageKind, Project, SessionDetail, SessionMode, SessionSummary, TimelineItem,
 } from './types';
@@ -24,9 +27,13 @@ export interface Preferences {
 export interface Draft {
   text: string;
   kind: MessageKind;
+  /** Durable retry identity, kept with the draft until the service confirms the send. */
+  requestId?: string;
+  /** The exact text the requestId was issued for; edits after a failure get a new identity. */
+  requestFor?: string;
 }
 
-export type Overlay = null | 'palette' | 'settings' | 'invite' | 'new-project' | 'shortcuts' | 'delete-session';
+export type Overlay = null | 'palette' | 'settings' | 'invite' | 'new-project' | 'shortcuts' | 'delete-session' | 'join';
 export type OnboardingStep = 'signin' | 'connect' | 'done';
 
 export interface Toast {
@@ -56,6 +63,15 @@ interface State {
   prefs: Preferences;
   toasts: Toast[];
   focusedApproval: string | null;
+  /* Live service state (unused in demo mode). */
+  auth: AuthState | null;
+  health: ServiceHealth | null;
+  liveStatus: Record<string, LiveStatus>;
+  joinRequests: Record<string, WireJoinRequest[]>;
+  /** Invitation token from a multai-dev://join link, awaiting the person's confirmation. */
+  joinPrompt: string | null;
+  sending: Record<string, boolean>;
+  loading: Record<string, boolean>;
 }
 
 interface Actions {
@@ -195,12 +211,22 @@ export const useApp = create<State & Actions>()((set, get) => {
     prefs: readJson(PREFS_KEY, defaultPrefs),
     toasts: [],
     focusedApproval: null,
+    auth: null,
+    health: null,
+    liveStatus: {},
+    joinRequests: {},
+    joinPrompt: null,
+    sending: {},
+    loading: {},
 
     setBuild: (build) => set({ build }),
     loadDemo: ({ account, sessions, projects, details }) =>
       set({ account, sessions, projects, details, activeId: 's-rate', onboarding: 'done', connection: 'connected', drafts: readJson<Record<string, Draft>>(draftStorageKey(account.id), {}) }),
     completeOnboarding: (onboarding) => set({ onboarding }),
-    signOut: () => set({ account: null, onboarding: 'signin', sessions: [], projects: [], details: {}, activeId: null, overlay: null, connection: 'offline', drafts: readJson<Record<string, Draft>>(draftStorageKey(null), {}) }),
+    signOut: () => {
+      if (get().dataMode === 'live' && getBridge()) return void live.signOut();
+      set({ account: null, onboarding: 'signin', sessions: [], projects: [], details: {}, activeId: null, overlay: null, connection: 'offline', drafts: readJson<Record<string, Draft>>(draftStorageKey(null), {}) });
+    },
 
     selectSession: (id) => {
       set((s) => ({ activeId: id, sessions: s.sessions.map((x) => (x.id === id ? { ...x, unread: false } : x)) }));
@@ -209,6 +235,7 @@ export const useApp = create<State & Actions>()((set, get) => {
         const summary = s.sessions.find((x) => x.id === id);
         if (summary && s.dataMode === 'demo') set({ details: { ...s.details, [id]: basicDetail(summary, s.account) } });
       }
+      if (s.dataMode === 'live') void live.open(id);
     },
     newChat: (projectId = null) => set({ activeId: null, draftTarget: { projectId } }),
     toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -219,7 +246,13 @@ export const useApp = create<State & Actions>()((set, get) => {
     setDraft: (key, draft) => {
       set((s) => {
         const prev = s.drafts[key] ?? { text: '', kind: s.prefs.defaultKind };
-        const drafts = { ...s.drafts, [key]: { ...prev, ...draft } };
+        const next: Draft = { ...prev, ...draft };
+        if (draft.text === '') {
+          // Cleared after a confirmed send: the retry identity is spent.
+          delete next.requestId;
+          delete next.requestFor;
+        }
+        const drafts = { ...s.drafts, [key]: next };
         writeJson(draftStorageKey(s.account?.id ?? null), drafts);
         return { drafts };
       });
@@ -230,10 +263,14 @@ export const useApp = create<State & Actions>()((set, get) => {
       const draft = s.drafts[key];
       const text = draft?.text.trim() ?? '';
       if (!text || text.length > DRAFT_LIMIT || !s.account) return false;
-      if (s.dataMode !== 'demo') {
-        // The draft is retained; nothing is sent until the collaboration client is connected.
-        get().toast('Not connected to the collaboration service. Your draft is saved.', 'error');
-        return false;
+      if (s.dataMode === 'live') {
+        if (!getBridge()) {
+          get().toast('Sending needs the MultAI desktop app. Your draft is saved.', 'error');
+          return false;
+        }
+        if (s.sending[key]) return false;
+        void live.send(key, kind, text);
+        return true;
       }
       let id = key;
       if (key === 'new') {
@@ -286,20 +323,24 @@ export const useApp = create<State & Actions>()((set, get) => {
       patchDetail(sessionId, (d) => ({ ...d, timeline: d.timeline.map((t) => (t.id === itemId && t.type === 'question' ? { ...t, answer } : t)) })),
 
     setMode: (sessionId, mode) => {
+      if (get().dataMode === 'live') return void live.setMode(sessionId, mode);
       patchDetail(sessionId, (d) => ({ ...d, mode }));
       append(sessionId, { id: nextId('t'), type: 'system', tone: 'info', text: mode === 'build' ? 'Switched to Build. Every command still needs host approval.' : 'Switched to Plan. Writes, shell and external actions are blocked.' });
     },
     setReasoning: (sessionId, reasoning) => patchDetail(sessionId, (d) => ({ ...d, reasoning })),
     stop: (sessionId) => {
+      if(get().dataMode==='live')return void import('../live/execution').then(module=>module.stopRun(sessionId));
       setStatus(sessionId, 'paused');
       patchDetail(sessionId, (d) => ({ ...d, timeline: d.timeline.map((t) => (t.type === 'agent' && t.streaming ? { ...t, streaming: false } : t)) }));
       append(sessionId, { id: nextId('t'), type: 'system', tone: 'warn', text: 'Stopped by host. Pending authority was revoked; nothing will resume automatically.' });
     },
     resume: (sessionId) => {
+      if(get().dataMode==='live')return void import('../live/execution').then(module=>module.runPending(sessionId));
       setStatus(sessionId, 'inactive');
       append(sessionId, { id: nextId('t'), type: 'system', tone: 'info', text: 'Resumed. The agent will continue on the next instruction.' });
     },
     saveDecision: (sessionId, text, reason, replaces) => {
+      if(get().dataMode==='live')return void live.saveDecision(sessionId,text,reason,replaces);
       const account = get().account;
       if (!account) return;
       const decision: Decision = { id: nextId('d'), text, ...(reason ? { reason } : {}), authorId: account.id, source: 'Saved manually', status: 'current', createdAt: now() };
@@ -311,9 +352,13 @@ export const useApp = create<State & Actions>()((set, get) => {
       get().toast('Decision saved and shared with the team', 'success');
     },
 
-    togglePin: (id) => set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x)) })),
+    togglePin: (id) => {
+      set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x)) }));
+      live.persistLocal();
+    },
     setArchived: (id, archived) => {
       set((s) => ({ sessions: s.sessions.map((x) => (x.id === id ? { ...x, archived, pinned: archived ? false : x.pinned } : x)) }));
+      live.persistLocal();
       get().toast(archived ? 'Chat archived' : 'Chat restored');
     },
     rename: (id, title) => {
@@ -323,8 +368,10 @@ export const useApp = create<State & Actions>()((set, get) => {
         sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: clean } : x)),
         details: s.details[id] ? { ...s.details, [id]: { ...s.details[id], title: clean } } : s.details,
       }));
+      live.persistLocal();
     },
     deleteSession: (id) => {
+      if (get().dataMode === 'live') return void live.deleteSession(id);
       set((s) => {
         const details = { ...s.details };
         delete details[id];
@@ -332,9 +379,13 @@ export const useApp = create<State & Actions>()((set, get) => {
       });
       get().toast('Shared session deleted. Project files and worktrees were not touched.');
     },
-    toggleProject: (id) => set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, expanded: !p.expanded } : p)) })),
+    toggleProject: (id) => {
+      set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, expanded: !p.expanded } : p)) }));
+      live.persistLocal();
+    },
     addProject: ({ name, folderHint }) => {
-      set((s) => ({ projects: [...s.projects, { id: nextId('p'), name, folderHint, expanded: true }], overlay: null }));
+      set((s) => ({ projects: [...s.projects, { id: `p-${crypto.randomUUID()}`, name, folderHint, expanded: true }], overlay: null }));
+      live.persistLocal();
       get().toast(`Project “${name}” saved. No agent was started.`, 'success');
     },
     setPrefs: (p) => set((s) => {
@@ -356,6 +407,7 @@ function basicDetail(summary: SessionSummary, account: Account | null, fresh = f
   const owner = account ?? { id: 'unknown', name: 'You', initials: 'Y', hue: 200 };
   return {
     id: summary.id,
+    source: 'demo',
     title: summary.title,
     objective: '',
     mode: 'plan',

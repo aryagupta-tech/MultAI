@@ -5,7 +5,8 @@ export type Role = 'owner' | 'collaborator' | 'viewer';
 export type SessionMode = 'plan' | 'build';
 export type SessionStatus = 'inactive' | 'paused' | 'running';
 export type MessageKind = 'instruction' | 'discussion';
-export type Presence = 'online' | 'idle' | 'offline';
+/** 'unknown' when the service doesn't report presence (it currently doesn't). */
+export type Presence = 'online' | 'idle' | 'offline' | 'unknown';
 
 export interface Person {
   id: string;
@@ -128,6 +129,9 @@ export interface DiffHunk {
 
 export interface SessionDetail {
   id: string;
+  source: 'demo' | 'live';
+  /** Runtime generation for optimistic-concurrency writes (live sessions only). */
+  generation?: number;
   title: string;
   objective: string;
   mode: SessionMode;

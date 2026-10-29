@@ -1,12 +1,13 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import {
   Activity, Bookmark, Check, ChevronRight, CircleAlert, CircleCheck, CircleX, Crown, FileCode2, FileDiff, FolderTree, Laptop,
-  Loader2, Plus, ShieldCheck, UserCheck, Users, WrapText, X, Clock,
+  Loader2, Plus, ShieldCheck, UserCheck, UserMinus, Users, WrapText, X, Clock,
 } from 'lucide-react';
 import { useApp } from '../model/store';
-import { relativeTime } from '../model/format';
+import * as live from '../live/controller';
+import { hueFor, relativeTime } from '../model/format';
 import type { FileChange, InspectorTab, SessionDetail, ToolCall } from '../model/types';
-import { Avatar, Button, EmptyState, IconButton, Segmented, cx } from '../ui/primitives';
+import { Avatar, Button, EmptyState, IconButton, Menu, Segmented, cx } from '../ui/primitives';
 
 const TABS: { id: InspectorTab; label: string; icon: typeof FileDiff }[] = [
   { id: 'changes', label: 'Changes', icon: FileDiff },
@@ -21,7 +22,8 @@ export function Inspector({ d }: { d: SessionDetail }) {
   const tab = useApp((s) => s.inspectorTab);
   const app = useApp.getState();
   const pending = d.timeline.filter((t) => t.type === 'approval' && t.state === 'pending').length;
-  const counts: Partial<Record<InspectorTab, number>> = {
+  const liveRequests = useApp((s) => s.joinRequests[d.id]?.length ?? 0);
+  const counts: Partial<Record<InspectorTab, number>> = d.source === 'live' ? { people: d.participants.length } : {
     changes: d.changes.length,
     approvals: pending,
     decisions: d.decisions.filter((x) => x.status === 'current').length,
@@ -43,7 +45,7 @@ export function Inspector({ d }: { d: SessionDetail }) {
               aria-selected={selected}
               aria-controls={`panel-${t.id}`}
               tabIndex={selected ? 0 : -1}
-              className={cx('inspector-tab no-drag', selected && 'is-selected', t.id === 'approvals' && pending > 0 && 'has-attention')}
+              className={cx('inspector-tab no-drag', selected && 'is-selected', ((t.id === 'approvals' && pending > 0) || (t.id === 'people' && liveRequests > 0)) && 'has-attention')}
               onClick={() => app.setInspector(true, t.id)}
               onKeyDown={(e) => {
                 const i = TABS.findIndex((x) => x.id === tab);
@@ -65,6 +67,7 @@ export function Inspector({ d }: { d: SessionDetail }) {
         })}
       </div>
       <div className="inspector-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {d.source === 'live' && tab !== 'people' ? <LiveUnavailable tab={tab} /> : <>
         {tab === 'changes' && <ChangesPanel d={d} />}
         {tab === 'activity' && <ActivityPanel d={d} />}
         {tab === 'approvals' && <ApprovalsPanel d={d} />}
@@ -75,9 +78,24 @@ export function Inspector({ d }: { d: SessionDetail }) {
             Browsing the worktree needs the local runtime’s safe file tools. Until then, review edits in Changes.
           </EmptyState>
         )}
+        </>}
       </div>
     </aside>
   );
+}
+
+const LIVE_COPY: Record<Exclude<InspectorTab, 'people'>, { icon: typeof FileDiff; title: string; body: string }> = {
+  changes: { icon: FileDiff, title: 'No changes to review yet', body: 'The agent runtime isn’t enabled on this service, so nothing edits files yet. Changes will appear here once it is.' },
+  activity: { icon: Activity, title: 'No agent activity yet', body: 'Tool calls show up here once the service can run an agent. For now, plan and discuss together.' },
+  approvals: { icon: ShieldCheck, title: 'Nothing to approve', body: 'Commands need the agent runtime, which isn’t enabled on this service. When it is, every command waits here for the host.' },
+  decisions: { icon: Bookmark, title: 'Decisions aren’t available yet', body: 'This service doesn’t store shared decisions yet. Agree in Team discussion for now.' },
+  files: { icon: FolderTree, title: 'File browser isn’t available yet', body: 'Browsing the worktree needs the local runtime’s safe file tools.' },
+};
+
+function LiveUnavailable({ tab }: { tab: InspectorTab }) {
+  if (tab === 'people') return null;
+  const c = LIVE_COPY[tab];
+  return <EmptyState icon={c.icon} title={c.title}>{c.body}</EmptyState>;
 }
 
 function PanelHeader({ title, sub, children }: { title: string; sub?: ReactNode; children?: ReactNode }) {
@@ -376,10 +394,26 @@ function DecisionsPanel({ d }: { d: SessionDetail }) {
 function PeoplePanel({ d }: { d: SessionDetail }) {
   const app = useApp.getState();
   const dataMode = useApp((s) => s.dataMode);
-  const [requests, setRequests] = useState(dataMode === 'demo' && d.id === 's-rate' ? [{ id: 'jr1', name: 'Alex Chen', initials: 'AC', hue: 32, at: new Date(Date.now() - 4 * 60_000).toISOString() }] : []);
+  const liveRequests = useApp((s) => s.joinRequests[d.id]);
+  const [demoRequests, setRequests] = useState(dataMode === 'demo' && d.id === 's-rate' ? [{ id: 'jr1', name: 'Alex Chen', initials: 'AC', hue: 32, at: new Date(Date.now() - 4 * 60_000).toISOString() }] : []);
+  const isLive = d.source === 'live';
+  const requests = isLive
+    ? (liveRequests ?? []).map((r) => {
+        const short = r.userId.replace(/-/g, '').slice(0, 4).toUpperCase();
+        return { id: r.id, name: `Teammate ${short}`, initials: short.slice(0, 2), hue: hueFor(r.userId), at: r.createdAt };
+      })
+    : demoRequests;
+  const [busy, setBusy] = useState<string | null>(null);
   const owner = d.role === 'owner';
   const roleLabel = { owner: 'Owner', collaborator: 'Collaborator', viewer: 'Viewer' } as const;
-  const resolve = (id: string, name: string, role: 'collaborator' | 'viewer' | null) => {
+  const resolve = async (id: string, name: string, role: 'collaborator' | 'viewer' | null) => {
+    if (isLive) {
+      if (!role) return;
+      setBusy(id);
+      await live.admit(d.id, id, role);
+      setBusy(null);
+      return;
+    }
     setRequests((r) => r.filter((x) => x.id !== id));
     app.toast(role ? `${name} admitted as ${role}` : `Declined ${name}’s request`, role ? 'success' : 'info');
   };
@@ -393,6 +427,7 @@ function PeoplePanel({ d }: { d: SessionDetail }) {
       {owner && requests.length > 0 && (
         <div className="join-requests">
           <h3 className="sub-label">Waiting to join</h3>
+          {isLive && <p className="person-sub join-note">Names appear after you admit someone. Only admit people you invited.</p>}
           {requests.map((r) => (
             <div key={r.id} className="join-row">
               <Avatar name={r.name} initials={r.initials} hue={r.hue} size={28} />
@@ -401,9 +436,9 @@ function PeoplePanel({ d }: { d: SessionDetail }) {
                 <span className="person-sub">Requested {relativeTime(r.at)} via invite link</span>
               </div>
               <div className="join-actions">
-                <IconButton size="sm" icon={X} label="Decline" onClick={() => resolve(r.id, r.name, null)} />
-                <Button size="sm" variant="secondary" onClick={() => resolve(r.id, r.name, 'viewer')}>Viewer</Button>
-                <Button size="sm" variant="primary" icon={UserCheck} onClick={() => resolve(r.id, r.name, 'collaborator')}>Admit</Button>
+                {!isLive && <IconButton size="sm" icon={X} label="Decline" onClick={() => void resolve(r.id, r.name, null)} />}
+                <Button size="sm" variant="secondary" disabled={busy === r.id} onClick={() => void resolve(r.id, r.name, 'viewer')}>Viewer</Button>
+                <Button size="sm" variant="primary" icon={UserCheck} disabled={busy === r.id} onClick={() => void resolve(r.id, r.name, 'collaborator')}>Admit</Button>
               </div>
             </div>
           ))}
@@ -420,8 +455,17 @@ function PeoplePanel({ d }: { d: SessionDetail }) {
                 {p.isHost && <span className="tag" title="Runs the agent and holds approval authority"><Laptop size={10} aria-hidden /> Host</span>}
                 {p.isLeader && <span className="tag" title="Currently leading the task"><Crown size={10} aria-hidden /> Lead</span>}
               </span>
-              <span className="person-sub">{roleLabel[p.role]} · {p.presence === 'online' ? 'Online' : p.presence === 'idle' ? 'Idle' : 'Offline'}</span>
+              <span className="person-sub">{roleLabel[p.role]}{p.presence === 'unknown' ? '' : ` · ${p.presence === 'online' ? 'Online' : p.presence === 'idle' ? 'Idle' : 'Offline'}`}</span>
             </div>
+            {isLive && owner && p.role !== 'owner' && (
+              <Menu
+                label={`Actions for ${p.name}`}
+                align="end"
+                width={220}
+                items={[{ id: 'revoke', label: 'Remove from session', icon: UserMinus, danger: true, description: 'Their access ends immediately', onSelect: () => void live.revoke(d.id, p.id) }]}
+                trigger={(t) => <IconButton {...t} size="sm" icon={X} label={`Remove ${p.name}`} className="row-action" />}
+              />
+            )}
           </li>
         ))}
       </ul>

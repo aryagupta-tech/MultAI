@@ -1,17 +1,17 @@
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   Archive, ArchiveRestore, ChevronRight, Folder, FolderPlus, MoreHorizontal, PanelLeftClose, Pencil, Pin, PinOff, Plus,
-  Search, Settings, ShieldAlert, SquarePen, X, Keyboard, LogOut, Command,
+  Search, Settings, ShieldAlert, SquarePen, X, Keyboard, LogOut, Command, LogIn, WifiOff, UsersRound,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { recencyBucket } from '../model/format';
 import { fuzzyScore } from '../model/fuzzy';
 import type { SessionSummary } from '../model/types';
-import { Avatar, IconButton, Kbd, Menu, cx, shortcutText } from '../ui/primitives';
+import { Avatar, Button, IconButton, Kbd, Menu, cx, shortcutText } from '../ui/primitives';
 import { LogoMark } from '../ui/Logo';
 
 export function Sidebar() {
-  const { sessions, projects, activeId, showArchived, account, dataMode, build } = useApp();
+  const { sessions, projects, activeId, showArchived, account, dataMode, build, connection } = useApp();
   const app = useApp.getState();
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -136,7 +136,15 @@ export function Sidebar() {
         {showArchived && visible.length === 0 && !query && <p className="sidebar-empty">Nothing archived</p>}
       </div>
 
+      <TeamCard />
+
       <div className="sidebar-footer">
+        {dataMode === 'live' && connection === 'offline' && (
+          <div className="offline-badge" role="status">
+            <WifiOff size={13} aria-hidden />
+            <span><strong>Offline</strong> · changes will sync when the service is back</span>
+          </div>
+        )}
         {dataMode === 'demo' && (
           <div className="demo-badge" role="note">
             <ShieldAlert size={13} aria-hidden />
@@ -149,7 +157,8 @@ export function Sidebar() {
             side="top"
             width={248}
             items={[
-              { id: 'acct', separator: true, label: account.email },
+              { id: 'acct', separator: true, label: account.email || `${account.name} · ${account.workspace} workspace` },
+              ...(dataMode === 'live' ? [{ id: 'join', label: 'Join a session…', icon: LogIn, onSelect: () => app.openOverlay('join') }] : []),
               { id: 'settings', label: 'Settings', icon: Settings, hint: shortcutText('Mod+,'), onSelect: () => app.openOverlay('settings', 'general') },
               { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, hint: shortcutText('Mod+/'), onSelect: () => app.openOverlay('shortcuts') },
               { id: 'palette', label: 'Command menu', icon: Command, hint: shortcutText('Mod+K'), onSelect: () => app.openOverlay('palette') },
@@ -256,4 +265,33 @@ function ChatRow({ s, active, nested }: { s: SessionSummary; active: boolean; ne
 export function StatusDot({ status, approvals }: { status: SessionSummary['status']; approvals?: number }) {
   if (approvals) return <span className="status-dot is-attention" aria-hidden />;
   return <span className={cx('status-dot', `is-${status}`)} aria-hidden />;
+}
+
+const CARD_KEY = 'multai.sidecard.dismissed';
+
+function TeamCard() {
+  const app = useApp.getState();
+  const owner = useApp((s) => (s.activeId ? s.details[s.activeId]?.role === 'owner' : false));
+  const dataMode = useApp((s) => s.dataMode);
+  const [hidden, setHidden] = useState(() => {
+    try { return localStorage.getItem(CARD_KEY) === '1'; } catch { return false; }
+  });
+  if (hidden) return null;
+  const action = owner
+    ? { label: 'Invite people', run: () => app.openOverlay('invite') }
+    : dataMode === 'live'
+      ? { label: 'Join a session', run: () => app.openOverlay('join') }
+      : { label: 'Start a chat', run: () => app.newChat(null) };
+  return (
+    <div className="side-card">
+      <button type="button" className="side-card-close" aria-label="Dismiss" onClick={() => {
+        setHidden(true);
+        try { localStorage.setItem(CARD_KEY, '1'); } catch { /* not persisted */ }
+      }}><X size={12} /></button>
+      <span className="side-card-icon"><UsersRound size={16} strokeWidth={1.8} aria-hidden /></span>
+      <strong>Bring your team in</strong>
+      <p>Share a session link. You admit each person and approve every command that runs.</p>
+      <Button size="sm" variant="secondary" className="btn-block" onClick={action.run}>{action.label}</Button>
+    </div>
+  );
 }

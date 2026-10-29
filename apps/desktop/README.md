@@ -1,57 +1,50 @@
-# @multai/desktop
+# MultAI desktop
 
-The MultAI desktop app: a sandboxed Electron shell and a React renderer. The interface is built
-fresh from the product requirements; nothing is imported from earlier implementations.
+The fresh MIT-licensed desktop integrates an Electron shell, React renderer, native collaboration identity and original-host inference runtime. The compiled macOS arm64 shell passed a native smoke. Real Google sign-in, OS callback delivery and an OS-encrypted credential write also passed in the packaged app; restart/refresh, live provider and public release acceptance remain pending.
 
-## Run it
+## Run
 
-```bash
-npm run dev:demo -w @multai/desktop   # Electron + Vite, with labeled demo data
-npm run dev -w @multai/desktop        # Electron + Vite, no demo data (shows sign-in)
-npm run dev:web -w @multai/desktop    # Renderer only, in a browser, with demo data
-npm run build -w @multai/desktop && npm start -w @multai/desktop
-```
+From the root, retain the configured ignored .env or create one from .env.example for a fresh checkout. Use Node 24, npm and Docker for development:
 
-The Electron binary is fetched by its install script. If `npm install` skipped it, run
-`node node_modules/electron/install.js` from the repository root.
+~~~sh
+npm ci --ignore-scripts
+npm run build --workspace @multai/runtime
+node node_modules/electron/install.js
+docker compose up -d database
+npm run dev:backend
+~~~
 
-## Demo data
+Then in another terminal:
 
-Demo fixtures live in `src/model/demo.ts` and load only when the renderer is built or served with
-`--mode demo`. Production builds drop the fixtures chunk entirely. Whenever demo data is shown, the
-sidebar carries a persistent **Demo data · not a live session** badge. The demo simulates agent
-turns locally; no model or service is contacted.
+~~~sh
+npm run dev --workspace @multai/desktop
+~~~
 
-Without demo mode, the app shows the sign-in screen and says plainly that the collaboration
-service client is not connected yet. Sends keep the draft rather than pretending to succeed.
+MULTAI_SERVICE_ORIGIN selects another loopback development origin or HTTPS service; other cleartext origins are refused. The default is http://127.0.0.1:4310. The explicit Electron installer supplies the pinned binary if the script-disabled install did not. Root build builds runtime/backend/desktop in dependency order. The desktop start script opens compiled output; its package script prepares a development bundle, not a signed/notarized public release.
 
-## Structure
+## Sign in and run
 
-```
-electron/main.ts      Window, session hardening, validated IPC handlers
-electron/preload.ts   The only bridge exposed to the renderer (src/bridge/contract.ts)
-src/model/            View models, store, pure composer logic (unit tested)
-src/ui/               Accessible primitives, logo, inert Markdown renderer
-src/features/         Sidebar, header, conversation, composer, inspector, overlays, welcome
-src/styles/           Theme tokens (dark default, light), base and app styles
-```
+1. Choose **Continue with Google**. The backend web OAuth client uses http://127.0.0.1:4310/v1/auth/google/callback, verifies Google and sends a separate one-use completion through multai-dev://auth/callback. The new project is unbilled and used only for authentication. This real flow succeeded locally on 29 October 2026. Configured readiness remains a separate configuration probe.
+2. In **Models & accounts**, connect OpenAI, Claude, Kimi, a supported compatible API, or **Continue with ChatGPT**. The native host encrypts secrets with the OS credential store. Load the actual model catalog and choose a model; this starts no inference.
+3. Send an instruction, then explicitly choose **Run instruction**. Discussion is context. An interrupted task requires **Resume** and a pending instruction; applied instructions/effects are never automatically repeated.
+4. Plan is read-only. Build permits requested writes/POSIX commands only after exact native original-host review. **Stop** cancels owned inference/processes and fences old authority.
 
-## Security notes
+Execution currently uses a deterministic private **blank workspace** per account/service/device/session. Sidebar project registration does not yet create a Git worktree or run against that folder. Complete write review is capped at 16,000 characters. Windows shell execution is unavailable; macOS/Linux process behavior still needs native release acceptance per target.
 
-- `contextIsolation`, `sandbox`, no Node integration, no `<webview>`, devtools only in dev.
-- IPC handlers reject calls that don't come from the app's own top-level frame.
-- All permission requests and downloads are denied; navigation away from the app is blocked and
-  `https://` window opens go to the system browser.
-- The packaged renderer ships a strict CSP (no remote scripts, connections, frames or forms).
-- Markdown is rendered as React elements only: no raw HTML, images or live links.
-- The folder picker returns a display hint to the renderer, never a credential or file contents.
+## Native boundaries
 
-## Status
+- account.ts owns Google flow/callback generations, access/refresh/device proof and uncertainty fencing. credentials.ts encrypts atomic records and rejects unavailable/unknown/Linux basic_text keyrings, with no plaintext or memory-only sign-in fallback.
+- live.ts validates contiguous events, bounds replay/batches and ends revoked/signed-out subscriptions. Renderer projections show attributed messages, streaming, activity and current/replaced decisions.
+- inference/connections.ts separates AI identity from Google collaboration identity. Official ChatGPT OAuth uses fresh public-client registration, stable host ID, PKCE/state/nonce and granted plan permission; no global profiles are imported.
+- inference/coordinator.ts obtains original-host leases, runs controlled tools/provider streams, journals effects and shows exact native approvals. Provider keys, lease secrets and canonical workspace paths never enter the renderer bridge.
+- Main/preload validate sender/window/frame and arguments. The renderer is sandboxed/context-isolated without Node; packaged CSP denies remote assets/requests/frames. Markdown is inert. An approved host command retains OS-user access and is not a general sandbox.
 
-Implemented: shell, design system, sidebar, session header, conversation with every event type,
-composer, inspector (changes, activity, approvals, decisions, people), command menu, settings,
-invite, new project, delete confirmation and onboarding.
+Sign-out, account/connection changes, sleep and Quit invalidate execution. Private provider records remain account/service/device scoped; uncertain refresh/effect outcomes require recovery. The SQLite journal is private-permission storage, **not encrypted credential storage**.
 
-Not yet wired: the collaboration service client, real sign-in, provider connections, the local
-runtime (file browser, terminals) and native notifications. Those controls are visibly disabled
-or say they're unavailable.
+## Demo and evidence
+
+The dev:demo workspace script loads clearly labeled fixtures without contacting providers. Demo content is not live acceptance. Non-demo builds use the real bridge and expose unavailable configuration rather than simulating success.
+
+Run root typecheck, build and test:integration scripts; standalone npm test requires a dedicated TEST_DATABASE_URL. The current full suite passed **179 tests**. Actual native smoke covered compiled renderer/preload/IPC, sandboxing, signed-out denial, untrusted-window rejection and real configured database health.
+
+Separately, the owner confirmed successful real Google sign-in in the packaged app. Local database metadata confirmed one Google user, one consumed flow and one active sign-in; an OS-encrypted credential file was written with private permissions. This verifies real OS callback delivery and the encrypted write, while cold restart/decryption and live refresh remain **unverified**. Live inference, two installed clients and installer trust also remain pending. The first Google acceptance app came from a dirty checkout; verify each later app's adjacent build-manifest.json for its exact source and hashes. See [verification](../../docs/verification.md), [Google setup](../../docs/google-setup.md), [connections](../../docs/inference-connections.md) and [execution protocol](../backend/EXECUTION.md).

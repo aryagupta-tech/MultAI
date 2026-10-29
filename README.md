@@ -1,44 +1,60 @@
-# MultAI backend · development foundation
+# MultAI · integrated development build
 
-A fresh TypeScript implementation of the collaboration service and host-local safety library described in [MultAI.md](docs/MultAI.md), together with the sandboxed Electron desktop shell and React renderer in `apps/desktop`. This is an early milestone: the desktop UI is implemented but not yet wired to the collaboration service (production builds show sign-in and retain drafts without sending), and inference engines, native workspace tools and production deployment are still to be implemented and verified.
+MultAI combines a sandboxed Electron desktop app, a TypeScript collaboration service and an original-host coding runtime. This fresh implementation follows [MultAI.md](docs/MultAI.md) and the public repository's chosen [MIT license](LICENSE). It is a development build, not a completed public release.
 
-The collaboration service stores shared conversation and membership in PostgreSQL. Source files, project paths, shell processes and inference credentials stay outside this service. Sending an instruction records a pending instruction; it does not start inference or execute an action.
+The service synchronizes attributed conversation, decisions, membership and ordered activity in PostgreSQL. Inference credentials, private workspaces, file tools and processes stay on the original desktop host. **Send queues an instruction. Run instruction or Resume explicitly starts inference.** Saving a project, connection or model selection does not start work.
 
 ## Run locally
 
-Use Node **24** and npm. Docker is a development/test dependency; installed MultAI users will not need it.
+Use Node **24**, npm and Docker for development. From a fresh checkout:
 
-```sh
+~~~sh
 npm ci --ignore-scripts
-cp .env.example .env
+cp -n .env.example .env
 docker compose up -d database
 npm run dev:backend
-```
+~~~
 
-The service binds to `127.0.0.1:4310` and applies checksum-verified migrations under a PostgreSQL transaction/advisory lock. `GET /health/live` reports the development identity. `GET /health/ready` reports database readiness separately from Google configuration and disabled inference. Stop the service with Ctrl+C; `docker compose stop database` retains the development database.
+Keep an existing .env; it may already contain the fresh Google configuration. The backend binds to 127.0.0.1:4310 and transactionally verifies/applies migration checksums before listening. The readiness endpoint separates database readiness, **identity: configured_unverified** and **inference: host_local**. These report configuration and architecture, not successful provider acceptance. Stopping the Compose database retains its development volume.
 
-Google sign-in requires a **new web OAuth client** with the exact callback `http://127.0.0.1:4310/v1/auth/google/callback` for this local setup. Add its ID/secret to the ignored `.env`. No authentication bypass or development login endpoint is provided. The desktop callback identity for this development build is `multai-dev://auth/callback`; native protocol registration and OS-encrypted token/device-secret storage remain desktop work. A configured client is not evidence of a successful live Google sign-in.
+In another terminal, build the runtime and launch the desktop:
 
-```sh
+~~~sh
+npm run build --workspace @multai/runtime
+node node_modules/electron/install.js
+npm run dev --workspace @multai/desktop
+~~~
+
+The explicit Electron installer is needed when the binary is absent after the script-disabled npm install. It downloads the pinned development runtime. These development prerequisites are not the intended requirements for installed end users.
+
+A fresh, **unbilled** Google project and web OAuth client are configured in the ignored local .env for sign-in only, with the owner's test account admitted. The Google callback is http://127.0.0.1:4310/v1/auth/google/callback; the backend then sends a one-use completion to multai-dev://auth/callback. Real Google consent, OS callback delivery to the packaged macOS app and an OS-encrypted credential write succeeded on 29 October 2026. Cold restart, credential decryption and live refresh remain unverified; see [verification](docs/verification.md). New machines need authorized configuration; see [Google setup](docs/google-setup.md). Secrets are never source or desktop assets.
+
+After collaboration sign-in, open **Models & accounts** to connect OpenAI, Claude, Kimi, a supported compatible API, or **Continue with ChatGPT**. Load the selected account/provider's actual model catalog, choose a model, send an instruction, then choose **Run instruction**. Plan exposes read-only tools; Build permits reviewed writes/commands with fresh exact host approval. See [inference connections](docs/inference-connections.md) for protocols and account eligibility.
+
+## Validate and build
+
+~~~sh
 npm run typecheck
 npm run build
 npm run test:integration
-```
+~~~
 
-The integration command starts an isolated official PostgreSQL 18 container on a random loopback port, runs the backend and real SQLite tests, and removes that container. It does not touch the Compose database or existing volumes. Alternatively, set `TEST_DATABASE_URL` to a **dedicated test database** and run `npm test`; tests create and drop their own randomly named schemas. WebSocket tests use actual loopback connections. Tests use conspicuously synthetic users/OIDC keys; they do not establish live Google, provider or desktop acceptance.
+Root build/typecheck commands build the runtime before dependent workspaces. The integration runner starts and removes a disposable PostgreSQL 18 container on a random loopback port, running the backend/runtime/desktop suites without touching the Compose database or existing volumes. Alternatively, set TEST_DATABASE_URL to a **dedicated test database** and run npm test; tests create/drop isolated schemas.
 
-`npm run build` emits backend JavaScript and `apps/backend/dist/build-manifest.json` with the source commit, dirty state, build time and artifact hashes. Run the compiled service with `npm start --workspace @multai/backend`. Keep the backend `migrations/` directory beside `dist/`. The separate runtime library builds into `packages/runtime/dist/` and must be deliberately integrated into a trusted native host.
+Build output records source revision, dirty state and build time. Start compiled outputs with npm start --workspace @multai/backend and npm start --workspace @multai/desktop; retain backend migrations/ beside dist/. The desktop package script prepares a development app bundle. Ad-hoc signing is not notarization or evidence of fresh-download installer trust.
 
-## Implemented boundaries
+## Implemented boundaries and limits
 
-- Google OIDC verification and PKCE, one-use desktop completion, hashed opaque access/refresh credentials, rotating refresh tokens with reuse detection, device revocation and same-device proof.
-- Personal workspace creation, attributed discussion and pending instructions, owner/collaborator/viewer permissions and original-device management controls.
-- Durable first-send/message retry identities and transactional, strictly ordered shared events. Paginated HTTP replay and a read-only WebSocket stream recheck bearer credentials and admitted membership on every page.
-- Invitations create pending admission requests; owners must explicitly admit participants. Revocation denies HTTP/replay and closes live connections on their next authority check (normally within 200 ms plus database latency).
-- Plan by default; only the original owner/device changes an inactive session's mode. Inference remains disabled in both modes.
-- One-use, generation/device-bound deletion confirmation. Shared content is purged; minimal deletion tombstones tell former participants to discard cached history. Host files are untouched.
-- A separate SQLite journal provides exact approval fingerprints, original-host authority checks, Plan enforcement, one-use dispatch reservations, saved results, an ordered durable outbox and crash-to-uncertain recovery. It executes no effects itself.
+- Google OIDC/PKCE, rotating hashed service credentials, device proof, secure desktop persistence and stale-account fencing.
+- Idempotent first send/messages, admission and roles, live replay/revocation, decisions and confirmed shared deletion.
+- Original-host leases, explicit Run/Resume/Stop, attributed context and owner resolution of pending directions from several authors.
+- Host provider adapters, bounded streams, controlled UTF-8 workspace tools, exact native write/command review and a durable SQLite effect journal/outbox. Interrupted effects become uncertain and are never automatically repeated.
+- A deterministic private **blank workspace** per account/service/device/session. Registered-project Git worktrees, dirty-checkout baselines and execution in a selected project folder are not implemented.
 
-The service uses bounded input/pages, local development binding, rate limits and sanitized errors. Credentials, request bodies and OAuth query parameters are excluded from application logs. Deploy only one service instance in this milestone; connection limits and rate limiting are process-local. A production release still needs TLS/proxy validation, retention/backup/restore operations, real identity acceptance and deployment hardening.
+Complete native write previews are limited to **16,000 characters**. Approved commands retain the host OS user's access; approval is not an OS sandbox. POSIX cancellation is implemented for macOS/Linux; Windows shell execution is unavailable. The SQLite journal has private permissions but is not encrypted credential storage.
 
-Read [authentication contracts](apps/backend/AUTH.md), [collaboration contracts](apps/backend/COLLABORATION.md), [runtime safety and integration requirements](packages/runtime/README.md), and [implementation status](docs/backend-status.md). No public source license has been chosen; packages are private and marked `UNLICENSED`. Third-party dependencies retain their own licenses, recorded in [dependency provenance](docs/provenance.md).
+Uncertain local effects block further mutations in that session. This conservative gate can also follow a stale-file rejection after reservation. Read-only inspection remains available; a complete owner-facing reconciliation flow is not implemented. Do not edit the journal to bypass it.
+
+One service instance owns a database advisory lock; rate/connection limits are process-local. [Deployment preparation](docs/aws-deployment.md) includes private PostgreSQL, non-root images and verified encrypted restoration. **No AWS resources or public TLS service are deployed.** Google is used only for sign-in, without billing or compute.
+
+Read [authentication](apps/backend/AUTH.md), [collaboration](apps/backend/COLLABORATION.md), [execution](apps/backend/EXECUTION.md), [desktop setup](apps/desktop/README.md), [implementation status](docs/backend-status.md), [verification](docs/verification.md) and [local development preferences](docs/local-environment.md), including the owner's authorized Chrome Apple Events preference. Live provider authorization, Google restart/refresh checks, two installed clients and public release acceptance remain outstanding.

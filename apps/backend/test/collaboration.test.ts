@@ -20,7 +20,7 @@ test('first send is durably idempotent under concurrent PostgreSQL requests', as
   const body = responses[0]!.json();
   assert.equal(body.session.mode, 'plan');
   assert.equal(body.session.status, 'inactive');
-  assert.equal(body.session.capabilities.execute, false);
+  assert.equal(body.session.capabilities.execute, true);
   assert.equal(body.session.hostDeviceId, undefined);
   assert.equal(body.event.type, 'message.instruction');
   assert.equal(body.event.payload.queueStatus, 'pending');
@@ -169,7 +169,7 @@ test('original-host and generation checks protect mode changes and inactive dele
   await assert.rejects(service.setMode(otherHost, id, {mode: 'build',expectedGeneration: 1}), hasCode('original_host_required'));
   const changed = await service.setMode(owner.actor, id, {mode: 'build',expectedGeneration: 1});
   assert.equal(changed.session.runtimeGeneration, 2);
-  assert.equal(changed.session.capabilities.execute, false);
+  assert.equal(changed.session.capabilities.execute, true);
   await assert.rejects(service.setMode(owner.actor, id, {mode: 'plan',expectedGeneration: 1}), hasCode('stale_generation'));
   await context.db.query("UPDATE sessions SET status='running' WHERE id=$1", [id]);
   await assert.rejects(service.setMode(owner.actor, id, {mode: 'plan',expectedGeneration: 2}), hasCode('session_active'));
