@@ -13,11 +13,11 @@ export function ChatGPTPlanUsage({api,limited=false,active=true}:{api:Pick<Infer
     try{const result=await api.manageChatGPTUsage();if(!result.ok)setError(result.error.message);}
     catch{setError('Open ChatGPT Settings → Usage in your browser to manage this app’s access and limits.');}
   };
-  return <div role={limited?'alert':undefined} style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+  return <div role={limited?'alert':undefined} className={limited?'plan-usage is-limited':'plan-usage'}>
     <span>{limited?'ChatGPT usage limit reached':active?'Using ChatGPT plan':'ChatGPT plan connected'}</span>
-    {limited&&<span className="muted">Review your plan or this app’s limit in ChatGPT settings.</span>}
+    {limited&&<span className="plan-usage-note">Review your plan or this app’s limit in ChatGPT settings.</span>}
     <Button size="sm" variant={limited?'primary':'ghost'} onClick={()=>void open()}>Manage usage</Button>
-    {error&&<span role="alert">{error}</span>}
+    {error&&<span role="alert" className="plan-usage-error">{error}</span>}
   </div>;
 }
 
@@ -40,12 +40,12 @@ export function ChatGPTPlanWelcome({api,connections}:{api:Pick<InferenceConnecti
     catch{setError('The app could not save this acknowledgement. Try again.');}
     finally{setBusy(false);}
   };
-  return <dialog ref={dialog} aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} style={{background:'var(--surface-1)',color:'var(--text)',border:'1px solid var(--border-strong)',borderRadius:14,padding:24,width:'min(460px, 90vw)'}} onCancel={event=>{event.preventDefault();void acknowledge();}} onKeyDown={event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();void acknowledge();}}}>
-    <div style={{display:'grid',gap:14}}>
+  return <dialog ref={dialog} aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} className="plan-welcome" onCancel={event=>{event.preventDefault();void acknowledge();}} onKeyDown={event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();void acknowledge();}}}>
+    <div className="plan-welcome-body">
       <h2 id={`${id}-title`}>You’re using your ChatGPT plan</h2>
       <p id={`${id}-description`}>Eligible AI requests in MultAI use your ChatGPT plan or available credits. You can review usage and manage limits in ChatGPT settings.</p>
       <ChatGPTPlanUsage api={api} active={false}/>
-      {error&&<p role="alert">{error}</p>}
+      {error&&<p role="alert" className="plan-usage-error">{error}</p>}
       <Button variant="primary" onClick={()=>void acknowledge()} disabled={busy}>{busy?'Saving…':'Got it'}</Button>
     </div>
   </dialog>;

@@ -11,7 +11,7 @@ import {
 import '../styles/connections.css';
 import {ChatGPTPlanUsage,ChatGPTPlanWelcome,isChatGPTUsageLimit} from './ChatGPTPlanUsage';
 
-// Redesigned AI connection setup. Same bridge contract and props as ProviderConnections.
+// AI connection setup: ChatGPT sign-in or API keys, model choice and removal.
 
 type Method = 'chatgpt' | 'api';
 type Notice = { text: string; tone: 'error' | 'warn' } | null;

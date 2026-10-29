@@ -690,11 +690,11 @@ ol.md-list { list-style: decimal; }
 .theme-preview { display: grid; grid-template-columns: 1fr 3fr; grid-template-rows: 1fr 1fr; gap: 4px; height: 64px; padding: 6px; border-radius: var(--r-md); background: #000; }
 .theme-preview span { border-radius: 3px; background: #16161a; }
 .theme-preview span:first-child { grid-row: span 2; background: #0c0c0e; }
-.theme-preview span:last-child { background: #7cf2c6; opacity: 0.8; width: 40%; height: 8px; align-self: end; justify-self: end; }
+.theme-preview span:last-child { background: #ffffff; opacity: 0.9; width: 40%; height: 8px; align-self: end; justify-self: end; }
 .theme-light .theme-preview { background: #fff; border: 1px solid #e4e4e8; }
 .theme-light .theme-preview span { background: #ececf0; }
 .theme-light .theme-preview span:first-child { background: #f5f5f7; }
-.theme-light .theme-preview span:last-child { background: #0b8a63; }
+.theme-light .theme-preview span:last-child { background: #000000; }
 .theme-system .theme-preview { background: linear-gradient(135deg, #000 50%, #fff 50%); }
 .theme-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: 500; padding: 0 2px; }
 

@@ -1,4 +1,4 @@
-/* AI connection setup (ProviderConnections). Uses the shared theme tokens. */
+/* AI connection setup (AiConnections) and ChatGPT plan usage. Uses the shared theme tokens. */
 
 .conn { display: grid; gap: 14px; text-align: left; }
 
@@ -62,9 +62,6 @@
 .conn-item.is-in-use { border-color: var(--accent-line); }
 .conn-item-head { display: flex; align-items: center; gap: 10px; }
 .conn-badge { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-md); background: var(--surface-4); color: var(--text-2); font-size: 10px; font-weight: 700; letter-spacing: 0.02em; flex: none; }
-.conn-badge.is-chatgpt, .conn-badge.is-openai { background: rgba(16, 163, 127, 0.14); color: #34c79b; }
-.conn-badge.is-anthropic { background: rgba(217, 119, 87, 0.15); color: #e29274; }
-.conn-badge.is-kimi { background: var(--info-soft); color: var(--info); }
 .conn-item-main { display: grid; flex: 1; min-width: 0; }
 .conn-item-name { font-weight: 600; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conn-item-sub { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -95,3 +92,14 @@
 .connect-panel { margin: 4px 0 6px; }
 .welcome-card.is-wide { width: min(520px, 100%); }
 .welcome-secondary { justify-self: center; }
+
+/* ChatGPT plan usage (ChatGPTPlanUsage.tsx) */
+.plan-usage { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--text-2); }
+.plan-usage.is-limited { padding: 10px 12px; border-radius: var(--r-md); border: 1px solid var(--warn-line); color: var(--warn); }
+.plan-usage-note { color: var(--text-3); font-size: var(--fs-xs); flex: 1 1 200px; }
+.plan-usage-error { color: var(--danger); font-size: var(--fs-xs); }
+.plan-welcome { width: min(460px, 90vw); padding: 24px; border-radius: var(--r-xl); border: 1px solid var(--border-strong); background: var(--bg); color: var(--text); }
+.plan-welcome::backdrop { background: var(--overlay); }
+.plan-welcome-body { display: grid; gap: 14px; }
+.plan-welcome-body h2 { font-size: var(--fs-lg); font-weight: 600; }
+.plan-welcome-body p { color: var(--text-2); font-size: var(--fs-sm); }
