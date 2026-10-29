@@ -2,7 +2,7 @@
   "name": "@multai/runtime",
   "version": "0.0.0-dev.1",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "description": "Host-local approval policy and durable execution journal",
   "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js"}},

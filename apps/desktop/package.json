@@ -1,0 +1,43 @@
+{
+  "name": "@multai/desktop",
+  "version": "0.0.0-dev.1",
+  "private": true,
+  "description": "MultAI desktop shell and renderer",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:demo": "node scripts/dev.mjs --demo",
+    "dev:web": "vite --mode demo",
+    "build": "vite build && node scripts/build-electron.mjs",
+    "build:demo": "vite build --mode demo && node scripts/build-electron.mjs --demo",
+    "start": "electron .",
+    "package": "node scripts/package.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@multai/runtime": "0.0.0-dev.1",
+    "jose": "6.2.13",
+    "lucide-react": "1.60.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "ws": "8.22.0",
+    "zod": "4.6.7",
+    "zustand": "5.0.16"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.2",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "44.9.3",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

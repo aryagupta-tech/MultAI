@@ -90,12 +90,12 @@ test('live transport denies browser origins, missing bearer and invalid replay c
   await assert.rejects(connect(address, `/v1/sessions/${id}/live?after=999`, owner.token), /409/);
 });
 
-test('health separates database readiness from unconfigured identity and disabled inference', async t => {
+test('health separates database readiness, unconfigured identity and host-local inference', async t => {
   const ctx = await createTestContext();
   t.after(() => ctx.close());
   const ready = await ctx.app.inject('/health/ready');
   assert.equal(ready.statusCode, 200);
-  assert.deepEqual(ready.json(), {database: 'ready', identity: 'not_configured', inference: 'disabled'});
+  assert.deepEqual(ready.json(), {database: 'ready', identity: 'not_configured', inference: 'host_local'});
   assert.equal(ready.headers['cache-control'], 'no-store');
   const response = await ctx.app.inject({method: 'POST', url: '/v1/auth/google/start', payload: {codeChallenge: 'secret-invalid-body'}});
   assert.equal(response.statusCode, 400);

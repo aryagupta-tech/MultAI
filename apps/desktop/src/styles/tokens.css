@@ -1,0 +1,134 @@
+/* Design tokens. Every color in the app resolves to one of these. */
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #000000;
+  --surface-1: #08080a;
+  --surface-2: #0f0f12;
+  --surface-3: #16161a;
+  --surface-4: #1e1e23;
+  --overlay: rgba(0, 0, 0, 0.62);
+  --border: #1c1c21;
+  --border-strong: #2a2a31;
+  --text: #ededf0;
+  --text-2: #a3a3ad;
+  --text-3: #6c6c76;
+  --text-inverse: #050506;
+
+  --accent: #7cf2c6;
+  --accent-hover: #9af7d4;
+  --accent-ink: #03140d;
+  --accent-soft: rgba(124, 242, 198, 0.1);
+  --accent-line: rgba(124, 242, 198, 0.32);
+
+  --discuss: #b8a6ff;
+  --discuss-soft: rgba(184, 166, 255, 0.1);
+  --discuss-line: rgba(184, 166, 255, 0.3);
+
+  --warn: #f6bd5c;
+  --warn-soft: rgba(246, 189, 92, 0.1);
+  --warn-line: rgba(246, 189, 92, 0.35);
+  --danger: #ff6f6f;
+  --danger-soft: rgba(255, 111, 111, 0.1);
+  --danger-line: rgba(255, 111, 111, 0.35);
+  --info: #7fb0ff;
+  --info-soft: rgba(127, 176, 255, 0.1);
+  --ok: #6ee39a;
+
+  --diff-add: rgba(110, 227, 154, 0.1);
+  --diff-add-strong: rgba(110, 227, 154, 0.22);
+  --diff-del: rgba(255, 111, 111, 0.1);
+  --diff-del-strong: rgba(255, 111, 111, 0.22);
+
+  --shadow-pop: 0 0 0 1px var(--border-strong), 0 18px 48px -12px rgba(0, 0, 0, 0.8), 0 4px 12px rgba(0, 0, 0, 0.5);
+  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface-1: #f7f7f8;
+  --surface-2: #f1f1f3;
+  --surface-3: #e9e9ec;
+  --surface-4: #e0e0e5;
+  --overlay: rgba(20, 20, 26, 0.32);
+  --border: #e4e4e8;
+  --border-strong: #d2d2d8;
+  --text: #121216;
+  --text-2: #565661;
+  --text-3: #85858f;
+  --text-inverse: #ffffff;
+
+  --accent: #0b8a63;
+  --accent-hover: #097553;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(11, 138, 99, 0.09);
+  --accent-line: rgba(11, 138, 99, 0.3);
+
+  --discuss: #6747d9;
+  --discuss-soft: rgba(103, 71, 217, 0.08);
+  --discuss-line: rgba(103, 71, 217, 0.28);
+
+  --warn: #a8650a;
+  --warn-soft: rgba(214, 140, 20, 0.1);
+  --warn-line: rgba(214, 140, 20, 0.4);
+  --danger: #c9302c;
+  --danger-soft: rgba(201, 48, 44, 0.08);
+  --danger-line: rgba(201, 48, 44, 0.32);
+  --info: #2563c9;
+  --info-soft: rgba(37, 99, 201, 0.08);
+  --ok: #18884a;
+
+  --diff-add: rgba(24, 136, 74, 0.08);
+  --diff-add-strong: rgba(24, 136, 74, 0.18);
+  --diff-del: rgba(201, 48, 44, 0.07);
+  --diff-del-strong: rgba(201, 48, 44, 0.16);
+
+  --shadow-pop: 0 0 0 1px var(--border-strong), 0 18px 40px -12px rgba(16, 16, 24, 0.22), 0 4px 10px rgba(16, 16, 24, 0.06);
+  --focus: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, Ubuntu, Cantarell, 'Noto Sans', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --fs-base: 14px;
+  --fs-xs: calc(var(--fs-base) - 3px);
+  --fs-sm: calc(var(--fs-base) - 1.5px);
+  --fs-md: var(--fs-base);
+  --fs-lg: calc(var(--fs-base) + 2px);
+  --fs-xl: calc(var(--fs-base) + 8px);
+  --fs-2xl: calc(var(--fs-base) + 16px);
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+
+  --row: 30px;
+  --gap: 12px;
+  --pad: 16px;
+
+  --titlebar: 48px;
+  --sidebar-w: 268px;
+  --inspector-w: 400px;
+  --content-w: 780px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 160ms;
+}
+
+:root[data-density='compact'] {
+  --row: 26px;
+  --gap: 8px;
+  --pad: 12px;
+}
+
+:root[data-text='small'] { --fs-base: 13px; }
+:root[data-text='large'] { --fs-base: 16px; }
+
+:root[data-motion='reduce'] { --dur: 0ms; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion='full']) { --dur: 0ms; }
+}

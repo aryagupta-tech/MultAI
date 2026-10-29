@@ -9,6 +9,7 @@ import { CollaborationService, registerCollaborationRoutes } from './collaborati
 import type { Config } from './config.js';
 import type { Database } from './db.js';
 import { ApiError } from './errors.js';
+import {ExecutionService,registerExecutionRoutes} from './execution.js';
 
 export interface AppOptions {
   db: Database;
@@ -54,20 +55,24 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
     return reply.code(500).send({error: {code: 'internal_error', message: 'The service could not complete this request.'}, requestId: request.id});
   });
   const identityConfigured = Boolean(config.googleClientId && config.googleClientSecret);
-  app.get('/health/live', async () => ({service: 'multai-backend', version: '0.0.0-dev.1', developmentBuild: true, inferenceEnabled: false}));
+  app.get('/health/live', async () => ({service: 'multai-backend', version: '0.0.0-dev.1', developmentBuild: true, inferenceEnabled: true,executionLocation:'original_host'}));
   app.get('/health/ready', async (_request, reply) => {
     try {
       const result = await db.query("SELECT to_regclass('schema_migrations') IS NOT NULL AS migrated");
       if (!result.rows[0]?.migrated) throw new Error('Not migrated');
-      return {database: 'ready', identity: identityConfigured ? 'configured_unverified' : 'not_configured', inference: 'disabled'};
+      return {database: 'ready', identity: identityConfigured ? 'configured_unverified' : 'not_configured', inference: 'host_local'};
     } catch {
-      return reply.code(503).send({database: 'unavailable', identity: identityConfigured ? 'configured_unverified' : 'not_configured', inference: 'disabled'});
+      return reply.code(503).send({database: 'unavailable', identity: identityConfigured ? 'configured_unverified' : 'not_configured', inference: 'host_local'});
     }
   });
   const auth = new AuthService(db, config, oidc);
   const service = new CollaborationService(db);
+  const execution = new ExecutionService(db);
+  await execution.startup();
+  app.addHook('onClose',async()=>execution.close());
   await registerAuthRoutes(app, auth);
   await registerCollaborationRoutes(app, {service, authenticate: request => auth.authenticateRequest(request)});
+  await registerExecutionRoutes(app,execution,request=>auth.authenticateRequest(request));
 
   const connectionCounts = new Map<string, number>();
   app.get('/v1/sessions/:sessionId/live', {

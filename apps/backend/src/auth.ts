@@ -158,14 +158,15 @@ export class AuthService {
       let deviceId: string;
       let deviceSecret: string | undefined;
       if (input.deviceId && input.deviceSecret) {
-        const existing = await client.query<{ id: string; reauth_secret_hash: string | null; revoked_at: Date | null }>(
-          'SELECT id,reauth_secret_hash,revoked_at FROM devices WHERE id=$1 AND user_id=$2 FOR UPDATE',
-          [input.deviceId, userId],
+        const existing = await client.query<{ id: string; user_id: string; reauth_secret_hash: string | null; revoked_at: Date | null }>(
+          'SELECT id,user_id,reauth_secret_hash,revoked_at FROM devices WHERE id=$1 FOR UPDATE',
+          [input.deviceId],
         );
         const device = existing.rows[0];
         if (!device || device.revoked_at || !device.reauth_secret_hash || !equal(device.reauth_secret_hash, hash(input.deviceSecret))) {
           throw new ApiError(401, 'invalid_device_proof', 'This device proof is invalid or revoked.');
         }
+        if (device.user_id !== userId) throw new ApiError(401, 'device_account_mismatch', 'The verified account needs its own device enrollment.');
         deviceId = device.id;
       } else {
         deviceId = randomUUID();

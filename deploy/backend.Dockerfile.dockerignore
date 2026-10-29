@@ -1,0 +1,17 @@
+**
+!package.json
+!package-lock.json
+!tsconfig.base.json
+!apps/
+!apps/backend/
+!apps/backend/package.json
+!apps/backend/tsconfig.json
+!apps/backend/tsconfig.build.json
+!apps/backend/src/
+!apps/backend/src/*.ts
+!apps/backend/migrations/
+!apps/backend/migrations/*.sql
+!deploy/
+!deploy/backend.Dockerfile
+!deploy/entrypoint.mjs
+!deploy/stamp-build.mjs
