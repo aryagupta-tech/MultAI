@@ -67,7 +67,7 @@ export function Inspector({ d }: { d: SessionDetail }) {
         })}
       </div>
       <div className="inspector-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-        {d.source === 'live' && tab !== 'people' ? <LiveUnavailable tab={tab} /> : <>
+        {d.source === 'live' && (tab === 'changes' || tab === 'approvals' || tab === 'files') ? <LiveUnavailable tab={tab} /> : <>
         {tab === 'changes' && <ChangesPanel d={d} />}
         {tab === 'activity' && <ActivityPanel d={d} />}
         {tab === 'approvals' && <ApprovalsPanel d={d} />}
@@ -85,11 +85,11 @@ export function Inspector({ d }: { d: SessionDetail }) {
 }
 
 const LIVE_COPY: Record<Exclude<InspectorTab, 'people'>, { icon: typeof FileDiff; title: string; body: string }> = {
-  changes: { icon: FileDiff, title: 'No changes to review yet', body: 'The agent runtime isn’t enabled on this service, so nothing edits files yet. Changes will appear here once it is.' },
+  changes: { icon: FileDiff, title: 'File changes are in the conversation', body: 'Every file the agent writes is shown in full on its approval and listed in Activity.' },
   activity: { icon: Activity, title: 'No agent activity yet', body: 'Tool calls show up here once the service can run an agent. For now, plan and discuss together.' },
-  approvals: { icon: ShieldCheck, title: 'Nothing to approve', body: 'Commands need the agent runtime, which isn’t enabled on this service. When it is, every command waits here for the host.' },
+  approvals: { icon: ShieldCheck, title: 'Approvals happen in the conversation', body: 'When the agent needs permission, the host sees an Approve card in the chat. Everyone sees what was asked and decided.' },
   decisions: { icon: Bookmark, title: 'Decisions aren’t available yet', body: 'This service doesn’t store shared decisions yet. Agree in Team discussion for now.' },
-  files: { icon: FolderTree, title: 'File browser isn’t available yet', body: 'Browsing the worktree needs the local runtime’s safe file tools.' },
+  files: { icon: FolderTree, title: 'Files stay on the host', body: 'The agent works in a private folder on the host’s computer. Ask it to list or read files and the results appear in the chat.' },
 };
 
 function LiveUnavailable({ tab }: { tab: InspectorTab }) {

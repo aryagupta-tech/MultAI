@@ -1,3 +1,4 @@
+import {ApprovalBroker} from './approvals';
 import {describe,expect,it,vi} from 'vitest';
 import {randomUUID} from 'node:crypto';
 import {routeInference} from './router';
@@ -15,7 +16,7 @@ function fixture(){
     remove:vi.fn(async(_id:string)=>{calls.push('remove');return null;}),
   };
   const coordinator={invalidate:vi.fn(async()=>{calls.push('invalidate');})};
-  return {manager,coordinator,calls,route:(op:unknown,args:unknown)=>routeInference(manager as unknown as ConnectionManager,coordinator as unknown as HostCoordinator,op,args)};
+  return {manager,coordinator,calls,route:(op:unknown,args:unknown)=>routeInference(manager as unknown as ConnectionManager,coordinator as unknown as HostCoordinator,new ApprovalBroker(()=>undefined),op,args)};
 }
 
 describe('inference IPC validation boundaries',()=>{

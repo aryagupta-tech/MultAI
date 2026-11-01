@@ -9,6 +9,7 @@ import type { Decision, Participant, SessionDetail, TimelineItem, ToolCall } fro
 import { Avatar, Button, cx } from '../ui/primitives';
 import { Markdown } from '../ui/Markdown';
 import { LogoMark } from '../ui/Logo';
+import * as execution from '../live/execution';
 
 type Item<T extends TimelineItem['type']> = Extract<TimelineItem, { type: T }>;
 
@@ -70,6 +71,7 @@ export function Conversation({ d }: { d: SessionDetail }) {
               && new Date(item.at).getTime() - new Date(prev.at).getTime() < 5 * 60_000;
             return <TimelineRow key={item.id} item={item} d={d} people={people} decisions={decisions} grouped={grouped} />;
           })}
+          <HostApprovals sessionId={d.id} />
         </div>
       </div>
       {!atBottom && (
@@ -162,6 +164,42 @@ function BriefCard({ item }: { item: Item<'brief'> }) {
         <div className="msg-text"><Markdown text={item.text} streaming={false} /></div>
       </div>
     </article>
+  );
+}
+
+/** Actions waiting for this host. Only the original host's app has these; teammates see the shared event. */
+function HostApprovals({ sessionId }: { sessionId: string }) {
+  const all = useApp((s) => s.hostApprovals);
+  const pending = useMemo(() => all.filter((a) => a.sessionId === sessionId), [all, sessionId]);
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!pending.length) return null;
+  const decide = async (id: string, approved: boolean) => { setBusy(id); try { await execution.decideApproval(id, approved); } finally { setBusy(null); } };
+  return (
+    <>
+      {pending.map((a) => (
+        <article key={a.id} className="msg msg-agent msg-approval" aria-label="Approval needed">
+          <div className="msg-gutter"><span className="agent-avatar"><ShieldCheck size={15} strokeWidth={1.8} aria-hidden /></span></div>
+          <div className="msg-body">
+            <header className="msg-head">
+              <span className="msg-author">{a.kind === 'file_write' ? (a.newFile ? 'Create a file?' : 'Change a file?') : 'Run a command?'}</span>
+              <span className="msg-model">{a.reason}</span>
+            </header>
+            {a.kind === 'file_write' ? (
+              <details className="approval-preview" open={a.preview.length < 1500}>
+                <summary><code>{a.path}</code></summary>
+                <pre><code>{a.preview}</code></pre>
+              </details>
+            ) : (
+              <pre className="approval-command"><code>{a.command}</code></pre>
+            )}
+            <div className="approval-actions">
+              <Button size="sm" variant="primary" icon={Check} disabled={busy === a.id} onClick={() => void decide(a.id, true)}>Approve</Button>
+              <Button size="sm" variant="secondary" disabled={busy === a.id} onClick={() => void decide(a.id, false)}>Reject</Button>
+            </div>
+          </div>
+        </article>
+      ))}
+    </>
   );
 }
 

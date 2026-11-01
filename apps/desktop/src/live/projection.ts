@@ -93,8 +93,8 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
     case 'run.stopped':
       return {...base,type:'system',tone:'warn',text:`${actor} stopped the agent run.`};
     case 'action.requested': {
-      const action = p.kind === 'shell' ? 'A shell command' : p.kind === 'file_write' ? 'A file change' : 'An external action';
-      return {...base,type:'system',tone:'warn',text:`${action} is waiting for exact approval on the original host.`};
+      const action = p.kind === 'shell' ? (typeof p.command === 'string' ? `Running “${p.command.slice(0,200)}”` : 'A shell command') : p.kind === 'file_write' ? (typeof p.path === 'string' ? `A change to ${p.path.slice(0,200)}` : 'A file change') : 'An external action';
+      return {...base,type:'system',tone:'warn',text:`${action} is waiting for the host’s approval.`};
     }
     case 'action.approved': return {...base,type:'system',tone:'info',text:`${actor} approved the reviewed action on the original host.`};
     case 'action.rejected': return {...base,type:'system',tone:'warn',text:`${actor} rejected the requested action.`};

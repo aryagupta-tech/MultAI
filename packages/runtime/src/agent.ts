@@ -60,13 +60,20 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     if (Buffer.byteLength(JSON.stringify(state.items)) + Buffer.byteLength(system) > maxInputBytes) throw new ProviderError('input_limit', 'The conversation exceeded its context byte limit. Summarize explicitly before continuing.');
     await options.beforeRequest?.(options.signal);
     options.signal.throwIfAborted();
+    // Text from separate model turns is separate thoughts; keep a paragraph break between them.
+    const separator = totalText && !/\s$/u.test(totalText) ? '\n\n' : '';
+    let separated = !separator;
+    const iterationEvent = async (event: AgentEvent) => {
+      if (event.type === 'text.delta' && !separated) {separated = true; await onEvent({type: 'text.delta', text: separator});}
+      await onEvent(event);
+    };
     const completion = await complete({
       credentials: options.credentials, model: options.model, system, state, tools, maxOutputTokens,
-      signal: options.signal, onEvent,
+      signal: options.signal, onEvent: iterationEvent,
       ...(options.limits ? {limits: options.limits} : {}), ...(options.fetch ? {fetch: options.fetch} : {}),
     });
     options.signal.throwIfAborted();
-    totalText += completion.text;
+    if (completion.text) totalText += (separated ? separator : '') + completion.text;
     if (Buffer.byteLength(totalText) > 1_048_576) throw new ProviderError('output_limit', 'The agent output exceeded its total byte limit.');
     if (completion.usage) {
       inputKnown &&= completion.usage.inputTokens !== undefined;

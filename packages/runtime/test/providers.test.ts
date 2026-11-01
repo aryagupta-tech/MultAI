@@ -162,6 +162,18 @@ test('compatible Chat Completions accumulates split tool arguments and keeps rea
   assert.equal(history[3]?.tool_call_id, 'call_1');
 });
 
+test('text from separate agent turns keeps a paragraph break, in the stream and the result', async () => {
+  let calls = 0;
+  const fakeFetch: typeof fetch = async () => ++calls === 1 ? stream([
+    {choices: [{delta: {content: 'Checking the workspace.', tool_calls: [{index: 0, id: 'call_1', function: {name: 'read_file', arguments: '{"path":"a.ts"}'}}]}, finish_reason: null}]},
+    {choices: [{delta: {}, finish_reason: 'tool_calls'}]}, '[DONE]',
+  ]) : stream([{choices: [{delta: {content: 'Found it.'}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'stop'}]}, '[DONE]']);
+  let streamed = '';
+  const result = await runAgent({credentials: {kind: 'compatible', apiKey: 'synthetic-meta', baseUrl: 'https://api.meta.ai/v1'}, model: 'muse-spark-1.3', messages: [{role: 'user', content: 'Read'}], tools: [...tools], executeTool: async () => ({text: 'hello'}), signal: signal(), fetch: fakeFetch, onEvent: event => {if (event.type === 'text.delta') streamed += event.text;}});
+  assert.equal(result.text, 'Checking the workspace.\n\nFound it.');
+  assert.equal(streamed, result.text);
+});
+
 test('live model discovery preserves ChatGPT account ordering and filters hidden models', async () => {
   const models = await discoverModels({kind: 'chatgpt', apiKey: 'synthetic-token'}, {signal: signal(), fetch: async () => new Response(JSON.stringify({models: [
     {slug: 'z', display_name: 'Zed', visibility: 'list'}, {slug: 'hidden', visibility: 'hide'}, {slug: 'a', display_name: 'Aye', visibility: 'list'},

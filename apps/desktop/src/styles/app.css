@@ -989,3 +989,12 @@ ol.md-list { list-style: decimal; }
 :root:not([data-theme='light']) .cmd-meta { background: #0a0a0a; }
 :root:not([data-theme='light']) .kbd { background: #111; }
 :root:not([data-theme='light']) .avatar { filter: saturate(0.35); }
+
+/* Host approvals and the access picker. */
+.msg-approval .msg-head .msg-model { color: var(--text-2); }
+.approval-preview summary { cursor: pointer; color: var(--text-2); margin: 4px 0 6px; }
+.approval-preview pre, .approval-command { max-height: 320px; overflow: auto; margin: 0; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); font-size: var(--fs-sm); }
+.approval-actions { display: flex; gap: 8px; margin-top: 10px; }
+.access-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-2); font-size: var(--fs-sm); }
+.access-btn:hover { color: var(--text); background: var(--surface-3); }
+.access-btn.is-full { color: var(--warn); border-color: var(--warn); }

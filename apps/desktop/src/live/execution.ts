@@ -1,5 +1,5 @@
 import {getBridge} from '../bridge/client';
-import type {InferenceSelection} from '../bridge/execution';
+import type {AccessLevel,InferenceSelection} from '../bridge/execution';
 import type {ConnectionSummary} from '../bridge/inference';
 import type {ServiceError} from '../bridge/contract';
 import {useApp} from '../model/store';
@@ -58,6 +58,7 @@ export async function loadConnections():Promise<ConnectionSummary[]> {
         else if(change.status==='running'){runIssues.delete(change.sessionId);changed();}
         if(useApp.getState().details[change.sessionId])void open(change.sessionId);
       }),
+      inference.onApprovals(pending=>useApp.setState({hostApprovals:pending})),
       bridge.service.onAuthChange(state=>{
         if(state.status!=='signed-in'){resetExecutionState();return;}
         if(ownerId!==state.me.id){resetExecutionState();void loadConnections();}
@@ -74,6 +75,8 @@ export async function loadConnections():Promise<ConnectionSummary[]> {
     if(epoch!==accountEpoch||user!==currentUser())return [];
     if(list.ok)connections=list.value;
     if(selection.ok)selected=selection.value;
+    await restoreAccess(user);
+    const approvals=await inference.approvals();if(approvals.ok)useApp.setState({hostApprovals:approvals.value});
     if(selected&&list.ok&&!connections.some(connection=>connection.id===selected!.connectionId&&connection.status==='ready'))selected=null;
     changed();
     return [...connections];
@@ -165,6 +168,61 @@ export async function writeBrief(sessionId:string,quiet=false):Promise<void> {
     await open(sessionId);
   }catch{useApp.getState().toast('The catch-up brief could not be written. Try again.','error');}
   finally{briefing.delete(sessionId);}
+}
+
+const accessKey=(userId:string)=>`multai.access.v1:${userId}`;
+function storedAccess(userId:string):Record<string,AccessLevel>{
+  try{const raw=JSON.parse(localStorage.getItem(accessKey(userId))??'{}') as Record<string,unknown>;return Object.fromEntries(Object.entries(raw).filter((entry):entry is [string,AccessLevel]=>entry[1]==='auto'||entry[1]==='full'));}catch{return {};}
+}
+/** The main process forgets levels on restart; this host's saved choices are re-applied after sign-in. */
+async function restoreAccess(userId:string):Promise<void>{
+  const levels=storedAccess(userId),inference=api();
+  useApp.setState({access:levels});
+  if(inference)for(const [sessionId,level] of Object.entries(levels))await inference.setAccess(sessionId,level);
+}
+
+/** Host-only. Full access asks for explicit confirmation first. */
+export async function setAccessLevel(sessionId:string,level:AccessLevel):Promise<void>{
+  const inference=api(),user=currentUser();if(!inference||!user)return;
+  if(level==='full'&&!await confirmFullAccess())return;
+  const result=await inference.setAccess(sessionId,level);
+  if(!result.ok){useApp.getState().toast(describe(result.error),'error');return;}
+  const levels={...storedAccess(user)};if(result.value==='ask')delete levels[sessionId];else levels[sessionId]=result.value;
+  try{localStorage.setItem(accessKey(user),JSON.stringify(levels));}catch{/* per-device convenience only */}
+  useApp.setState({access:levels});
+}
+
+/** Someone new can now send instructions, so Full access drops back to asking. */
+export async function narrowAccessForNewcomer(sessionId:string):Promise<void>{
+  if(useApp.getState().access[sessionId]!=='full')return;
+  await setAccessLevel(sessionId,'ask');
+  useApp.getState().toast('Full access is off because someone joined. Turn it on again if you trust everyone here.','info');
+}
+
+export async function decideApproval(approvalId:string,approved:boolean):Promise<void>{
+  const result=await api()?.decide(approvalId,approved);
+  if(result&&!result.ok)useApp.getState().toast(describe(result.error),'error');
+}
+
+async function confirmFullAccess():Promise<boolean>{
+  if(typeof document==='undefined')return false;
+  const previous=document.activeElement;
+  const dialog=document.createElement('dialog'),form=document.createElement('form');
+  const title=document.createElement('h2');title.textContent='Give the agent full access?';title.id=`full-access-${crypto.randomUUID()}`;
+  const explanation=document.createElement('p');explanation.id=`${title.id}-description`;
+  explanation.textContent='Every file change and command in this session will run without asking you, including ones teammates ask for. Commands run as your user on this computer and can reach the internet and files outside the workspace. It turns off when someone new joins.';
+  dialog.setAttribute('aria-labelledby',title.id);dialog.setAttribute('aria-describedby',explanation.id);
+  const controls=document.createElement('div'),cancel=document.createElement('button'),allow=document.createElement('button');
+  cancel.type='button';cancel.textContent='Cancel';cancel.className='btn btn-secondary';allow.type='submit';allow.textContent='Allow full access';allow.className='btn btn-danger';
+  Object.assign(dialog.style,{background:'var(--surface-1)',color:'var(--text)',border:'1px solid var(--border-strong)',borderRadius:'14px',padding:'24px',width:'min(480px, 90vw)'});
+  Object.assign(form.style,{display:'grid',gap:'14px'});Object.assign(controls.style,{display:'flex',justifyContent:'flex-end',gap:'12px'});
+  controls.append(cancel,allow);form.append(title,explanation,controls);dialog.append(form);document.body.append(dialog);
+  return new Promise(resolve=>{
+    const finish=(value:boolean)=>{dialog.close();dialog.remove();if(previous instanceof HTMLElement)previous.focus();resolve(value);};
+    cancel.onclick=()=>finish(false);dialog.oncancel=event=>{event.preventDefault();finish(false);};
+    form.onsubmit=event=>{event.preventDefault();finish(true);};
+    dialog.showModal();cancel.focus();
+  });
 }
 
 export async function stopRun(sessionId:string):Promise<void> {

@@ -212,7 +212,10 @@ export class ExecutionService extends CollaborationService {
       const waiting=await client.query("SELECT 1 FROM execution_actions WHERE run_id=$1 AND status IN ('pending','approved','consumed','uncertain')",[runId]);
       if(waiting.rowCount) throw new ApiError(409,'action_pending','Resolve the previous action before requesting another.');
       await client.query("INSERT INTO execution_actions(id,run_id,fingerprint,descriptor,status,expires_at) VALUES($1,$2,$3,$4,'pending',$5)",[descriptor.requestId,run.id,fingerprint,JSON.stringify(descriptor),new Date(descriptor.expiresAt)]);
-      await this.append(client,session,actor,'action.requested',{actionId:descriptor.requestId,kind:descriptor.operation.kind,fingerprint});
+      // Everyone in the session sees what is waiting; secrets are redacted like other shared text.
+      const op=descriptor.operation as {kind:string;relativePath?:string;commandText?:string|null};
+      const target=op.kind==='file_write'&&op.relativePath?{path:op.relativePath.slice(0,1024)}:op.kind==='shell'&&op.commandText?{command:redact(op.commandText).slice(0,1000)}:{};
+      await this.append(client,session,actor,'action.requested',{actionId:descriptor.requestId,kind:descriptor.operation.kind,fingerprint,...target});
       return {actionId:descriptor.requestId,fingerprint,status:'pending'};
     });
   }

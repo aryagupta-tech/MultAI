@@ -9,6 +9,7 @@ import { isServiceOp, route } from './service/router';
 import {ConnectionManager} from './inference/connections';
 import {HostCoordinator} from './inference/coordinator';
 import {routeInference} from './inference/router';
+import {ApprovalBroker} from './inference/approvals';
 import {INFERENCE_IPC} from '../src/bridge/execution';
 
 // Injected by scripts/build-electron.mjs.
@@ -51,10 +52,11 @@ const send = (channel: string, payload: unknown) => {
 };
 let connections:ConnectionManager|undefined;
 let coordinator:HostCoordinator|undefined;
+let approvals:ApprovalBroker|undefined;
 const account = new Account(origin, (state) => {
   if(state.status!=='signed-in'){
     connections?.invalidate();
-    void coordinator?.invalidate().catch(()=>undefined);
+    approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);
   }
   send(IPC.authChanged,state);
 }, {callbackScheme: PROTOCOL});
@@ -126,7 +128,7 @@ function registerIpc(): void {
     if (!isServiceOp(op)) throw new Error('Unknown service operation.');
     if(op==='signOut'){
       connections?.invalidate();
-      await coordinator?.invalidate();
+      approvals?.rejectAll();await coordinator?.invalidate();
     }
     const result = await route(account, live, op, args);
     if(op==='createSession'&&coordinator){
@@ -144,8 +146,8 @@ function registerIpc(): void {
   });
   ipcMain.handle(INFERENCE_IPC.invoke,async(event,op:unknown,args:unknown)=>{
     assertTrustedSender(event);
-    if(!connections||!coordinator)return {ok:false,error:{code:'not_ready',message:'Desktop inference is starting.'}};
-    return routeInference(connections,coordinator,op,args);
+    if(!connections||!coordinator||!approvals)return {ok:false,error:{code:'not_ready',message:'Desktop inference is starting.'}};
+    return routeInference(connections,coordinator,approvals,op,args);
   });
 }
 
@@ -193,7 +195,7 @@ function createWindow(): void {
     mainWindow = null;
     live.closeAll();
     connections?.invalidate();
-    void coordinator?.invalidate().catch(()=>undefined);
+    approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);
   });
   void mainWindow.loadURL(rendererUrl);
 }
@@ -222,15 +224,11 @@ if (!app.requestSingleInstanceLock()) {
   app.enableSandbox();
   app.whenReady().then(() => {
     connections=new ConnectionManager({account,onChange:(items)=>send(INFERENCE_IPC.connections,items)});
-    coordinator=new HostCoordinator({account,connections,dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),confirm:async(descriptor,hash,signal,preview)=>{
-      if(!mainWindow||mainWindow.isDestroyed())return false;
-      const operation=descriptor.operation;
-      const detail=operation.kind==='shell'?`Executable: ${operation.executable}\nArguments: ${JSON.stringify(operation.argv)}\nCommand text: ${operation.commandText??'(none)'}`:operation.kind==='file_write'?`File: ${operation.relativePath}\nExpected content: ${operation.expectedContentHash??'(new file)'}\nNew content SHA-256: ${operation.contentHash}\n\nComplete proposed file content:\n${preview??'(preview unavailable; reject this request)'}`:JSON.stringify(operation,null,2);
-      if(operation.kind==='file_write'&&preview===undefined)return false;
-      const result=await dialog.showMessageBox(mainWindow,{type:'question',title:'Approve this exact action once?',message:operation.kind==='shell'?'Run this command as your OS user?':'Apply this exact workspace change?',detail:`${detail}\n\nWorking directory: ${descriptor.cwd}\nConnection: ${descriptor.connectionId}\nSession: ${descriptor.sessionId}\nExpires: ${new Date(descriptor.expiresAt).toISOString()}\nSHA-256: ${hash}\n\nThis approval is not an operating-system sandbox.`,buttons:['Reject','Approve once'],defaultId:0,cancelId:0,noLink:true,signal});
-      return result.response===1&&!signal.aborted;
-    }});
-    powerMonitor.on('suspend',()=>{connections?.invalidate();live.closeAll();void coordinator?.invalidate().catch(()=>undefined);void account.cancelSignIn().catch(()=>undefined);});
+    approvals=new ApprovalBroker(pending=>send(INFERENCE_IPC.approvals,pending));
+    // Approvals appear as cards in the session; the host's access level decides what runs unasked.
+    coordinator=new HostCoordinator({account,connections,dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
+      confirm:(descriptor,_hash,signal,preview)=>!mainWindow||mainWindow.isDestroyed()?Promise.resolve(false):approvals!.request(descriptor,signal,preview)});
+    powerMonitor.on('suspend',()=>{connections?.invalidate();live.closeAll();approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);void account.cancelSignIn().catch(()=>undefined);});
     hardenSession();
     registerIpc();
     createWindow();

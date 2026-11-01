@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { AuthState, BuildInfo, LiveStatus, ServiceHealth } from '../bridge/contract';
 import type { WireJoinRequest } from '../bridge/wire';
+import type { AccessLevel, HostApproval } from '../bridge/execution';
 import * as live from '../live/controller';
 import { getBridge } from '../bridge/client';
 import type {
@@ -68,6 +69,10 @@ interface State {
   health: ServiceHealth | null;
   liveStatus: Record<string, LiveStatus>;
   joinRequests: Record<string, WireJoinRequest[]>;
+  /** Actions waiting for this host, from the main process. */
+  hostApprovals: HostApproval[];
+  /** Per-session access level this host chose; absent means ask. */
+  access: Record<string, AccessLevel>;
   /** Invitation token from a multai:// (multai-dev:// in development) join link, awaiting the person's confirmation. */
   joinPrompt: string | null;
   sending: Record<string, boolean>;
@@ -215,6 +220,8 @@ export const useApp = create<State & Actions>()((set, get) => {
     health: null,
     liveStatus: {},
     joinRequests: {},
+    hostApprovals: [],
+    access: {},
     joinPrompt: null,
     sending: {},
     loading: {},

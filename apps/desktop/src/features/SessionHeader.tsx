@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import {
   Archive, ChevronDown, Cpu, Hammer, Laptop, ListChecks, MoreHorizontal, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain, Radio, Sparkles,
+  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain, Radio, Sparkles, Hand, ShieldCheck, ShieldAlert,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import type { SessionDetail } from '../model/types';
@@ -131,6 +131,8 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
         />
         )}
 
+        {d.source === 'live' && d.capabilities.configure && <AccessPicker sessionId={d.id} />}
+
         {d.source==='live'&&connection?.provider==='chatgpt'&&inference&&(
           <ChatGPTPlanUsage api={inference} limited={Boolean(runIssue&&isChatGPTUsageLimit(runIssue.code))}/>
         )}
@@ -211,5 +213,35 @@ function LiveIndicator({ status }: { status: string | undefined }) {
       <Radio size={11} aria-hidden />
       {label}
     </span>
+  );
+}
+
+const ACCESS = {
+  ask: { icon: Hand, label: 'Ask for approval', short: 'Ask', description: 'Every file change and command waits for you' },
+  auto: { icon: ShieldCheck, label: 'Approve for me', short: 'Auto', description: 'Only ask for actions that look unsafe' },
+  full: { icon: ShieldAlert, label: 'Full access', short: 'Full access', description: 'Everything runs without asking, including teammates’ requests' },
+} as const;
+
+/** Host-only: how much the shared agent may do on this computer without asking. */
+function AccessPicker({ sessionId }: { sessionId: string }) {
+  const level = useApp((s) => s.access[sessionId] ?? 'ask');
+  const current = ACCESS[level];
+  return (
+    <Menu
+      label="Agent access"
+      align="end"
+      width={300}
+      items={(['ask', 'auto', 'full'] as const).map((id) => ({
+        id, label: ACCESS[id].label, icon: ACCESS[id].icon, description: ACCESS[id].description, checked: id === level, danger: id === 'full',
+        onSelect: () => void execution.setAccessLevel(sessionId, id),
+      }))}
+      trigger={(t) => (
+        <button type="button" className={cx('access-btn', level === 'full' && 'is-full')} {...t} data-tip="Agent access">
+          <current.icon size={14} strokeWidth={1.8} aria-hidden />
+          <span>{current.short}</span>
+          <ChevronDown size={13} aria-hidden />
+        </button>
+      )}
+    />
   );
 }
