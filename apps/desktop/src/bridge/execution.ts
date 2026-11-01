@@ -14,6 +14,8 @@ export interface SkillInfo {name:string;description:string;body:string;source:'p
 export interface ContextUsage {used:number;limit:number;compactedAt:string|null}
 export interface Checkpoint {commit:string;at:string;instruction:string}
 export interface UndoPreview {checkpoint:Checkpoint;files:{path:string;status:'added'|'modified'|'deleted'}[]}
+/** An MCP server the host added. Env values never come back from the main process, only their names. */
+export interface McpServerInfo {id:string;name:string;command:string;args:string[];env:Record<string,string>;enabled:boolean}
 export type Editor='vscode'|'cursor'|'zed'|'finder';
 /** An action whose outcome is unknown; it blocks the chat's next actions until the host says what happened. */
 export interface LockedAction {id:string;kind:'file_write'|'shell'|'external';label:string;hint:'happened'|'did_not_happen'|'unknown';at:string}
@@ -54,6 +56,11 @@ export interface HostExecutionApi {
   undoPreview(sessionId:string):Promise<Result<UndoPreview|null>>;
   undo(sessionId:string):Promise<Result<{checkpoint:Checkpoint;files:string[]}>>;
   editors():Promise<Result<Editor[]>>;
+  mcpServers():Promise<Result<McpServerInfo[]>>;
+  /** An empty env value keeps the saved one for that name. */
+  mcpSave(server:McpServerInfo):Promise<Result<McpServerInfo>>;
+  mcpDelete(id:string):Promise<Result<null>>;
+  mcpTest(id:string):Promise<Result<string[]>>;
   lockedActions(sessionId:string):Promise<Result<LockedAction[]>>;
   resolveLocked(sessionId:string,actionId:string,outcome:'happened'|'did_not_happen'):Promise<Result<null>>;
   openIn(sessionId:string,editor:Editor):Promise<Result<null>>;

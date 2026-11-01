@@ -9,6 +9,7 @@ import type {ApprovalBroker} from './approvals';
 import {ProjectError,type ProjectRegistry} from './projects';
 import type {TerminalHost} from './terminal';
 import {SkillError} from './skills';
+import {McpError,type McpServer} from './mcp';
 import type {AddConnectionInput} from '../../src/bridge/inference';
 
 const schemas={
@@ -23,11 +24,13 @@ const schemas={
   listFiles:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),skills:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),
   saveSkill:z.tuple([z.object({name:z.string().min(1).max(48),description:z.string().max(300),body:z.string().min(1).max(32_000)}).strict()]),deleteSkill:z.tuple([z.string().min(1).max(48)]),
   compact:z.tuple([z.unknown()]),contextUsage:z.tuple([z.uuid()]),undoPreview:z.tuple([z.uuid()]),undo:z.tuple([z.uuid()]),
-  editors:z.tuple([]),lockedActions:z.tuple([z.uuid()]),resolveLocked:z.tuple([z.uuid(),z.uuid(),z.enum(['happened','did_not_happen'])]),openIn:z.tuple([z.uuid(),z.enum(['vscode','cursor','zed','finder'])]),
+  editors:z.tuple([]),mcpServers:z.tuple([]),mcpDelete:z.tuple([z.uuid()]),mcpTest:z.tuple([z.uuid()]),
+  mcpSave:z.tuple([z.object({id:z.string().max(64),name:z.string().max(64),command:z.string().max(1024),args:z.array(z.string().max(4096)).max(64),env:z.record(z.string().max(128),z.string().max(8192)),enabled:z.boolean()}).strict()]),lockedActions:z.tuple([z.uuid()]),resolveLocked:z.tuple([z.uuid(),z.uuid(),z.enum(['happened','did_not_happen'])]),openIn:z.tuple([z.uuid(),z.enum(['vscode','cursor','zed','finder'])]),
 };
 export type InferenceOp=keyof typeof schemas;
 export type Editor='vscode'|'cursor'|'zed'|'finder';
-export async function routeInference(manager:ConnectionManager,coordinator:HostCoordinator,approvals:ApprovalBroker,op:unknown,args:unknown,host:{projects:ProjectRegistry;terminal:TerminalHost;editors:()=>Promise<Editor[]>;openIn:(folder:string,editor:Editor)=>Promise<void>}):Promise<Result<unknown>>{
+export async function routeInference(manager:ConnectionManager,coordinator:HostCoordinator,approvals:ApprovalBroker,op:unknown,args:unknown,host:{projects:ProjectRegistry;terminal:TerminalHost;editors:()=>Promise<Editor[]>;openIn:(folder:string,editor:Editor)=>Promise<void>;
+  mcp:{list:()=>Promise<unknown>;save:(server:McpServer)=>Promise<unknown>;remove:(id:string)=>Promise<null>;test:(id:string)=>Promise<string[]>}}):Promise<Result<unknown>>{
   if(typeof op!=='string'||!Object.hasOwn(schemas,op))return {ok:false,error:{code:'invalid_request',message:'Unknown inference operation.'}};
   const key=op as InferenceOp;
   const parsed=schemas[key].safeParse(args);
@@ -73,13 +76,17 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'undoPreview':value=await coordinator.undoPreview(values[0] as string);break;
       case 'undo':value=await coordinator.undo(values[0] as string);break;
       case 'editors':value=await host.editors();break;
+      case 'mcpServers':value=await host.mcp.list();break;
+      case 'mcpSave':value=await host.mcp.save(values[0] as McpServer);break;
+      case 'mcpDelete':value=await host.mcp.remove(values[0] as string);break;
+      case 'mcpTest':value=await host.mcp.test(values[0] as string);break;
       case 'lockedActions':value=await coordinator.lockedActions(values[0] as string);break;
       case 'resolveLocked':value=await coordinator.resolveLocked(values[0] as string,values[1] as string,values[2] as 'happened'|'did_not_happen');break;
       case 'openIn':await host.openIn(await coordinator.terminalRoot(values[0] as string),values[1] as Editor);value=null;break;
     }
     return {ok:true,value};
   }catch(error){
-    if(error instanceof ConnectionError||error instanceof ProviderError||error instanceof RuntimeError||error instanceof ProjectError||error instanceof SkillError)return {ok:false,error:{code:error.code,message:error.message}};
+    if(error instanceof ConnectionError||error instanceof ProviderError||error instanceof RuntimeError||error instanceof ProjectError||error instanceof SkillError||error instanceof McpError)return {ok:false,error:{code:error.code,message:error.message}};
     return {ok:false,error:toError(error)};
   }
 }

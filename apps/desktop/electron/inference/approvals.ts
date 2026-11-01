@@ -30,7 +30,7 @@ export class ApprovalBroker {
       id: descriptor.requestId, sessionId: descriptor.sessionId, reason, expiresAt: new Date(descriptor.expiresAt).toISOString(),
       ...(operation.kind === 'file_write' ? {kind: 'file_write', path: operation.relativePath, newFile: operation.expectedContentHash === null, preview: (preview ?? '').slice(0, PREVIEW_LIMIT)}
         : operation.kind === 'shell' ? {kind: 'shell', command: operation.commandText ?? operation.argv.join(' ')}
-        : {kind: 'external', command: JSON.stringify(operation).slice(0, 2000)}),
+        : {kind: 'external', command: `${operation.tool} ${JSON.stringify(operation.arguments)}`.slice(0, 2000)}),
     };
     return new Promise<boolean>(resolve => {
       const timer = setTimeout(() => settle(false), Math.max(0, descriptor.expiresAt - Date.now()));

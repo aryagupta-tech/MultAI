@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, Bell, Bookmark, Check, CircleCheck, CircleX, Copy, Cpu, FileDiff, Folder, FolderOpen, FolderPlus, Info, Keyboard, Link2,
-  ListChecks, Hammer, LogIn, MessageSquare, Monitor, Moon, PanelLeft, PanelRight, Palette, Search, Settings, Shield, SquarePen, Sun, Trash2, Users, X, Stethoscope,
+  ListChecks, Hammer, LogIn, Plug, MessageSquare, Monitor, Moon, PanelLeft, PanelRight, Palette, Search, Settings, Shield, SquarePen, Sun, Trash2, Users, X, Stethoscope,
 } from 'lucide-react';
 import { useApp, type Preferences } from '../model/store';
 import { fuzzyFilter } from '../model/fuzzy';
@@ -10,6 +10,7 @@ import { getBridge } from '../bridge/client';
 import * as live from '../live/controller';
 import * as execution from '../live/execution';
 import {AiConnections} from './AiConnections';
+import {McpSettings} from './McpSettings';
 import { Button, Dialog, Kbd, Segmented, Switch, cx, isMac, shortcutText } from '../ui/primitives';
 
 /* ---------------------------------------------------------------- Command palette */
@@ -149,6 +150,7 @@ const SECTIONS = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'models', label: 'Models & accounts', icon: Cpu },
+  { id: 'tools', label: 'Tools (MCP)', icon: Plug },
   { id: 'shortcuts', label: 'Keyboard', icon: Keyboard },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'privacy', label: 'Privacy & data', icon: Shield },
@@ -234,6 +236,7 @@ export function SettingsDialog() {
               </SettingsGroup>
             </>
           )}
+          {section === 'tools' && <SettingsGroup title="MCP servers"><McpSettings /></SettingsGroup>}
           {section === 'shortcuts' && <ShortcutList />}
           {section === 'notifications' && (
             <SettingsGroup title="Notifications">

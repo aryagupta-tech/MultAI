@@ -10,6 +10,7 @@ import {publicProviderFetch} from './network';
 import {ProjectError,applyWork,checkpointChanges,createWork,diffWork,discardWork,gitStatus,keepWork,listWorkFiles,openPullRequest,pushWork,readWork,restoreCheckpoint,revertFile,snapshotWork,toolPath,type ProjectRegistry,type WorkInfo,type WorkSummary} from './projects';
 import {anchorsFor,applyCompaction,attachMentions,autoCompactCut,contextBytes,expandCommand,mentionsCodebase,type Compaction,type ContextMessage} from './context';
 import {CodeIndex,type CodeChunk} from './codeindex';
+import {McpError,type McpHost} from './mcp';
 import {PROJECT_SKILL_FOLDERS,deletePersonalSkill,loadSkills,savePersonalSkill,type Skill} from './skills';
 
 const selectionSchema=z.object({connectionId:z.uuid(),model:z.string().min(1).max(200),modelName:z.string().max(200).optional()}).strict();
@@ -22,6 +23,9 @@ interface Running {
   skills:Skill[];
   /** The session's code index, refreshed on use; null when it couldn't be opened. */
   codebase:((query:string,limit?:number)=>Promise<CodeChunk[]>)|null;
+  /** MCP tools offered this run, by the name the model sees. */
+  mcp:Map<string,{serverId:string;server:string;tool:string}>;
+  cwd:string;
 }
 interface Slot {lifecycle:number;accountGeneration:number;finished:Promise<void>;settle():void}
 interface StartSlot extends Slot {sessionId:string;controller:AbortController}
@@ -31,6 +35,7 @@ interface CoordinatorOptions {
   confirm:(descriptor:ActionDescriptor,hash:string,signal:AbortSignal,preview?:string)=>Promise<boolean>;
   emit:(change:HostRunChange)=>void;
   projects:ProjectRegistry;
+  mcp:McpHost;
 }
 function slot(lifecycle:number,accountGeneration:number):Slot {
   let settle=()=>{};
@@ -376,6 +381,23 @@ export class HostCoordinator {
     const usage=this.usage.get(sessionId);
     return usage?{...usage,compactedAt:compaction?.at??null}:compaction?{used:0,limit:MAX_INPUT_BYTES,compactedAt:compaction.at}:null;
   }
+  /**
+   * Runs an approved MCP tool call under the journal, like a shell command: reserved first, completed with
+   * its result. A tool-level error is a result; a timeout or crash leaves the outcome uncertain for review.
+   */
+  private async runMcpTool(run:Running,descriptor:ActionDescriptor,target:{serverId:string;tool:string},args:JsonValue):Promise<JsonValue>{
+    const reservation=run.journal.reserve(descriptor,run.authority);
+    if(reservation.kind==='completed')return reservation.result;
+    let outcome:{text:string;isError:boolean};
+    try{outcome=await this.options.mcp.call(target.serverId,target.tool,args,run.cwd);}
+    catch(error){
+      if(!(error instanceof McpError&&error.code==='MCP_ERROR'))throw error;
+      outcome={text:error.message,isError:true};
+    }
+    const result={output:redactText(outcome.text,run.secrets),...(outcome.isError?{isError:true}:{})};
+    run.journal.complete(reservation.ticket,result,run.authority);
+    return result;
+  }
   /** For @codebase: the code most related to the instruction, attached like a mentioned file. */
   private async codebaseBlock(run:Running,credentials:Awaited<ReturnType<ConnectionManager['resolve']>>,model:string,text:string,signal:AbortSignal):Promise<string>{
     if(!mentionsCodebase(text)||!run.codebase)return '';
@@ -442,7 +464,7 @@ export class HostCoordinator {
       if(claimed.run.sessionId!==body.sessionId||claimed.run.connectionId!==body.connectionId||claimed.run.model!==body.model||claimed.selectedInstruction.id!==body.instructionId||claimed.run.generation<=snapshot.session.runtimeGeneration)throw new RuntimeError('STALE_EXECUTION','The service claim does not match this exact instruction, model and connection.');
       const controller=operation.controller;
       const authority:Authority={actorId:identity.userId,actorDeviceId:identity.deviceId,role:'owner',sessionId:body.sessionId,originalOwnerId:identity.userId,originalDeviceId:identity.deviceId,accountGeneration:identity.generation,sessionGeneration:claimed.run.generation,runtimeGeneration:claimed.run.generation,connectionId:body.connectionId,payerId:identity.userId,mode:claimed.run.mode,connected:true};
-      const running:Running={...claim!,generation:claimed.run.generation,connectionId:body.connectionId,controller,journal,authority,secrets:[credentials.apiKey],finished:Promise.resolve(),skills,codebase:null};
+      const running:Running={...claim!,generation:claimed.run.generation,connectionId:body.connectionId,controller,journal,authority,secrets:[credentials.apiKey],finished:Promise.resolve(),skills,codebase:null,mcp:new Map(),cwd:workspace.root};
       running.codebase=this.codebaseFor(directory,body.sessionId,workspace.root,running.secrets);
       this.freshStart(operation,identity);this.active=running;this.starting=null;activated=true;
       this.emit({sessionId:body.sessionId,status:'running'});
@@ -491,12 +513,20 @@ export class HostCoordinator {
               await this.publish(running,'activity.completed',{summary:'Context compacted: older messages were summarized so the agent has room to work.'});
             }
           }
+          // MCP tools only in Build mode: every call is an action the host approves.
+          const mcpDefinitions:ToolDefinition[]=[];
+          if(claimed.run.mode==='build')for(const tool of (await this.options.mcp.tools(workspace.root).catch(()=>[])).slice(0,40)){
+            let name=`mcp_${tool.server}_${tool.name}`.replace(/[^A-Za-z0-9_-]/gu,'_').slice(0,64);
+            for(let n=2;running.mcp.has(name);n++)name=`${name.slice(0,60)}_${n}`;
+            running.mcp.set(name,{serverId:tool.serverId,server:tool.server,tool:tool.name});
+            mcpDefinitions.push({name,description:`[${tool.server} MCP server] ${tool.description}`.slice(0,1500),parameters:tool.inputSchema as JsonValue});
+          }
           this.usage.set(body.sessionId,{used:contextBytes(system,[...history,instruction]),limit:MAX_INPUT_BYTES});
           const result=await runAgent({credentials,model:body.model,messages:[...history,instruction],system,
             steer,
             // The provider runs these searches; the host allowed them for this chat. Muse has no such tool.
             ...(body.webSearch&&['openai','chatgpt','anthropic'].includes(credentials.kind)?{hostedSearch:true}:{}),
-            tools:[...readDefinitions,...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:effectDefinitions)],signal:controller.signal,beforeRequest:()=>this.assertLive(running),fetch:publicProviderFetch,
+            tools:[...readDefinitions,...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:[...effectDefinitions,...mcpDefinitions])],signal:controller.signal,beforeRequest:()=>this.assertLive(running),fetch:publicProviderFetch,
             limits:(({runMs:_runMs,...limits})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...limits}))(effortLimits(body.effort??'medium',credentials)),
             ...(nativeEffort(body.effort??'medium',credentials)?{reasoningEffort:nativeEffort(body.effort??'medium',credentials)!}:{}),
             executeTool:async(call,signal)=>{await flush();try{return await this.executeTool(running,workspace,call,signal);}catch(error){
@@ -614,6 +644,11 @@ export class HostCoordinator {
       if(redactText(command,run.secrets)!==command)throw new RuntimeError('PRIVATE_COMMAND','Provider credentials cannot be embedded in command descriptors.');
       const shell=hostShell(command);
       operation={kind:'shell',executable:await realpath(shell.executable),argv:shell.argv,commandText:command};
+    }else if(run.mcp.has(call.name)){
+      const target=run.mcp.get(call.name)!;
+      const args=call.arguments&&typeof call.arguments==='object'&&!Array.isArray(call.arguments)?call.arguments:{};
+      if(redactText(JSON.stringify(args),run.secrets)!==JSON.stringify(args))throw new RuntimeError('PRIVATE_COMMAND','Provider credentials cannot be sent to an MCP tool.');
+      operation={kind:'external',tool:`${target.server}.${target.tool}`.slice(0,512),transport:'stdio',arguments:args as JsonValue};
     }else throw new RuntimeError('UNSUPPORTED_TOOL','The model requested an unavailable tool.');
     const descriptor:ActionDescriptor={version:1,requestId:randomUUID(),sessionId:run.sessionId,originalOwnerId:run.snapshot.userId,originalDeviceId:run.snapshot.deviceId,accountGeneration:run.snapshot.generation,sessionGeneration:run.generation,runtimeGeneration:run.generation,connectionId:run.connectionId,payerId:run.snapshot.userId,resourceIdentity:`workspace:${run.sessionId}`,cwd:workspace.root,expiresAt:Date.now()+300000,operation};
     const prepared=run.journal.prepare(descriptor,run.authority);
@@ -626,11 +661,12 @@ export class HostCoordinator {
     await this.assertLive(run);
     await this.request(run,`/actions/${descriptor.requestId}`,{fingerprint:fingerprint(descriptor),decision:'consume'});
     signal.throwIfAborted();
-    const result=write?await workspace.write(write.path,write.content,write.expectedHash,{descriptor,authority:run.authority,journal:run.journal,signal}):await executeApprovedShell({descriptor,authority:run.authority,journal:run.journal,signal,timeoutMs:120000,maxOutputBytes:16000,secrets:run.secrets,toolPath:agentToolPath()});
+    const external=operation.kind==='external'?run.mcp.get(call.name)!:null;
+    const result=write?await workspace.write(write.path,write.content,write.expectedHash,{descriptor,authority:run.authority,journal:run.journal,signal}):external?await this.runMcpTool(run,descriptor,external,operation.kind==='external'?operation.arguments:{}):await executeApprovedShell({descriptor,authority:run.authority,journal:run.journal,signal,timeoutMs:120000,maxOutputBytes:16000,secrets:run.secrets,toolPath:agentToolPath()});
     const safe=redacted(result,run.secrets);
     z.object({actionId:z.literal(descriptor.requestId),status:z.literal('completed')}).parse(await this.request(run,`/actions/${descriptor.requestId}`,{fingerprint:prepared.fingerprint,decision:'complete'}));
     const activityResult=safe&&typeof safe==='object'&&!Array.isArray(safe)&&typeof safe.output==='string'?{...safe,output:textChunks(safe.output,13000)[0]??'',outputTruncated:Boolean(safe.truncated)||textChunks(safe.output,13000).length>1}:safe;
-    await this.publish(run,'activity.completed',{tool:call.name,summary:write?`Updated ${write.path}`:'Host-approved command completed',result:activityResult});
+    await this.publish(run,'activity.completed',{tool:call.name,summary:write?`Updated ${write.path}`:external?`Used ${external.server}.${external.tool}`:'Host-approved command completed',result:activityResult});
     // Completion plus this effect event were durable before the acknowledgement.
     run.journal.acknowledge(`effect:${descriptor.requestId}`);
     return safe;

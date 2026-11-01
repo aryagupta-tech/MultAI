@@ -15,6 +15,8 @@ import {ApprovalBroker} from './inference/approvals';
 import {INFERENCE_IPC} from '../src/bridge/execution';
 import {ProjectError,ProjectRegistry,git} from './inference/projects';
 import {TerminalHost} from './inference/terminal';
+import {McpError,McpHost,newServerId,validServer,type McpServer} from './inference/mcp';
+import {SecureConnectionStore} from './inference/secure-store';
 
 // Injected by scripts/build-electron.mjs.
 declare const __BUILD_INFO__: Omit<BuildInfo, 'platform' | 'serviceOrigin'>;
@@ -58,6 +60,26 @@ let connections:ConnectionManager|undefined;
 let coordinator:HostCoordinator|undefined;
 let approvals:ApprovalBroker|undefined;
 const projects=new ProjectRegistry(()=>path.join(app.getPath('userData'),'projects.json'));
+// MCP servers the host adds in Settings, encrypted like AI connections (they often hold tokens).
+let mcpStore:SecureConnectionStore<McpServer[]>|undefined;
+const mcpServers=()=>(mcpStore??=new SecureConnectionStore<McpServer[]>('mcp-servers:v1',()=>[])).load();
+const mcp=new McpHost(mcpServers);
+const mcpSettings={
+  /** Env values never reach the renderer; it sees their names only. */
+  list:async()=>(await mcpServers()).map(server=>({...server,env:Object.fromEntries(Object.keys(server.env).map(key=>[key,'']))})),
+  save:async(input:McpServer)=>{
+    const servers=await mcpServers();const previous=servers.find(server=>server.id===input.id);
+    // An empty value keeps what was saved for that name.
+    const env=Object.fromEntries(Object.entries(input.env).map(([key,value])=>[key,value||previous?.env[key]||'']));
+    const server=validServer({...input,id:previous?.id??newServerId(),env});
+    if(servers.some(item=>item.name===server.name&&item.id!==server.id))throw new McpError('INVALID_SERVER','Another server already has that name.');
+    await mcpStore!.save([...servers.filter(item=>item.id!==server.id),server].slice(0,20));
+    mcp.stopAll();
+    return {...server,env:Object.fromEntries(Object.keys(server.env).map(key=>[key,'']))};
+  },
+  remove:async(id:string)=>{await mcpStore!.save((await mcpServers()).filter(server=>server.id!==id));mcp.stopAll();return null;},
+  test:async(id:string)=>{const server=(await mcpServers()).find(item=>item.id===id);if(!server)throw new McpError('MCP_UNAVAILABLE','That server isn’t saved.');return mcp.test(server,os.homedir());},
+};
 const terminal=new TerminalHost(event=>send(INFERENCE_IPC.terminal,event));
 
 // Editors the host can open a session's worktree in. Only well-known apps; the folder never reaches the renderer.
@@ -159,7 +181,7 @@ function registerIpc(): void {
     assertTrustedSender(event);
     if (!isServiceOp(op)) throw new Error('Unknown service operation.');
     if(op==='signOut'){
-      connections?.invalidate();terminal.stopAll();
+      connections?.invalidate();terminal.stopAll();mcp.stopAll();
       approvals?.rejectAll();await coordinator?.invalidate();
     }
     const result = await route(account, live, op, args);
@@ -179,7 +201,7 @@ function registerIpc(): void {
   ipcMain.handle(INFERENCE_IPC.invoke,async(event,op:unknown,args:unknown)=>{
     assertTrustedSender(event);
     if(!connections||!coordinator||!approvals)return {ok:false,error:{code:'not_ready',message:'Desktop inference is starting.'}};
-    return routeInference(connections,coordinator,approvals,op,args,{projects,terminal,editors,openIn});
+    return routeInference(connections,coordinator,approvals,op,args,{projects,terminal,editors,openIn,mcp:mcpSettings});
   });
 }
 
@@ -258,7 +280,7 @@ if (!app.requestSingleInstanceLock()) {
     connections=new ConnectionManager({account,onChange:(items)=>send(INFERENCE_IPC.connections,items)});
     approvals=new ApprovalBroker(pending=>send(INFERENCE_IPC.approvals,pending));
     // Approvals appear as cards in the session; the host's access level decides what runs unasked.
-    coordinator=new HostCoordinator({account,connections,projects,dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
+    coordinator=new HostCoordinator({account,connections,projects,mcp,dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
       confirm:(descriptor,_hash,signal,preview)=>!mainWindow||mainWindow.isDestroyed()?Promise.resolve(false):approvals!.request(descriptor,signal,preview)});
     powerMonitor.on('suspend',()=>{connections?.invalidate();live.closeAll();approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);void account.cancelSignIn().catch(()=>undefined);});
     // Forget worktrees whose folders are gone (deleted by hand, or left by a crash).
@@ -277,7 +299,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', event => {
     if(quitting)return;
     event.preventDefault();quitting=true;
-    live.closeAll();connections?.invalidate();terminal.stopAll();
+    live.closeAll();connections?.invalidate();terminal.stopAll();mcp.stopAll();
     void (coordinator?.invalidate()??Promise.resolve()).catch(()=>undefined).finally(()=>app.quit());
   });
   app.on('window-all-closed', () => {

@@ -7,6 +7,7 @@ import type {ActionDescriptor, RunAgentOptions, ProviderCredentials, ToolCall} f
 import {ExecutionJournal} from '@multai/runtime';
 import {HostCoordinator} from './coordinator';
 import {ProjectRegistry} from './projects';
+import {McpHost} from './mcp';
 import {publicProviderFetch} from './network';
 import type {HostRunChange} from '../../src/bridge/execution';
 
@@ -66,7 +67,7 @@ async function fixture() {
   const connections = {resolve: vi.fn(async () => credentials), models: vi.fn(async () => [{id: input.model, name: 'Synthetic model'}])};
   const changes: HostRunChange[] = [];
   const confirm = vi.fn(async (_descriptor: ActionDescriptor, _hash: string, _signal: AbortSignal, _preview?: string) => true);
-  const host = new HostCoordinator({account, connections, projects: new ProjectRegistry(() => join(directory, 'projects.json')), dataDirectory: () => directory, confirm, emit: change => {changes.push(change);}});
+  const host = new HostCoordinator({account, connections, projects: new ProjectRegistry(() => join(directory, 'projects.json')), mcp: new McpHost(async () => []), dataDirectory: () => directory, confirm, emit: change => {changes.push(change);}});
   cleanup.push(async () => {await host.invalidate(); await rm(directory, {recursive: true, force: true});});
   const terminal = async () => {await vi.waitFor(() => expect(changes.at(-1)?.status).toMatch(/^(?:completed|failed|stopped)$/u));};
   const scopeDirectory = async () => join(directory, 'runtime-v1', (await readdir(join(directory, 'runtime-v1')))[0]!);
