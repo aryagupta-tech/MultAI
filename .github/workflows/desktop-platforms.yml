@@ -1,7 +1,7 @@
 name: Desktop on Windows and Linux
 on:
   push:
-    branches: [frontend]
+    branches: [main]
     paths: ['apps/desktop/**', 'packages/runtime/**', 'package-lock.json', '.github/workflows/desktop-platforms.yml']
   workflow_dispatch:
 permissions:
