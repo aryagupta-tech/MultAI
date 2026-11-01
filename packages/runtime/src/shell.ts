@@ -84,6 +84,8 @@ export async function executeApprovedShell(options: ApprovedShellOptions): Promi
   let stopping = false;
   let stoppedBy: 'abort' | 'timeout' | null = null;
   const startedAt = Date.now();
+  // Only cmd.exe parses its own command line; any other program gets standard argv quoting.
+  const verbatim = windows && /(^|\\)cmd\.exe$/i.test(operation.executable);
   const child = spawn(operation.executable, [...operation.argv], {
     cwd: descriptor.cwd,
     env: shellEnvironment(),
@@ -92,7 +94,7 @@ export async function executeApprovedShell(options: ApprovedShellOptions): Promi
     // passed exactly as reviewed (cmd.exe does its own parsing) and no console window opens.
     detached: !windows,
     windowsHide: true,
-    windowsVerbatimArguments: windows,
+    windowsVerbatimArguments: verbatim,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const killTree = (signal: NodeJS.Signals) => {

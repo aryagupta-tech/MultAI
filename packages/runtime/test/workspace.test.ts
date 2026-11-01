@@ -91,7 +91,7 @@ test('root and parent substitution are revalidated and a UTF-8 BOM participates 
   assert.equal(await realpath(x.root), x.root);
 });
 
-test('atomic text replacement preserves ordinary executable bits and strips special bits', async t => {
+test('atomic text replacement preserves ordinary executable bits and strips special bits', {skip: process.platform === 'win32' && 'Windows has no POSIX mode bits.'}, async t => {
   const x = await fixture(); t.after(() => x.close());
   const original = '#!/bin/sh\nprintf old\n';
   const replacement = '#!/bin/sh\nprintf new\n';
