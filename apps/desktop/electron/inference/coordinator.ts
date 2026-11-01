@@ -288,7 +288,8 @@ export class HostCoordinator {
     if(!models.some(item=>item.id===model))throw new RuntimeError('MODEL_UNAVAILABLE','The selected model is unavailable.');
     const context=briefContextSchema.parse(await this.options.account.request('GET',`/v1/sessions/${body.sessionId}/brief-context`));
     if(!context.events.length)throw new RuntimeError('NOTHING_TO_BRIEF','Nothing has happened in this session yet.');
-    const transcript=context.events.map(event=>`#${event.sequence} ${BRIEF_LABELS[event.type]??event.type} — ${event.author}${event.text?`: ${event.text}`:''}`).join('\n');
+    // Agent events are recorded under the host's account; credit them to the agent so the brief doesn't misattribute work.
+    const transcript=context.events.map(event=>`#${event.sequence} ${BRIEF_LABELS[event.type]??event.type} — ${/^(agent|activity)\./u.test(event.type)?`Agent (run on ${event.author}'s computer)`:event.author}${event.text?`: ${event.text}`:''}`).join('\n');
     const controller=new AbortController();const deadline=setTimeout(()=>controller.abort(new Error('Brief deadline exceeded')),90_000);deadline.unref();
     try{
       const result=await runAgent({credentials,model,signal:controller.signal,fetch:publicProviderFetch,
