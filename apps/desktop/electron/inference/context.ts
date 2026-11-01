@@ -8,6 +8,8 @@ export interface Compaction {summary:string;anchors:string[];at:string}
 export interface CommandSkill {name:string;description:string;body:string}
 
 export const MAX_MENTIONS=8;
+/** `@codebase` asks for the project's most relevant code instead of one file. */
+export const mentionsCodebase=(text:string)=>/(?<=^|[\s([{"'`])@codebase(?=$|[\s)\]},;:!?"'`])/u.test(text);
 const MENTION_FILE_CHARS=32_000;
 const MENTION_TOTAL_CHARS=120_000;
 const ANCHOR_CHARS=400;
@@ -17,7 +19,7 @@ export function mentionedPaths(text:string):string[]{
   const found=new Set<string>();
   for(const match of text.matchAll(/(?<=^|[\s([{"'`])@((?:[\w.-]+\/)*[\w.-]+\/?)(?=$|[\s)\]},;:!?"'`])/gu)){
     const value=match[1]!.replace(/[.,]+$/u,'');
-    if(value&&!value.split('/').some(part=>part==='..'))found.add(value);
+    if(value&&value!=='codebase'&&!value.split('/').some(part=>part==='..'))found.add(value);
     if(found.size>=MAX_MENTIONS)break;
   }
   return [...found];

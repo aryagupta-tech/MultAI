@@ -107,7 +107,7 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
     case 'decision.saved': return typeof p.id === 'string' && typeof p.text === 'string' ? {...base,type:'decision',decisionId:p.id} : null;
     case 'activity.completed':
     case 'activity.failed': {
-      const kinds:Record<string,ToolCall['tool']>={read:'read',read_file:'read',search:'search',search_text:'search',list:'list',list_files:'list',list_directory:'list',write:'write',write_file:'write',shell:'shell',run_shell:'shell',diff:'diff'};
+      const kinds:Record<string,ToolCall['tool']>={read:'read',read_file:'read',search:'search',search_text:'search',list:'list',list_files:'list',list_directory:'list',codebase_search:'search',write:'write',write_file:'write',shell:'shell',run_shell:'shell',diff:'diff'};
       const tool = typeof p.tool === 'string' ? kinds[p.tool] : undefined;
       const detail = typeof p.detail === 'string' ? p.detail.slice(0,32_000) : typeof p.output === 'string' ? p.output.slice(0,32_000) : undefined;
       const summary = typeof p.summary === 'string' ? p.summary.slice(0,1000) : `${tool ?? 'Tool'} ${e.type === 'activity.failed' ? 'failed' : 'completed'}`;

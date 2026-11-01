@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   ArrowUp, BookMarked, BookOpen, CircleHelp, FileCode2, FileText, FlaskConical, Folder, GitCompare, GitPullRequestArrow, Hammer,
-  ImagePlus, ListChecks, Lock, MessageCircle, Minimize2, Plus, SearchCheck, Sparkles, SquareTerminal, Undo2, WandSparkles, X, type LucideIcon,
+  ImagePlus, ListChecks, ScanSearch, Lock, MessageCircle, Minimize2, Plus, SearchCheck, Sparkles, SquareTerminal, Undo2, WandSparkles, X, type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { DRAFT_LIMIT, applyFormat, draftMeter, resolveEnter, type FormatKind } from '../model/composer';
@@ -109,9 +109,13 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
     const query = trigger.query;
     if (trigger.kind === 'mention') {
       if (!hostControls) return [];
-      return ranked(withFolders(files?.files ?? []), query, (path) => path, MAX_FILE_ITEMS).map(({ item, indices }) => ({
-        id: `file:${item}`, label: item, icon: item.endsWith('/') ? Folder : FileText, group: 'Files', indices,
-      }));
+      const codebase = fuzzyScore(query, 'codebase');
+      return [
+        ...(codebase && !query.includes('/') ? [{ id: 'file:codebase', label: 'codebase', detail: 'The code most related to your request', icon: ScanSearch, group: 'Search', indices: codebase.indices }] : []),
+        ...ranked(withFolders(files?.files ?? []), query, (path) => path, MAX_FILE_ITEMS).map(({ item, indices }) => ({
+          id: `file:${item}`, label: item, icon: item.endsWith('/') ? Folder : FileText, group: 'Files', indices,
+        })),
+      ];
     }
     const commands = COMMANDS.filter((command) => (hostControls || command.kind === 'agent') && (!command.session || d) && (!command.project || inProject));
     return [
