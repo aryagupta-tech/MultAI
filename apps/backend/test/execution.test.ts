@@ -509,3 +509,33 @@ test('a screenshot travels with its instruction to teammates and to the host run
     assert.equal(refused.statusCode, 400, bad.slice(0, 30));
   }
 });
+
+test('a running host claims directions sent during its run, once, and only with its lease', async t => {
+  const ctx = await createTestContext(); t.after(() => ctx.close());
+  const owner = await seedActor(ctx.db);
+  const collaborator = await seedActor(ctx.db);
+  const target = await session(ctx, owner);
+  await admit(ctx, owner, target, collaborator, 'collaborator');
+  const running = await run(ctx, owner, target);
+  const empty = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(owner), payload: {leaseToken: running.body.leaseToken}});
+  assert.equal(empty.statusCode, 200, empty.body);
+  assert.deepEqual(empty.json(), {instructions: []});
+  for (const [who, text] of [[owner, 'Use cents, not floats.'], [collaborator, 'Keep the API the same.']] as const) {
+    const posted = await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/messages`, headers: headers(who), payload: {requestId: randomUUID(), kind: 'instruction', text}});
+    assert.equal(posted.statusCode, 201, posted.body);
+  }
+  await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/messages`, headers: headers(owner), payload: {requestId: randomUUID(), kind: 'discussion', text: 'Team chat is not a direction.'}});
+  const denied = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(owner), payload: {leaseToken: secret()}});
+  assert.equal(denied.statusCode, 403);
+  const foreign = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(collaborator), payload: {leaseToken: running.body.leaseToken}});
+  assert.notEqual(foreign.statusCode, 200);
+  const claimed = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(owner), payload: {leaseToken: running.body.leaseToken}});
+  assert.equal(claimed.statusCode, 200, claimed.body);
+  assert.deepEqual(claimed.json().instructions.map((item: {text: string; authorId: string}) => [item.text, item.authorId]), [['Use cents, not floats.', owner.actor.userId], ['Keep the API the same.', collaborator.actor.userId]]);
+  const again = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(owner), payload: {leaseToken: running.body.leaseToken}});
+  assert.deepEqual(again.json(), {instructions: []});
+  const events = await ctx.app.inject({method: 'GET', url: `/v1/sessions/${target.id}/events?after=0&limit=100`, headers: headers(owner)});
+  const claimedEvents = events.json().events.filter((event: {type: string}) => event.type === 'instruction.claimed');
+  assert.equal(claimedEvents.length, 2);
+  assert.equal(claimedEvents[0].payload.runId, running.context.run.id);
+});

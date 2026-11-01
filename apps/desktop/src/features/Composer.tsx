@@ -244,8 +244,8 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
   const placeholder = !instruction
     ? 'Message your team. The agent won’t act on this…'
     : !d ? (hostControls ? 'Describe what you want to build or fix. @ for files, / for commands' : 'Describe what you want to build or fix…')
-      : running ? 'Add a direction. It’s queued for the next safe point…' : hostControls ? 'Tell the agent what to do next. @ for files, / for commands' : 'Tell the agent what to do next…';
-  const sendLabel = instruction ? (running ? 'Queue for agent' : 'Send to agent') : 'Send to team';
+      : running ? 'Steer the agent. It picks this up at its next step…' : hostControls ? 'Tell the agent what to do next. @ for files, / for commands' : 'Tell the agent what to do next…';
+  const sendLabel = instruction ? (running ? 'Steer the agent' : 'Send to agent') : 'Send to team';
 
   return (
     <div

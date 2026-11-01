@@ -297,3 +297,43 @@ test('buffered SSE frames honor cancellation and deadline before releasing the n
   await new Promise(resolve => setTimeout(resolve, 120));
   await assert.rejects(expires.next(), error => error instanceof ProviderError && error.code === 'provider_timeout');
 });
+
+test('directions sent while the agent works reach the next turn in each protocol, and a late one keeps the run going', async () => {
+  const toolTurn: Record<string, unknown[]> = {
+    chat: [{choices: [{delta: {tool_calls: [{index: 0, id: 'call_1', function: {name: 'read_file', arguments: '{"path":"a.ts"}'}}]}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'tool_calls'}]}, '[DONE]'],
+    responses: [{type: 'response.completed', response: {status: 'completed', output: [{type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{"path":"a.ts"}'}]}}],
+    anthropic: [{type: 'message_start', message: {usage: {input_tokens: 1}}}, {type: 'content_block_start', index: 0, content_block: {type: 'tool_use', id: 'call_1', name: 'read_file', input: {}}}, {type: 'content_block_delta', index: 0, delta: {type: 'input_json_delta', partial_json: '{"path":"a.ts"}'}}, {type: 'content_block_stop', index: 0}, {type: 'message_delta', delta: {stop_reason: 'tool_use'}, usage: {output_tokens: 1}}, {type: 'message_stop'}],
+  };
+  const textTurn: Record<string, (text: string) => unknown[]> = {
+    chat: text => [{choices: [{delta: {content: text}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'stop'}]}, '[DONE]'],
+    responses: text => [done(text)],
+    anthropic: text => [{type: 'message_start', message: {usage: {input_tokens: 1}}}, {type: 'content_block_start', index: 0, content_block: {type: 'text', text: ''}}, {type: 'content_block_delta', index: 0, delta: {type: 'text_delta', text}}, {type: 'content_block_stop', index: 0}, {type: 'message_delta', delta: {stop_reason: 'end_turn'}, usage: {output_tokens: 1}}, {type: 'message_stop'}],
+  };
+  const kinds: [string, ProviderCredentials][] = [
+    ['chat', {kind: 'compatible', apiKey: 'synthetic-meta', baseUrl: 'https://api.meta.ai/v1'}],
+    ['responses', credentials],
+    ['anthropic', {kind: 'anthropic', apiKey: 'synthetic-claude'}],
+  ];
+  for (const [protocol, creds] of kinds) {
+    const bodies: Record<string, unknown>[] = [];
+    const fakeFetch: typeof fetch = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return stream(bodies.length === 1 ? toolTurn[protocol]! : textTurn[protocol]!(bodies.length === 2 ? 'Using floats.' : 'Switched to cents.'));
+    };
+    // After the tool round: a direction. As the model finishes: a late one, which keeps the run going. Then none.
+    const queue = [['Use cents, not floats.'], ['Also keep it short.'], []];
+    let steered = 0;
+    const result = await runAgent({credentials: creds, model: 'synthetic', messages: [{role: 'user', content: 'Add discount'}], tools: [...tools], executeTool: async () => ({text: 'x'}), signal: signal(), fetch: fakeFetch, steer: async () => queue.shift() ?? [], onEvent: event => {if (event.type === 'steer') steered += event.count;}});
+    assert.equal(bodies.length, 3, protocol);
+    assert.equal(steered, 2, protocol);
+    assert.match(result.text, /Switched to cents\.$/u, protocol);
+    const second = JSON.stringify(bodies[1]);
+    assert.match(second, /Use cents, not floats\./u, protocol);
+    assert.match(JSON.stringify(bodies[2]), /Also keep it short\./u, protocol);
+    if (protocol === 'anthropic') {
+      // One user turn holding the tool result and the direction.
+      const last = (bodies[1]!.messages as {role: string; content: {type: string}[]}[]).at(-1)!;
+      assert.deepEqual(last.content.map(part => part.type), ['tool_result', 'text']);
+    }
+  }
+});

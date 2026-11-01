@@ -18,7 +18,8 @@ export type AgentEvent =
   | {type: 'tool.call'; call: ToolCall}
   | {type: 'tool.result'; callId: string; result: JsonValue}
   | {type: 'usage'; usage: Usage}
-  | {type: 'turn.completed'; iterations: number};
+  | {type: 'turn.completed'; iterations: number}
+  | {type: 'steer'; count: number};
 
 export interface StreamLimits {
   maxBytes?: number;

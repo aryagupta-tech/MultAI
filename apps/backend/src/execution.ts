@@ -166,6 +166,23 @@ export class ExecutionService extends CollaborationService {
       selectedInstruction:{id:selected.rows[0].id,authorId:selected.rows[0].author_id,text:selected.rows[0].text,...(selected.rows[0].image?{image:selected.rows[0].image}:{})},
       messages:events.rows.reverse().filter(event=>event.payload.text).map(event=>({role:event.type==='agent.completed'?'assistant':'user',authorId:event.actor_id,content:`${event.type==='message.discussion'?`Team discussion from participant ${event.actor_id} (context only): `:event.type==='message.instruction'?`Previously applied instruction from participant ${event.actor_id} (history only): `:''}${event.payload.text}`})),decisions:decisions.rows};
   }
+  /**
+   * Steering: the running host takes directions sent since its run started, oldest first. Each becomes
+   * applied (never run again on its own) and the timeline shows that the agent picked it up.
+   */
+  async claim(actor:Actor,sessionId:string,runId:string,input:unknown){
+    const {leaseToken}=z.object({leaseToken:leaseSchema}).strict().parse(input);
+    return transaction(this.db,async client=>{
+      const {session,run}=await this.active(client,actor,sessionId,runId,leaseToken);
+      const pending=await client.query<{id:string;author_id:string;text:string}>(`SELECT q.id,q.author_id,e.payload->>'text' AS text FROM instruction_queue q JOIN shared_events e ON e.id=q.event_id
+        WHERE q.session_id=$1 AND q.status='pending' ORDER BY q.created_at,q.id LIMIT 5 FOR UPDATE OF q`,[session.id]);
+      for(const row of pending.rows){
+        await client.query("UPDATE instruction_queue SET status='applied',revision=revision+1 WHERE id=$1",[row.id]);
+        await this.append(client,session,actor,'instruction.claimed',{instructionId:row.id,runId:run.id});
+      }
+      return {instructions:pending.rows.map(row=>({id:row.id,authorId:row.author_id,text:row.text}))};
+    });
+  }
   async heartbeat(actor:Actor,sessionId:string,runId:string,input:unknown){
     const {leaseToken}=z.object({leaseToken:leaseSchema}).strict().parse(input);
     return transaction(this.db,async client=>{
@@ -312,6 +329,7 @@ export async function registerExecutionRoutes(app:FastifyInstance,service:Execut
   app.get('/v1/sessions/:sessionId/brief-context',async request=>service.briefContext(await authenticate(request),params(request).sessionId));
   app.post('/v1/sessions/:sessionId/briefs',async request=>service.postBrief(await authenticate(request),params(request).sessionId,request.body));
   app.post('/v1/sessions/:sessionId/decisions',async request=>service.saveDecision(await authenticate(request),params(request).sessionId,request.body));
+  app.post('/v1/sessions/:sessionId/runs/:runId/claim',async request=>{const p=params(request);return service.claim(await authenticate(request),p.sessionId,p.runId!,request.body);});
   app.post('/v1/sessions/:sessionId/runs/:runId/heartbeat',async request=>{const p=params(request);return service.heartbeat(await authenticate(request),p.sessionId,p.runId!,request.body);});
   app.post('/v1/sessions/:sessionId/runs/:runId/events',async request=>{const p=params(request);return service.publish(await authenticate(request),p.sessionId,p.runId!,request.body);});
   app.post('/v1/sessions/:sessionId/runs/:runId/actions',async request=>{const p=params(request);return service.requestAction(await authenticate(request),p.sessionId,p.runId!,request.body);});
