@@ -30,6 +30,9 @@ const schemas = {
   saveDecision:z.tuple([uuid,z.object({text:z.string().trim().min(1).max(8000),reason:z.string().trim().min(1).max(2000).optional(),replacesId:uuid.optional()}).strict()]),
   subscribe: z.tuple([uuid, z.number().int().min(0)]),
   unsubscribe: z.tuple([uuid]),
+  createReplay: z.tuple([uuid, z.number().int().min(86400).max(30 * 86400)]),
+  listReplays: z.tuple([uuid]),
+  revokeReplay: z.tuple([uuid, uuid]),
   sendPresence: z.tuple([uuid, z.object({typing: z.boolean(), viewing: z.string().max(200).nullable()}).strict()]),
 } satisfies Record<ServiceOp, z.ZodType>;
 
@@ -99,6 +102,13 @@ export async function route(account: Account, live: LiveHub, op: ServiceOp, rawA
     case 'unsubscribe':
       live.unsubscribe(s(0));
       return null;
+    case 'createReplay': return wrap(async () => {
+      const created = (await req('POST', `/v1/sessions/${s(0)}/replays`, { expiresInSeconds: args[1] })) as { replay: { id: string; token: string; expiresAt: string } };
+      // The token goes after #, so browsers never send it to the server or into logs.
+      return { id: created.replay.id, link: `${account.origin}/replay#${created.replay.token}`, expiresAt: created.replay.expiresAt };
+    });
+    case 'listReplays': return wrap(() => req('GET', `/v1/sessions/${s(0)}/replays`));
+    case 'revokeReplay': return wrap(() => req('DELETE', `/v1/sessions/${s(0)}/replays/${s(1)}`));
     case 'sendPresence':
       live.sendPresence(s(0), args[1] as {typing: boolean; viewing: string | null});
       return null;

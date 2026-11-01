@@ -11,6 +11,7 @@ import type { Config } from './config.js';
 import type { Database } from './db.js';
 import { ApiError } from './errors.js';
 import { PresenceHub } from './presence.js';
+import { ReplayService, registerReplayRoutes } from './replay.js';
 import {ExecutionService,registerExecutionRoutes} from './execution.js';
 
 export interface AppOptions {
@@ -81,6 +82,7 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
   await registerAuthRoutes(app, auth);
   await registerCollaborationRoutes(app, {service, authenticate: request => auth.authenticateRequest(request)});
   await registerExecutionRoutes(app,execution,request=>auth.authenticateRequest(request));
+  await registerReplayRoutes(app, new ReplayService(db), request => auth.authenticateRequest(request));
 
   const connectionCounts = new Map<string, number>();
   const presence = new PresenceHub();

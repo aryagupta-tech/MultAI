@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import {
   Archive, Hammer, Laptop, ListChecks, MoreHorizontal, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Radio, Sparkles, MessageCircle,
+  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Radio, Sparkles, MessageCircle, Link2,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import type { SessionDetail } from '../model/types';
@@ -11,6 +11,7 @@ import {refreshWork,useWork} from '../live/work';
 import {setTeamOpen,useTeam,useUnreadTeam} from './TeamPanel';
 import {getBridge} from '../bridge/client';
 import {useEditorItems} from './AssistDialogs';
+import {ReplayDialog} from './ReplayDialog';
 import {ChatGPTPlanUsage,isChatGPTUsageLimit} from './ChatGPTPlanUsage';
 
 export function SessionHeader({ d }: { d: SessionDetail | null }) {
@@ -34,6 +35,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
     return () => window.removeEventListener('multai:selection-changed',update);
   },[d?.id]);
 
+  const [sharing,setSharing]=useState(false);
   const leading = !sidebarOpen && (
     <div className="header-leading no-drag">
       <IconButton icon={PanelLeftOpen} label="Show sidebar" shortcut={shortcutText('Mod+B')} onClick={app.toggleSidebar} />
@@ -146,7 +148,10 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           align="end"
           width={232}
           items={[
-            ...(d.source === 'live' && d.capabilities.configure ? [{ id: 'brief', label: 'Write catch-up brief', icon: Sparkles, description: 'Muse Wonder summarizes the session for everyone', onSelect: () => void execution.writeBrief(d.id) }] : []),
+            ...(d.source === 'live' && d.capabilities.configure ? [
+              { id: 'brief', label: 'Write catch-up brief', icon: Sparkles, description: 'Muse Wonder summarizes the session for everyone', onSelect: () => void execution.writeBrief(d.id) },
+              { id: 'replay', label: 'Share replay link…', icon: Link2, description: 'Read-only, opens in any browser', onSelect: () => setSharing(true) },
+            ] : []),
             { id: 'rename', label: 'Rename', icon: Pencil, ...(d.source === 'live' ? { description: 'Only you see this name' } : {}), onSelect: () => renamePrompt(d) },
             { id: 'pin', label: summary?.pinned ? 'Unpin' : 'Pin to sidebar', icon: Pin, onSelect: () => app.togglePin(d.id) },
             { id: 'archive', label: 'Archive', icon: Archive, description: 'Hides it for you only', onSelect: () => app.setArchived(d.id, true) },
@@ -159,6 +164,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           ]}
           trigger={(t) => <IconButton {...t} icon={MoreHorizontal} label="Session options" />}
         />
+        {d.source === 'live' && <ReplayDialog sessionId={d.id} open={sharing} onClose={() => setSharing(false)} />}
 
         <IconButton
           icon={inspectorOpen ? PanelRightClose : PanelRightOpen}

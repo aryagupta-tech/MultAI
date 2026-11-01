@@ -84,6 +84,10 @@ export interface ServiceApi {
   subscribe(sessionId: string, after: number): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;
   /** Your own presence in a session you're subscribed to; sent over its live connection. */
+  /** A read-only link anyone can open in a browser until it expires or is revoked. */
+  createReplay(sessionId: string, expiresInSeconds: number): Promise<Result<{ id: string; link: string; expiresAt: string }>>;
+  listReplays(sessionId: string): Promise<Result<{ replays: { id: string; createdAt: string; expiresAt: string }[] }>>;
+  revokeReplay(sessionId: string, replayId: string): Promise<Result<{ revoked: true }>>;
   sendPresence(sessionId: string, update: { typing: boolean; viewing: string | null }): Promise<void>;
   onLivePresence(listener: (presence: LivePresence) => void): () => void;
   onAuthChange(listener: (state: AuthState) => void): () => void;
@@ -114,4 +118,5 @@ export const IPC = {
 export type ServiceOp =
   | 'health' | 'authState' | 'signIn' | 'cancelSignIn' | 'signOut' | 'listSessions' | 'getSession' | 'readEvents'
   | 'createSession' | 'postMessage' | 'setMode' | 'createInvitation' | 'joinInvitation' | 'listJoinRequests' | 'admit'
-  | 'revokeParticipant' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe' | 'sendPresence';
+  | 'revokeParticipant' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe' | 'sendPresence'
+  | 'createReplay' | 'listReplays' | 'revokeReplay';

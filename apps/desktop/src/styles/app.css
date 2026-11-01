@@ -1150,3 +1150,7 @@ body.is-resizing .app { transition: none; }
 @media (prefers-reduced-motion: reduce) { .typing-dots i { animation: none; } }
 .file-viewers { display: inline-flex; margin-left: auto; padding-right: 6px; }
 .file-viewers .avatar + .avatar { margin-left: -5px; }
+
+/* ---------------------------------------------------------------- Replay sharing */
+.replay-create { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.replay-link { margin-bottom: 6px; }
