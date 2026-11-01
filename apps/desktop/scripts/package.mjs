@@ -23,7 +23,8 @@ const identity = release
   ? { bundleId: 'dev.multai.desktop', copyright: 'Copyright © 2026 MultAI', linkName: 'MultAI links', scheme: 'multai' }
   : { bundleId: 'dev.multai.desktop.development', copyright: 'MultAI development build', linkName: 'MultAI development links', scheme: 'multai-dev' };
 
-execFileSync('npm', ['run', release ? 'build:release' : 'build'], { cwd: root, stdio: 'inherit' });
+// npm is a .cmd script on Windows, which Node only starts through a shell.
+execFileSync('npm', ['run', release ? 'build:release' : 'build'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
 
 await rm(stage, { recursive: true, force: true });
 await mkdir(stage, { recursive: true });
@@ -61,6 +62,22 @@ const provenance = (platform) => ({
 if (target !== 'darwin') {
   const { build, Platform, Arch } = await import('electron-builder');
   const linux = target === 'linux';
+  // electron-builder's protocols only reach Linux and macOS; NSIS needs the link handler written
+  // itself, so links work before the first launch and nothing points at a removed app afterwards.
+  const nsisInclude = path.join(stage, 'installer.nsh');
+  const key = `Software\\Classes\\${identity.scheme}`;
+  await writeFile(nsisInclude, [
+    '!macro customInstall',
+    `  WriteRegStr HKCU "${key}" "" "URL:${identity.linkName}"`,
+    `  WriteRegStr HKCU "${key}" "URL Protocol" ""`,
+    `  WriteRegStr HKCU "${key}\\DefaultIcon" "" "$INSTDIR\\\${APP_EXECUTABLE_FILENAME},0"`,
+    `  WriteRegStr HKCU "${key}\\shell\\open\\command" "" '"$INSTDIR\\\${APP_EXECUTABLE_FILENAME}" "%1"'`,
+    '!macroend',
+    '!macro customUnInstall',
+    `  DeleteRegKey HKCU "${key}"`,
+    '!macroend',
+    '',
+  ].join('\r\n'));
   const artifacts = await build({
     projectDir: stage,
     targets: (linux ? Platform.LINUX : Platform.WINDOWS).createTarget(linux ? ['AppImage', 'deb', 'tar.gz'] : ['nsis'], Arch.x64, Arch.arm64),
@@ -77,11 +94,11 @@ if (target !== 'darwin') {
       files: ['dist/**/*', 'package.json'],
       extraFiles: [{ from: 'LICENSE', to: 'LICENSE.multai.txt' }, 'THIRD_PARTY_NOTICES.txt'],
       artifactName: release ? 'MultAI-${version}-${arch}.${ext}' : 'MultAI-dev-${version}-${arch}.${ext}',
-      // Registers multai:// with Windows (installer) and the Linux desktop entry (MimeType).
+      // Registers multai:// in the Linux desktop entry (MimeType); Windows uses installer.nsh above.
       protocols: [{ name: identity.linkName, schemes: [identity.scheme] }],
       win: { icon: path.join(root, 'build', 'icon.png'), signAndEditExecutable: true },
       // Per-user install: no administrator prompt, and uninstalling keeps the user's sign-in data.
-      nsis: { oneClick: false, perMachine: false, allowElevation: false, allowToChangeInstallationDirectory: false, deleteAppDataOnUninstall: false, createDesktopShortcut: true, shortcutName: 'MultAI' },
+      nsis: { oneClick: false, perMachine: false, allowElevation: false, allowToChangeInstallationDirectory: false, deleteAppDataOnUninstall: false, createDesktopShortcut: true, shortcutName: 'MultAI', include: nsisInclude },
       linux: { icon: path.join(root, 'build', 'icon.png'), category: 'Development', synopsis: 'Work on one AI coding session together.', maintainer: 'MultAI <noreply@multai.si>', desktop: { entry: { StartupWMClass: 'MultAI' } } },
       deb: { depends: ['libgtk-3-0 | libgtk-3-0t64', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils', 'libatspi2.0-0 | libatspi2.0-0t64', 'libuuid1', 'libsecret-1-0'] },
     },

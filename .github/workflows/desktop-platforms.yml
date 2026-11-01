@@ -80,22 +80,24 @@ jobs:
           grep -o '"osCrypto":{[^}]*}' smoke-nokeyring.json
       - name: AppImage acceptance
         if: ${{ !cancelled() }}
-        continue-on-error: true
         run: |
           img=$(ls apps/desktop/release/linux/*x86_64.AppImage apps/desktop/release/linux/*x64.AppImage 2>/dev/null | head -1)
           chmod +x "$img"
           dbus-run-session -- xvfb-run -a node apps/desktop/scripts/platform-acceptance.mjs "$PWD/$img"
       - name: .tar.gz acceptance
         if: ${{ !cancelled() }}
-        continue-on-error: true
         run: |
           mkdir -p tgz && tar -xzf $(ls apps/desktop/release/linux/*x64.tar.gz | head -1) -C tgz
-          dbus-run-session -- xvfb-run -a node apps/desktop/scripts/platform-acceptance.mjs "$(find "$PWD/tgz" -maxdepth 2 -name multai -type f | head -1)"
+          bin=$(find "$PWD/tgz" -maxdepth 2 -name multai -type f | head -1)
+          # A plain archive can't carry a root-owned helper; this is the one setup step its users run.
+          sudo chown root:root "$(dirname "$bin")/chrome-sandbox" && sudo chmod 4755 "$(dirname "$bin")/chrome-sandbox"
+          dbus-run-session -- xvfb-run -a node apps/desktop/scripts/platform-acceptance.mjs "$bin"
       - name: Uninstall the .deb
         if: ${{ !cancelled() }}
         run: |
           sudo apt-get remove -y "$MULTAI_PACKAGE"
-          ! dpkg -s "$MULTAI_PACKAGE" 2>/dev/null && [ ! -e "$MULTAI_BIN" ] && echo "PASS  package and binary removed"
+          status=$(dpkg-query -W -f='${Status}' "$MULTAI_PACKAGE" 2>/dev/null || true)
+          [ "$status" != "install ok installed" ] && [ ! -e "$MULTAI_BIN" ] && echo "PASS  package and binary removed ($status)"
           ! ls /usr/share/applications | grep -qi multai && echo "PASS  desktop entry removed"
       - uses: actions/upload-artifact@v4
         if: always()

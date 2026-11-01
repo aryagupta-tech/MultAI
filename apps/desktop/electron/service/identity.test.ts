@@ -300,7 +300,8 @@ describe('encrypted credential persistence with synthetic OS crypto', () => {
     const names = await readdir(directory);
     expect(names).toHaveLength(1);
     const file = path.join(directory, names[0]!);
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits; the file lives in the per-user profile instead.
+    if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600);
     expect((await readFile(file)).includes(Buffer.from(record.active!.refreshToken))).toBe(false);
     const anotherScheme = new CredentialStore(origin.replace('http:', 'https:'), {directory, platform: 'linux', storage});
     expect((await anotherScheme.load()).active).toBeNull();
