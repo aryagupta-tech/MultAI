@@ -3,16 +3,16 @@ import { randomBytes } from 'node:crypto';
 import test from 'node:test';
 import type { FastifyRequest } from 'fastify';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { AuthService } from '../src/auth.js';
+import { AuthService, signInCompletePage, signInProblemPage } from '../src/auth.js';
 import type { Config } from '../src/config.js';
 import { ApiError } from '../src/errors.js';
 import { pkceChallenge, verifyGoogleIdentity, type OidcClient } from '../src/oidc.js';
 import { createTestContext } from './helpers.js';
 
 const syntheticConfig: Config = {
-  environment: 'test', host: '127.0.0.1', port: 4310,
+  environment: 'test', trustedProxies: [], host: '127.0.0.1', port: 4310,
   databaseUrl: 'postgres://synthetic.invalid/multai',
-  publicOrigin: 'http://127.0.0.1:4310', desktopCallbackUri: 'multai-dev://auth/callback',
+  publicOrigin: 'http://127.0.0.1:4310', desktopCallbackUri: 'multai-dev://auth/callback', desktopClientId: 'multai-desktop-development',
   googleClientId: 'synthetic-client', googleClientSecret: 'synthetic-secret',
   googleRedirectUri: 'http://127.0.0.1:4310/v1/auth/google/callback',
 };
@@ -200,4 +200,84 @@ test('unconfigured real Google sign-in is unavailable and cannot become a develo
   assert.equal(response.statusCode, 503);
   const bypass = await context.app.inject({ method: 'POST', url: '/v1/auth/development-login', payload: { userId: 'synthetic-person' } });
   assert.equal(bypass.statusCode, 404);
+});
+
+test('sign-in completion page opens the app with an escaped link and runs no script', () => {
+  const page = signInCompletePage('multai-dev://auth/callback?flowId=a&completionCode="<x>');
+  assert.match(page, /content="0;url=multai-dev:\/\/auth\/callback\?flowId=a&#38;completionCode=&#34;&#60;x&#62;"/);
+  assert.match(page, /href="multai-dev:\/\/auth\/callback\?flowId=a&#38;completionCode=&#34;&#60;x&#62;"/);
+  assert.doesNotMatch(page, /<script/i);
+  assert.doesNotMatch(page, /"<x>/);
+});
+
+test('the release identity signs in with multai:// and cannot complete a development flow', async (t) => {
+  const context = await createTestContext(); t.after(context.close);
+  const releaseConfig: Config = { ...syntheticConfig, environment: 'production', desktopCallbackUri: 'multai://auth/callback', desktopClientId: 'multai-desktop' };
+  const release = new AuthService(context.db, releaseConfig, syntheticOidc());
+  const { tokens } = await signIn(release);
+  assert.equal(typeof tokens.accessToken, 'string');
+
+  const development = new AuthService(context.db, syntheticConfig, syntheticOidc());
+  const codeVerifier = randomBytes(32).toString('base64url');
+  const start = await development.start(pkceChallenge(codeVerifier));
+  const callback = new URL(await development.callback(new URL(start.authorizationUrl).searchParams.get('state')!, 'synthetic-code'));
+  assert.equal(callback.protocol, 'multai-dev:');
+  const input = { flowId: start.flowId, completionCode: callback.searchParams.get('completionCode')!, codeVerifier, deviceName: 'Synthetic desktop' };
+  await assert.rejects(release.exchange(input), rejectedWith('invalid_flow'));
+});
+
+test('the Google callback always answers the browser with a page, never JSON', async (t) => {
+  const context = await createTestContext({ config: syntheticConfig, oidc: syntheticOidc() }); t.after(context.close);
+  const get = (query: string) => context.app.inject({ method: 'GET', url: `/v1/auth/google/callback?${query}` });
+  const state = randomBytes(32).toString('base64url');
+  const cases: [string, number, RegExp][] = [
+    [`error=access_denied&state=${state}`, 400, /Sign-in cancelled/],
+    [`state=${state}`, 400, /didn’t finish/],
+    ['code=x', 400, /didn’t finish/],
+    [`state=${state}&code=x`, 401, /expired/],
+  ];
+  for (const [query, status, text] of cases) {
+    const response = await get(query);
+    assert.equal(response.statusCode, status, query);
+    assert.match(String(response.headers['content-type']), /^text\/html/, query);
+    assert.match(response.body, text, query);
+    assert.match(String(response.headers['content-security-policy']), /default-src 'none'/);
+    assert.doesNotMatch(response.body, /<script/i);
+  }
+
+  const start = await context.app.inject({ method: 'POST', url: '/v1/auth/google/start', payload: { codeChallenge: pkceChallenge(randomBytes(32).toString('base64url')) } });
+  const issued = new URL(start.json().authorizationUrl).searchParams.get('state')!;
+  const first = await get(`state=${issued}&code=synthetic&iss=https%3A%2F%2Faccounts.google.com&scope=openid`);
+  assert.equal(first.statusCode, 200);
+  assert.match(first.body, /You’re signed in/);
+  assert.match(first.body, /url=multai-dev:\/\/auth\/callback\?flowId=/);
+  const replay = await get(`state=${issued}&code=synthetic`);
+  assert.equal(replay.statusCode, 401);
+  assert.match(replay.body, /expired/);
+});
+
+test('problem pages never echo request input', () => {
+  for (const kind of ['cancelled', 'expired', 'invalid', 'failed'] as const) {
+    const page = signInProblemPage(kind);
+    assert.doesNotMatch(page, /<script|http-equiv/i);
+  }
+});
+
+test('rate limits key on the client behind a trusted proxy, and only behind it', async (t) => {
+  const behindProxy = await createTestContext({ config: { ...syntheticConfig, environment: 'production', trustedProxies: ['172.30.0.0/24'] } }); t.after(behindProxy.close);
+  const from = (app: typeof behindProxy.app, remoteAddress: string, forwarded: string) => app.inject({ method: 'GET', url: '/health/live', remoteAddress, headers: { 'x-forwarded-for': forwarded } });
+  const viaProxy = await from(behindProxy.app, '172.30.0.5', '203.0.113.7');
+  const otherClient = await from(behindProxy.app, '172.30.0.5', '203.0.113.8');
+  assert.equal(viaProxy.headers['x-ratelimit-remaining'], otherClient.headers['x-ratelimit-remaining']);
+  const spoofed = await from(behindProxy.app, '198.51.100.9', '203.0.113.7');
+  const spoofedAgain = await from(behindProxy.app, '198.51.100.9', '203.0.113.9');
+  assert.equal(Number(spoofedAgain.headers['x-ratelimit-remaining']), Number(spoofed.headers['x-ratelimit-remaining']) - 1);
+});
+
+test('hitting the rate limit says so with a stable code', async (t) => {
+  const context = await createTestContext({ config: { ...syntheticConfig, environment: 'production' } }); t.after(context.close);
+  let last = await context.app.inject({ method: 'GET', url: '/health/live' });
+  for (let i = 0; i < 120; i++) last = await context.app.inject({ method: 'GET', url: '/health/live' });
+  assert.equal(last.statusCode, 429);
+  assert.equal(last.json().error.code, 'rate_limited');
 });

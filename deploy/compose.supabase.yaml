@@ -1,0 +1,99 @@
+# Production with a managed Supabase database: only the API and the HTTPS proxy run on the host.
+# Secrets: database-url (pooler URL for the multai_service role), database-ca (Supabase root
+# certificate, deploy/supabase-prod-ca-2021.crt), google-client-id, google-client-secret.
+name: multai-${RESOURCE_ID:?Set a fresh resource id}
+
+x-bounded-logs: &bounded-logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:?Use the reviewed backend image}
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+      args:
+        SOURCE_COMMIT: ${SOURCE_COMMIT:?Set the reviewed full source commit}
+        SOURCE_DIRTY: ${SOURCE_DIRTY:-true}
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 384m
+    cpus: 0.6
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "4310"
+      PUBLIC_ORIGIN: https://${COLLABORATION_DOMAIN:?Set the collaboration domain}
+      NODE_OPTIONS: --max-old-space-size=256
+      # The proxy reaches the backend over either network; only it can set the client address.
+      TRUST_PROXY: 172.30.0.0/24,172.31.0.0/24
+    secrets: [database-url, database-ca, google-client-id, google-client-secret]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    stop_grace_period: 20s
+    logging: *bounded-logs
+    networks: [application, egress]
+
+  proxy:
+    image: ${PROXY_IMAGE:?Use the reviewed proxy image}
+    build:
+      context: ..
+      dockerfile: deploy/proxy.Dockerfile
+    user: "10001:10001"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.2
+    environment:
+      COLLABORATION_DOMAIN: ${COLLABORATION_DOMAIN:?Set the collaboration domain}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      # Same as ./Caddyfile without an ACME contact address.
+      - ./Caddyfile.supabase:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    tmpfs:
+      - /config:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001,mode=0700
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:9080/health/proxy"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    logging: *bounded-logs
+    networks: [application, egress]
+
+secrets:
+  database-url:
+    file: ${SECRETS_DIRECTORY:?Set a private secret directory}/database-url
+  database-ca:
+    file: ./supabase-prod-ca-2021.crt
+  google-client-id:
+    file: ${SECRETS_DIRECTORY:?Set a private secret directory}/google-client-id
+  google-client-secret:
+    file: ${SECRETS_DIRECTORY:?Set a private secret directory}/google-client-secret
+
+volumes:
+  certificates:
+networks:
+  application:
+    internal: true
+    ipam:
+      config: [{subnet: 172.30.0.0/24}]
+  egress:
+    ipam:
+      config: [{subnet: 172.31.0.0/24}]

@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import test from 'node:test';
 import {ExecutionJournal, RuntimeError, fingerprint} from '../src/index.js';
 import type {ActionDescriptor, Authority, DispatchTicket, JournalScope} from '../src/index.js';
+
+/** Fixture paths as this host spells absolute paths (C:\\tmp\\… on Windows). */
+const host = (posixPath: string) => resolve(posixPath);
+const posixModes = process.platform !== 'win32';
 
 const scope: JournalScope = {serviceOrigin: 'https://collaboration.example', accountId: 'owner-a', deviceId: 'device-a'};
 const baseTime = 1_800_000_000_000;
@@ -13,8 +17,8 @@ function descriptor(overrides: Partial<ActionDescriptor> = {}): ActionDescriptor
   return {
     version: 1, requestId: 'request-1', sessionId: 'session-a', originalOwnerId: scope.accountId,
     originalDeviceId: scope.deviceId, accountGeneration: 1, sessionGeneration: 1, runtimeGeneration: 1,
-    connectionId: 'connection-a', payerId: 'payer-a', resourceIdentity: 'workspace-a', cwd: '/tmp/workspace-a',
-    expiresAt: baseTime + 60_000, operation: {kind: 'shell', executable: '/bin/sh', argv: ['-c', 'npm test'], commandText: 'npm test'},
+    connectionId: 'connection-a', payerId: 'payer-a', resourceIdentity: 'workspace-a', cwd: host('/tmp/workspace-a'),
+    expiresAt: baseTime + 60_000, operation: {kind: 'shell', executable: host('/bin/sh'), argv: ['-c', 'npm test'], commandText: 'npm test'},
     ...overrides,
   };
 }
@@ -106,9 +110,9 @@ test('the exact descriptor binds command, executable, arguments, cwd, connection
   const f = fixture(t);
   approved(f.journal);
   const changed: Partial<ActionDescriptor>[] = [
-    {operation: {kind: 'shell', executable: '/bin/bash', argv: ['-c', 'npm test'], commandText: 'npm test'}},
-    {operation: {kind: 'shell', executable: '/bin/sh', argv: ['-c', 'npm run build'], commandText: 'npm run build'}},
-    {cwd: '/tmp/workspace-b'}, {connectionId: 'connection-b'}, {payerId: 'payer-b'},
+    {operation: {kind: 'shell', executable: host('/bin/bash'), argv: ['-c', 'npm test'], commandText: 'npm test'}},
+    {operation: {kind: 'shell', executable: host('/bin/sh'), argv: ['-c', 'npm run build'], commandText: 'npm run build'}},
+    {cwd: host('/tmp/workspace-b')}, {connectionId: 'connection-b'}, {payerId: 'payer-b'},
     {resourceIdentity: 'workspace-b'}, {accountGeneration: 2}, {sessionGeneration: 2}, {runtimeGeneration: 2},
     {expiresAt: baseTime + 120_000},
   ];
@@ -181,7 +185,7 @@ test('one journal connection owns execution and account, device and service scop
   throwsCode(() => f.journal.prepare(descriptor({originalDeviceId: 'device-b'}), authority()), 'SCOPE_MISMATCH');
 });
 
-test('journal permissions are private during initialization even with a permissive umask', t => {
+test('journal permissions are private during initialization even with a permissive umask', {skip: !posixModes && 'Windows has no POSIX mode bits; the journal lives in the per-user profile instead.'}, t => {
   const directory = mkdtempSync(join(tmpdir(), 'multai-journal-permissions-'));
   const filename = join(directory, 'execution.sqlite');
   let journal: ExecutionJournal | undefined;
@@ -221,7 +225,7 @@ test('journal creation rejects a symbolic link or directory without modifying it
   symlinkSync(target, link);
   throwsCode(() => new ExecutionJournal(link, scope), 'UNSAFE_JOURNAL_PATH');
   assert.equal(readFileSync(target, 'utf8'), 'unrelated content');
-  assert.equal(statSync(target).mode & 0o777, 0o644);
+  if (posixModes) assert.equal(statSync(target).mode & 0o777, 0o644);
   const nonregular = join(directory, 'database-directory');
   mkdirSync(nonregular);
   throwsCode(() => new ExecutionJournal(nonregular, scope), 'UNSAFE_JOURNAL_PATH');
@@ -260,8 +264,8 @@ test('descriptors are copied, key order is canonical and unsupported bytes are r
   const f = fixture(t);
   const input = descriptor();
   const prepared = f.journal.prepare(input, authority());
-  input.cwd = '/tmp/changed';
-  assert.equal(f.journal.get(input.requestId).descriptor.cwd, '/tmp/workspace-a');
+  input.cwd = host('/tmp/changed');
+  assert.equal(f.journal.get(input.requestId).descriptor.cwd, host('/tmp/workspace-a'));
   assert.equal(prepared.fingerprint, fingerprint(descriptor()));
   const external = descriptor({operation: {kind: 'external', tool: 'tool-a', transport: 'https', arguments: {a: 1, b: [true, null]}}});
   const reordered = descriptor({operation: {kind: 'external', tool: 'tool-a', transport: 'https', arguments: {b: [true, null], a: 1}}});

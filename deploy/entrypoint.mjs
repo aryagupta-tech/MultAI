@@ -1,3 +1,4 @@
+import {existsSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 
 async function secret(name){
@@ -8,14 +9,22 @@ async function secret(name){
   return value;
 }
 try{
-  const password=await secret('db-app-password');
-  if(!/^[a-f0-9]{64}$/.test(password))throw new Error('Invalid deployment database secret.');
-  const database=new URL('postgresql://multai_app@database:5432/multai');
-  database.password=password;
-  process.env.DATABASE_URL=database.href;
+  if(existsSync('/run/secrets/database-url')){
+    // Managed database (Supabase): connect through its pooler and verify its certificate chain.
+    const database=new URL(await secret('database-url'));
+    if(!['postgres:','postgresql:'].includes(database.protocol)||!database.password)throw new Error('Invalid deployment database secret.');
+    database.searchParams.set('sslmode','verify-full');
+    database.searchParams.set('sslrootcert','/run/secrets/database-ca');
+    process.env.DATABASE_URL=database.href;
+  }else{
+    const password=await secret('db-app-password');
+    if(!/^[a-f0-9]{64}$/.test(password))throw new Error('Invalid deployment database secret.');
+    const database=new URL('postgresql://multai_app@database:5432/multai');
+    database.password=password;
+    process.env.DATABASE_URL=database.href;
+  }
   process.env.GOOGLE_CLIENT_ID=await secret('google-client-id');
   process.env.GOOGLE_CLIENT_SECRET=await secret('google-client-secret');
-  process.env.DESKTOP_CALLBACK_URI='multai-dev://auth/callback';
   await import('./dist/index.js');
 }catch{
   process.stderr.write('Deployment configuration could not be loaded. Check the private secret mounts and service origin.\n');

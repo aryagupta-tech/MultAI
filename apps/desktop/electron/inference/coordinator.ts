@@ -2,7 +2,7 @@ import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {mkdir,readFile,writeFile,rename,lstat,unlink,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {z} from 'zod';
-import {ControlledWorkspace,ExecutionJournal,RuntimeError,ProviderError,fingerprint,runAgent,executeApprovedShell,redactSecrets,type ActionDescriptor,type Authority,type JsonValue,type ToolCall,type ToolDefinition} from '@multai/runtime';
+import {ControlledWorkspace,ExecutionJournal,RuntimeError,ProviderError,fingerprint,runAgent,executeApprovedShell,hostShell,redactSecrets,type ActionDescriptor,type Authority,type JsonValue,type ToolCall,type ToolDefinition} from '@multai/runtime';
 import type {HostRunChange,InferenceSelection,StartInferenceInput} from '../../src/bridge/execution';
 import {ApiFailure,type Account} from '../service/account';
 import type {ConnectionManager} from './connections';
@@ -233,12 +233,13 @@ export class HostCoordinator {
       write=z.object({path:z.string().min(1).max(4096),content:z.string().max(64000),expectedHash:z.string().regex(/^[a-f0-9]{64}$/).nullable()}).strict().parse(call.arguments);
       if(write.content.length>16000)throw new RuntimeError('WRITE_REVIEW_LIMIT','This development build can review complete file writes of at most 16,000 characters. Choose a smaller file or review this change externally.');
       if(redactText(write.content,run.secrets)!==write.content)throw new RuntimeError('PRIVATE_CONTENT','Provider credentials cannot be written into workspace files.');
+      workspace.checkWritablePath(write.path);
       operation={kind:'file_write',relativePath:write.path,expectedContentHash:write.expectedHash,contentHash:createHash('sha256').update(write.content).digest('hex')};
     }else if(call.name==='run_command'){
-      if(process.platform==='win32')throw new RuntimeError('UNSUPPORTED_PLATFORM','Windows shell process control has not been verified.');
       const {command}=z.object({command:z.string().min(1).max(32768)}).strict().parse(call.arguments);
       if(redactText(command,run.secrets)!==command)throw new RuntimeError('PRIVATE_COMMAND','Provider credentials cannot be embedded in command descriptors.');
-      operation={kind:'shell',executable:await realpath('/bin/sh'),argv:['-c',command],commandText:command};
+      const shell=hostShell(command);
+      operation={kind:'shell',executable:await realpath(shell.executable),argv:shell.argv,commandText:command};
     }else throw new RuntimeError('UNSUPPORTED_TOOL','The model requested an unavailable tool.');
     const descriptor:ActionDescriptor={version:1,requestId:randomUUID(),sessionId:run.sessionId,originalOwnerId:run.snapshot.userId,originalDeviceId:run.snapshot.deviceId,accountGeneration:run.snapshot.generation,sessionGeneration:run.generation,runtimeGeneration:run.generation,connectionId:run.connectionId,payerId:run.snapshot.userId,resourceIdentity:`workspace:${run.sessionId}`,cwd:workspace.root,expiresAt:Date.now()+300000,operation};
     const prepared=run.journal.prepare(descriptor,run.authority);

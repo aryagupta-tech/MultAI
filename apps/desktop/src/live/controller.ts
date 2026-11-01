@@ -36,9 +36,10 @@ const api = () => getBridge()!.service;
 /* ------------------------------------------------------------ errors */
 
 const FRIENDLY: Record<string, string> = {
-  offline_unsent: 'Can’t reach the collaboration service. Check that it’s running, then try again.',
+  offline_unsent: 'Can’t reach MultAI right now. Check your internet connection. MultAI keeps trying and reconnects on its own.',
   network_uncertain: 'The connection dropped before the service confirmed. Send again to retry safely; it won’t be duplicated.',
-  identity_unavailable: 'Google sign-in isn’t configured on this service yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to the backend’s .env and restart it.',
+  identity_unavailable: 'Google sign-in isn’t available on this service right now. Try again in a few minutes.',
+  invitation_unavailable: 'This invitation expired, was revoked, or its session was deleted. Ask for a new one.',
   read_only: 'Viewers can read this session but can’t send messages.',
   session_active: 'Stop the session before changing this.',
   original_host_required: 'Only the session owner, on the computer that started it, can do this.',
@@ -210,7 +211,14 @@ export async function checkHealth(): Promise<void> {
   if (!isLive()) return;
   const health = await api().health();
   useApp.setState({ health, ...(useApp.getState().account ? {} : { connection: health.reachable ? 'connected' : 'offline' }) });
+  // Opened while the service was down: the saved sign-in is intact, so pick it back up.
+  const auth = useApp.getState().auth;
+  if (health.reachable && auth?.status === 'signed-out' && auth.error && TRANSIENT.has(auth.error.code)) {
+    await applyAuth(await api().authState());
+  }
 }
+
+const TRANSIENT = new Set(['offline_unsent', 'network_uncertain']);
 
 export function completeOnboarding(): void {
   local.onboarded = true;
@@ -423,7 +431,16 @@ export async function createInvitation(id: string, expiresInSeconds: number): Pr
   return value ? { token: value.invitation.token, expiresAt: value.invitation.expiresAt } : null;
 }
 
-/** Extracts an invitation token from a pasted code or multai-dev://join link. */
+/** Invitation tokens are exactly 43 base64url characters, matching the service. */
+export const INVITE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+
+/** The invitation link for this build: multai:// in release builds, multai-dev:// otherwise. */
+export function inviteLink(token: string): string {
+  const scheme = useApp.getState().build?.channel === 'production' ? 'multai' : 'multai-dev';
+  return `${scheme}://join?token=${token}`;
+}
+
+/** Extracts an invitation token from a pasted code or a multai:// (or multai-dev://) join link. */
 export function parseInvite(input: string): string | null {
   const trimmed = input.trim();
   let token = trimmed;
@@ -431,7 +448,7 @@ export function parseInvite(input: string): string | null {
     const url = new URL(trimmed);
     token = url.searchParams.get('token') ?? '';
   } catch { /* not a URL: treat as a bare code */ }
-  return /^[A-Za-z0-9_-]{16,200}$/.test(token) ? token : null;
+  return INVITE_TOKEN.test(token) ? token : null;
 }
 
 export async function join(token: string): Promise<'pending' | 'admitted' | null> {

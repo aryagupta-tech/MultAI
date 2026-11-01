@@ -12,7 +12,6 @@ const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const opaqueSecret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const verifierSchema = z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/);
-const desktopClientId = 'multai-desktop-development';
 
 function equal(left: string, right: string): boolean {
   const a = Buffer.from(left);
@@ -77,7 +76,7 @@ export class AuthService {
       `INSERT INTO oauth_flows(id,state_hash,nonce,desktop_challenge,provider_verifier,expires_at,
          desktop_client_id,desktop_callback_uri,provider_redirect_uri,provider_client_id)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, hash(state), nonce, codeChallenge, verifier, expiresAt, desktopClientId,
+      [id, hash(state), nonce, codeChallenge, verifier, expiresAt, this.config.desktopClientId,
         this.config.desktopCallbackUri, this.redirectUri(), this.config.googleClientId ?? null],
     );
     return { flowId: id, authorizationUrl, expiresAt: expiresAt.toISOString() };
@@ -91,7 +90,7 @@ export class AuthService {
        WHERE state_hash=$1 AND state_consumed_at IS NULL AND expires_at>now()
          AND desktop_client_id=$2 AND desktop_callback_uri=$3 AND provider_redirect_uri=$4
          AND provider_client_id IS NOT DISTINCT FROM $5
-       RETURNING *`, [hash(state), desktopClientId, this.config.desktopCallbackUri,
+       RETURNING *`, [hash(state), this.config.desktopClientId, this.config.desktopCallbackUri,
         this.redirectUri(), this.config.googleClientId ?? null],
     );
     const flow = claimed.rows[0];
@@ -140,7 +139,7 @@ export class AuthService {
       const result = await client.query<Flow>('SELECT * FROM oauth_flows WHERE id=$1 FOR UPDATE', [input.flowId]);
       const flow = result.rows[0];
       if (!flow || flow.consumed_at || flow.expires_at.getTime() <= Date.now() || !flow.completion_hash || !flow.identity ||
-          flow.desktop_client_id !== desktopClientId || flow.desktop_callback_uri !== this.config.desktopCallbackUri ||
+          flow.desktop_client_id !== this.config.desktopClientId || flow.desktop_callback_uri !== this.config.desktopCallbackUri ||
           flow.provider_redirect_uri !== this.config.googleRedirectUri || flow.provider_client_id !== (this.config.googleClientId ?? null) ||
           !equal(flow.completion_hash, hash(input.completionCode)) || !equal(flow.desktop_challenge, pkceChallenge(input.codeVerifier))) {
         throw new ApiError(401, 'invalid_flow', 'Sign-in proof is invalid, expired, or already used.');
@@ -274,8 +273,25 @@ export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService
     return auth.start(body.codeChallenge);
   });
   app.get('/v1/auth/google/callback', async (request, reply) => {
-    const query = z.object({ state: opaqueSecret, code: z.string().min(1).max(4_096), scope: z.string().optional(), authuser: z.string().optional(), prompt: z.string().optional() }).parse(request.query);
-    return reply.redirect(await auth.callback(query.state, query.code));
+    // This is a browser tab, so every outcome is a page, never raw JSON. Success answers with a
+    // page instead of a bare redirect to the custom scheme: Chrome hands the scheme to the app but
+    // never commits a navigation, so Google's tab sat on its loading overlay forever.
+    const page = (status: number, html: string) => reply.code(status)
+      .header('cache-control', 'no-store')
+      .header('referrer-policy', 'no-referrer')
+      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+      .type('text/html; charset=utf-8')
+      .send(html);
+    const raw = request.query as Record<string, unknown>;
+    if (typeof raw.error === 'string') return page(400, signInProblemPage('cancelled'));
+    const query = z.object({ state: opaqueSecret, code: z.string().min(1).max(4_096), scope: z.string().optional(), authuser: z.string().optional(), prompt: z.string().optional(), iss: z.string().optional(), hd: z.string().optional() }).safeParse(raw);
+    if (!query.success) return page(400, signInProblemPage('invalid'));
+    try {
+      return page(200, signInCompletePage(await auth.callback(query.data.state, query.data.code)));
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      return page(error.statusCode, signInProblemPage(error.code === 'invalid_flow' ? 'expired' : 'failed'));
+    }
   });
   app.post('/v1/auth/google/exchange', async (request) => {
     const body = z.object({
@@ -299,4 +315,55 @@ export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService
     await auth.revokeDevice(await auth.authenticateRequest(request), deviceId);
     return reply.code(204).send();
   });
+}
+
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+
+function signInPage(title: string, body: string, head = ''): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+${head}<title>${title}</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #000; color: #fff; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 360px; padding: 32px 24px; text-align: center; }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  p { margin: 0 0 24px; color: #9a9a9a; }
+  a { display: inline-block; padding: 10px 18px; border-radius: 999px; background: #fff; color: #000; font-weight: 600; text-decoration: none; }
+  small { display: block; margin-top: 16px; color: #6b6b6b; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+${body}
+</main>
+</body>
+</html>
+`;
+}
+
+export function signInCompletePage(deepLink: string): string {
+  const href = escapeHtml(deepLink);
+  return signInPage('Signed in to MultAI', `  <h1>You’re signed in</h1>
+  <p>MultAI is opening. You can close this tab.</p>
+  <a href="${href}">Open MultAI</a>
+  <small>Didn’t open? Use the button above.</small>`, `<meta http-equiv="refresh" content="0;url=${href}">\n`);
+}
+
+const problems = {
+  cancelled: ['Sign-in cancelled', 'Nothing was shared with MultAI. To try again, go back to MultAI and choose Continue with Google.'],
+  expired: ['This sign-in link has expired', 'Sign-in links work once and only for a few minutes. Go back to MultAI and choose Continue with Google again.'],
+  invalid: ['Sign-in didn’t finish', 'This page was opened without a complete sign-in. Go back to MultAI and choose Continue with Google again.'],
+  failed: ['Sign-in didn’t finish', 'Google couldn’t confirm your account just now. Go back to MultAI and try again in a moment.'],
+} as const;
+
+/** Fixed copy only: nothing from the request is echoed into the page. */
+export function signInProblemPage(kind: keyof typeof problems): string {
+  const [title, detail] = problems[kind];
+  return signInPage(title, `  <h1>${title}</h1>
+  <p>${detail}</p>
+  <small>You can close this tab.</small>`);
 }

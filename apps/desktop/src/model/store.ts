@@ -68,7 +68,7 @@ interface State {
   health: ServiceHealth | null;
   liveStatus: Record<string, LiveStatus>;
   joinRequests: Record<string, WireJoinRequest[]>;
-  /** Invitation token from a multai-dev://join link, awaiting the person's confirmation. */
+  /** Invitation token from a multai:// (multai-dev:// in development) join link, awaiting the person's confirmation. */
   joinPrompt: string | null;
   sending: Record<string, boolean>;
   loading: Record<string, boolean>;

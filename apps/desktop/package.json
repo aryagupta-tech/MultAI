@@ -1,6 +1,6 @@
 {
   "name": "@multai/desktop",
-  "version": "0.0.0-dev.1",
+  "version": "0.1.0",
   "private": true,
   "description": "MultAI desktop shell and renderer",
   "license": "MIT",
@@ -11,6 +11,7 @@
     "dev:demo": "node scripts/dev.mjs --demo",
     "dev:web": "vite --mode demo",
     "build": "vite build && node scripts/build-electron.mjs",
+    "build:release": "vite build && node scripts/build-electron.mjs --release",
     "build:demo": "vite build --mode demo && node scripts/build-electron.mjs --demo",
     "start": "electron .",
     "package": "node scripts/package.mjs",
@@ -35,6 +36,7 @@
     "@types/ws": "8.18.2",
     "@vitejs/plugin-react": "6.1.2",
     "electron": "44.9.3",
+    "electron-builder": "26.17.0",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
     "vite": "8.3.5",

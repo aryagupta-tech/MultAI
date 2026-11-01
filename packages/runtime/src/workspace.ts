@@ -8,7 +8,12 @@ import type {ActionDescriptor, Authority, JsonValue} from './policy.js';
 
 const MAX_FILE_BYTES = 262_144;
 const MAX_LIST = 500;
-const deniedNames = new Set(['.git', '.ssh', '.aws', '.azure', '.config', '.codex', '.claude', '.gnupg', '.npmrc', '.pypirc', '.netrc', '.local', 'node_modules', '.venv', '.DS_Store']);
+// Compared case-insensitively: Windows and default macOS volumes resolve `.GIT` to `.git`.
+const deniedNames = new Set(['.git', '.ssh', '.aws', '.azure', '.config', '.codex', '.claude', '.gnupg', '.npmrc', '.pypirc', '.netrc', '.local', 'node_modules', '.venv', '.ds_store']);
+// Names Windows treats specially, refused everywhere so the rules match on every host: `:` opens
+// an alternate data stream, device names (with any extension) never reach a file, trailing dots
+// and spaces are silently dropped, and the rest are invalid on NTFS.
+const windowsSpecialName = /[<>:"|?*]|[. ]$|^(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/iu;
 const binaryExtension = /\.(?:png|jpe?g|gif|webp|ico|icns|pdf|zip|gz|xz|bz2|7z|tar|mp[34]|mov|wav|woff2?|ttf|otf|exe|dll|dylib|so|sqlite|db|p12|pfx|key|pem|der)$/iu;
 const credentialName = /(?:^\.env(?:\.|$)|^id_(?:rsa|dsa|ecdsa|ed25519)(?:\.|$)|^(?:credentials|secrets?)(?:$|\.(?:json|ya?ml|toml|ini|conf|txt|env)$))/iu;
 const credentialContent = /(?:-----BEGIN [A-Z ]*PRIVATE KEY-----|\bsk-[A-Za-z0-9_-]{20,}\b|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\b(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}\b|\bGOCSPX-[A-Za-z0-9_-]{20,}\b)/u;
@@ -21,7 +26,8 @@ function parts(path: string, rootAllowed = false): string[] {
   if (rootAllowed && (path === '' || path === '.')) return [];
   if (typeof path !== 'string' || Buffer.byteLength(path) > 4096 || isAbsolute(path) || /[\\\u0000-\u001f\u007f]/u.test(path)) fail('UNSAFE_PATH', 'Use a bounded relative workspace path.');
   const components = path.split('/');
-  if (components.some(part => !part || part === '.' || part === '..' || deniedNames.has(part) || credentialName.test(part))) fail('PRIVATE_PATH', 'Credential, private or traversing paths are unavailable.');
+  if (components.some(part => !part || part === '.' || part === '..' || deniedNames.has(part.toLowerCase()) || credentialName.test(part))) fail('PRIVATE_PATH', 'Credential, private or traversing paths are unavailable.');
+  if (components.some(part => windowsSpecialName.test(part))) fail('UNSAFE_PATH', 'This file name isn’t portable (reserved name, stream or invalid character).');
   return components;
 }
 
@@ -151,6 +157,12 @@ export class ControlledWorkspace {
     return {matches, truncated};
   }
 
+  /** Rejects names no write could use, before anyone is asked to approve it. Touches nothing. */
+  checkWritablePath(path: string): void {
+    parts(path);
+    if (binaryExtension.test(path)) fail('FILE_LIMIT', 'Writes must be bounded UTF-8 text.');
+  }
+
   /** Local approval and durable reservation are mandatory, independently of the service gate. */
   async write(path: string, text: string, expectedHash: string | null, approval: ReviewedWrite): Promise<{path: string; hash: string}> {
     if (typeof text !== 'string' || Buffer.byteLength(text) > MAX_FILE_BYTES || binaryExtension.test(path)) fail('FILE_LIMIT', 'Writes must be bounded UTF-8 text.');
@@ -160,6 +172,8 @@ export class ControlledWorkspace {
     if (descriptor.operation.kind !== 'file_write' || descriptor.operation.relativePath !== path || descriptor.operation.contentHash !== hash || descriptor.operation.expectedContentHash !== expectedHash || descriptor.cwd !== this.root) fail('REQUEST_CONFLICT', 'The reviewed action does not match this exact file write.');
     assertAuthority(descriptor, approval.authority, Date.now());
     approval.signal.throwIfAborted();
+    // Purely syntactic, so it can run before the reservation without risking a replay.
+    this.checkWritablePath(path);
     const reservation = approval.journal.reserve(descriptor, approval.authority);
     if (reservation.kind === 'completed') return reservation.result as unknown as {path: string; hash: string};
     // Never clear an executing reservation after any failure. It becomes uncertain
@@ -190,8 +204,11 @@ export class ControlledWorkspace {
       approval.signal.throwIfAborted();
       await rename(temporary, selected);
       created = false;
-      const directory = await open(parent, constants.O_RDONLY);
-      try {await directory.sync();} finally {await directory.close();}
+      // Windows cannot open a directory handle to flush; NTFS journals the rename itself.
+      if (process.platform !== 'win32') {
+        const directory = await open(parent, constants.O_RDONLY);
+        try {await directory.sync();} finally {await directory.close();}
+      }
       const result = {path, hash};
       approval.journal.complete(reservation.ticket, result as JsonValue, approval.authority);
       return result;

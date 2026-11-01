@@ -26,6 +26,8 @@ export interface AccountOptions {
   openExternal?: (url: string) => Promise<void>;
   now?: () => number;
   hostname?: () => string;
+  /** Link scheme the service's sign-in callback uses: `multai` in release builds. */
+  callbackScheme?: 'multai' | 'multai-dev';
 }
 interface PendingFlow {flowId: string; verifier: string; expiresAt: number; generation: number; completing: boolean}
 interface Refresh {generation: number; promise: Promise<string>}
@@ -61,6 +63,7 @@ export class Account {
   private readonly openExternal: (url: string) => Promise<void>;
   private readonly now: () => number;
   private readonly hostname: () => string;
+  private readonly callbackProtocol: string;
   private readonly inFlight = new Set<AbortController>();
   private pending: PendingFlow | null = null;
   private refreshing: Refresh | null = null;
@@ -78,6 +81,7 @@ export class Account {
     this.openExternal = options.openExternal ?? (url => shell.openExternal(url));
     this.now = options.now ?? Date.now;
     this.hostname = options.hostname ?? os.hostname;
+    this.callbackProtocol = `${options.callbackScheme ?? 'multai-dev'}:`;
   }
 
   get accountGeneration(): number { return this.generation; }
@@ -173,7 +177,7 @@ export class Account {
   }
 
   async completeSignIn(callback: URL): Promise<void> {
-    if (callback.protocol !== 'multai-dev:' || callback.hostname !== 'auth' || callback.pathname !== '/callback' || callback.username || callback.password || callback.port || callback.hash) return;
+    if (callback.protocol !== this.callbackProtocol || callback.hostname !== 'auth' || callback.pathname !== '/callback' || callback.username || callback.password || callback.port || callback.hash) return;
     if (callback.searchParams.getAll('flowId').length !== 1 || callback.searchParams.getAll('completionCode').length !== 1 || [...callback.searchParams.keys()].some(key => !['flowId', 'completionCode'].includes(key))) return;
     const input = z.object({flowId: z.uuid(), completionCode: opaque}).safeParse(Object.fromEntries(callback.searchParams));
     const pending = this.pending;
@@ -322,6 +326,12 @@ export class Account {
         response = await this.fetcher(url, {method, headers: {...(body !== undefined ? {'content-type': 'application/json'} : {}), ...(token ? {authorization: `Bearer ${token}`} : {})}, ...(body !== undefined ? {body: JSON.stringify(body)} : {}), signal: controller.signal, redirect: 'error'});
       } catch (error) {
         throw new ApiFailure(neverSent(error) ? {code: 'offline_unsent', message: 'Can’t reach the collaboration service.'} : {code: 'network_uncertain', message: 'The connection dropped before the service answered.'});
+      }
+      // A gateway error that isn't the service's own JSON comes from the HTTPS proxy: the service
+      // never received the request, so (like a refused connection) nothing was consumed.
+      if ([502, 503, 504].includes(response.status) && !/^application\/json\b/i.test(response.headers.get('content-type') ?? '')) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new ApiFailure({code: 'offline_unsent', message: 'The collaboration service is temporarily unavailable.'});
       }
       if (response.status === 204) return null;
       const json = await responseJson(response);
