@@ -39,13 +39,13 @@ describe('host-only AI connections', () => {
     const transport=vi.fn(async (url:string,options?:{headers?:Record<string,string>}) => {
       expect(url).toBe('https://api.meta.ai/v1/models');
       expect(options?.headers?.authorization).toBe('Bearer synthetic-meta-key');
-      return {object:'list',data:[{id:'muse-spark-1.3'}]};
+      return {object:'list',data:[{id:'muse-wonder-1.0'},{id:'sam-3.1'},{id:'muse-image-1.0'},{id:'muse-voice-transcribe-1.0'},{id:'muse-spark-1.3'}]};
     });
     const manager=new ConnectionManager({account:identity.value,storeFactory:storage.factory,transport});
     const meta=await manager.add({provider:'meta',apiKey:'synthetic-meta-key'});
     expect(meta).toMatchObject({provider:'meta',name:'Meta Muse',baseUrl:'https://api.meta.ai/v1'});
     expect(await manager.resolve(meta.id)).toEqual({kind:'compatible',apiKey:'synthetic-meta-key',baseUrl:'https://api.meta.ai/v1'});
-    expect(await manager.models(meta.id)).toEqual([{id:'muse-spark-1.3',name:'muse-spark-1.3'}]);
+    expect((await manager.models(meta.id)).map(model=>model.id)).toEqual(['muse-spark-1.3','muse-wonder-1.0']);
     await expect(manager.add({provider:'meta',apiKey:'synthetic-meta-key',baseUrl:'https://attacker.example/v1'})).rejects.toHaveProperty('code','invalid_provider_url');
   });
   it('offers Meta\'s documented models only when its live catalog is empty',async () => {

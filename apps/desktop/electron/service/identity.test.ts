@@ -71,6 +71,10 @@ describe('native collaboration identity fences', () => {
     expect(ctx.store.record.active?.userId).toBe(userId);
   });
 
+  it('a sign-in restored at launch has a positive generation, as approval descriptors require', async () => {
+    const ctx = account(async () => { throw new Error('No network in this test'); });
+    expect(ctx.instance.accountGeneration).toBeGreaterThan(0);
+  });
   it('a release build completes only multai:// callbacks', async () => {
     const flow = start();
     let exchangeCount = 0;

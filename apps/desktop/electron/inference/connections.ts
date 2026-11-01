@@ -237,8 +237,10 @@ export class ConnectionManager {
       }
       const listed = [...new Map(all.map(model => [model.id,{id: model.id, name: model.display_name ?? model.id}])).values()];
       // Meta's /models has answered with an empty list for working keys; fall back to its documented models.
-      if (!listed.length && record.connections.find(item => item.id === id)?.provider === 'meta') return META_DOCUMENTED_MODELS.map(model => ({...model}));
-      return listed;
+      if (record.connections.find(item => item.id === id)?.provider !== 'meta') return listed;
+      if (!listed.length) return META_DOCUMENTED_MODELS.map(model => ({...model}));
+      // Meta's catalog also lists SAM, image and voice models, which can't drive a chat agent; Muse Spark leads.
+      return listed.filter(model => /^muse-(spark|wonder)-/u.test(model.id)).sort((a, b) => Number(b.id.startsWith('muse-spark-1.3')) - Number(a.id.startsWith('muse-spark-1.3')));
       } finally {this.requests.delete(controller);}
     });
   }

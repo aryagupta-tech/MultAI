@@ -68,7 +68,8 @@ export class Account {
   private pending: PendingFlow | null = null;
   private refreshing: Refresh | null = null;
   private me: WireMe | null = null;
-  private generation = 0;
+  // Starts at 1: approval descriptors require positive generations, including for a sign-in restored at launch.
+  private generation = 1;
   private blocked = false;
   private forceRefresh = false;
 
