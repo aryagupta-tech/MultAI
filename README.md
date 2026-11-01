@@ -1,12 +1,54 @@
-# MultAI · integrated development build
+# MultAI
 
-MultAI combines a sandboxed Electron desktop app, a TypeScript collaboration service and an original-host coding runtime. This fresh implementation follows [MultAI.md](docs/MultAI.md) and the public repository's chosen [MIT license](LICENSE). It is a development build, not a completed public release.
+**One AI coding agent, shared by the whole team, in real time.**
 
-The service synchronizes attributed conversation, decisions, membership and ordered activity in PostgreSQL. Inference credentials, private workspaces, file tools and processes stay on the original desktop host. **Send queues an instruction. Run instruction or Resume explicitly starts inference.** Saving a project, connection or model selection does not start work.
+When you get stuck with an AI coding tool, bringing in a teammate today means screenshots and explaining everything again. In MultAI your teammate joins the session itself: they see the whole conversation, get a catch-up brief, can send the agent directions, and watch you approve what it does. The agent and your code stay on the host's computer.
 
-## Run locally
+Built for the **Meta Global AI Developer Hackathon** (Build for Your World), on **Muse Spark** and **Muse Wonder** through the Meta Model API.
 
-Use Node **24**, npm and Docker for development. From a fresh checkout:
+## How it uses Meta's models
+
+| Model | What it does in MultAI |
+|---|---|
+| **Muse Spark 1.3** | The shared coding agent. It reads, writes and runs code in the session's private workspace with tool calls, and every effect goes through the host's approval rules. |
+| **Muse Wonder 1.0** | Writes the **catch-up brief** when someone joins: a short chat-style summary of the goal, what was tried and fixed, decisions and who is waiting on what. |
+| **Muse Spark (vision)** | Teammates paste a **screenshot of the bug**; the agent sees it alongside the instruction. |
+
+The host connects once with a Meta Model API key. Teammates never need a key: every model call runs on the host's machine with the host's connection.
+
+## What happens in a session
+
+1. **Host starts a chat** and gives the agent a task (Plan mode to agree first, Build mode to make changes).
+2. **Invites a teammate** with a `multai://` link. The host admits them as collaborator or viewer.
+3. **Muse Wonder writes a catch-up brief** for the newcomer automatically.
+4. **Anyone can send directions** to the agent or talk to the team; a pasted screenshot goes to the agent too.
+5. **The host approves** file changes and commands from cards in the chat, or chooses an access level:
+   - **Ask for approval**: everything waits for the host.
+   - **Approve for me**: workspace edits and ordinary commands run; deleting, installing, network use, escalation or anything outside the workspace still asks, with the reason.
+   - **Full access**: everything runs, after an explicit warning. It switches off when someone new joins.
+6. Everyone sees the same live timeline: messages, agent replies, tool activity, approvals and decisions.
+
+## Built during the hackathon
+
+Everything in this repository was built during the hackathon: the first commit is from 29 October 2026, after building started on 26 October, and the full history is public. That includes:
+
+- **Desktop app** (Electron + React) for macOS, Windows and Linux, with Google sign-in, `multai://` invite links, a sandboxed renderer and OS-encrypted credentials.
+- **Collaboration service** (Fastify + PostgreSQL), deployed at `https://api.multai.si` on AWS Lightsail with Supabase Postgres: sessions, admission and roles, ordered live events, decisions, host-only run leases and approvals.
+- **Host runtime**: provider adapters (Meta Model API, OpenAI, Claude, Kimi, ChatGPT plan, compatible APIs), a controlled workspace, exact approval descriptors and a durable effect journal so an interrupted action is never silently repeated.
+- **Meta features**: Muse Spark as the agent, Muse Wonder catch-up briefs, screenshot input, access levels and in-chat approvals.
+- **Cross-platform CI**: Windows (NSIS installer) and Linux (AppImage, .deb, .tar.gz) builds installed and tested on every push.
+
+## Safety model
+
+- Code, files, credentials and processes stay on the **host's** computer. The service only relays the shared conversation and decisions.
+- The agent works in a **private workspace** per session. Every write and command is an exact descriptor (file hash or command text) that the host approves once; approvals expire, and Stop, sign-out or sleep cancel them.
+- Teammates' instructions are attributed; team discussion is context, never an instruction.
+- Secrets that look like API keys are redacted from shared text, briefs and command output.
+- Approval is not an OS sandbox: approved commands run as the host's user. Full access says so before it turns on.
+
+## Run it locally
+
+Node **24**, npm and Docker:
 
 ~~~sh
 npm ci --ignore-scripts
@@ -15,9 +57,7 @@ docker compose up -d database
 npm run dev:backend
 ~~~
 
-Keep an existing .env; it may already contain the fresh Google configuration. The backend binds to 127.0.0.1:4310 and transactionally verifies/applies migration checksums before listening. The readiness endpoint separates database readiness, **identity: configured_unverified** and **inference: host_local**. These report configuration and architecture, not successful provider acceptance. Stopping the Compose database retains its development volume.
-
-In another terminal, build the runtime and launch the desktop:
+In another terminal:
 
 ~~~sh
 npm run build --workspace @multai/runtime
@@ -25,36 +65,23 @@ node node_modules/electron/install.js
 npm run dev --workspace @multai/desktop
 ~~~
 
-The explicit Electron installer is needed when the binary is absent after the script-disabled npm install. It downloads the pinned development runtime. These development prerequisites are not the intended requirements for installed end users.
+Sign in with Google, open **Settings → Models & accounts → Meta Muse Spark**, paste a key from [dev.meta.ai](https://dev.meta.ai), start a chat and choose **Run instruction**. Release builds use `multai://` links and talk to `https://api.multai.si`; development builds use `multai-dev://` and the local service.
 
-A fresh, **unbilled** Google project and web OAuth client are configured in the ignored local .env for sign-in only, with the owner's test account admitted. The Google callback is http://127.0.0.1:4310/v1/auth/google/callback; the backend then sends a one-use completion to multai-dev://auth/callback. Real Google consent, OS callback delivery to the packaged macOS app and an OS-encrypted credential write succeeded on 29 October 2026. Cold restart, credential decryption and live refresh remain unverified; see [verification](docs/verification.md). New machines need authorized configuration; see [Google setup](docs/google-setup.md). Secrets are never source or desktop assets.
-
-After collaboration sign-in, open **Models & accounts** to connect OpenAI, Claude, Kimi, a supported compatible API, or **Continue with ChatGPT**. Load the selected account/provider's actual model catalog, choose a model, send an instruction, then choose **Run instruction**. Plan exposes read-only tools; Build permits reviewed writes/commands with fresh exact host approval. See [inference connections](docs/inference-connections.md) for protocols and account eligibility.
-
-## Validate and build
+## Tests
 
 ~~~sh
 npm run typecheck
-npm run build
-npm run test:integration
+npm run test:integration   # backend + runtime against a disposable PostgreSQL
+npm test --workspace @multai/desktop
 ~~~
 
-Root build/typecheck commands build the runtime before dependent workspaces. The integration runner starts and removes a disposable PostgreSQL 18 container on a random loopback port, running the backend/runtime/desktop suites without touching the Compose database or existing volumes. Alternatively, set TEST_DATABASE_URL to a **dedicated test database** and run npm test; tests create/drop isolated schemas.
+The **Desktop on Windows and Linux** workflow builds the installers, installs them, and checks launch, the hosted service, OS link routing, single instance, OS credential encryption and uninstall.
 
-Build output records source revision, dirty state and build time. Start compiled outputs with npm start --workspace @multai/backend and npm start --workspace @multai/desktop; retain backend migrations/ beside dist/. The desktop package script prepares a development app bundle. Ad-hoc signing is not notarization or evidence of fresh-download installer trust.
+## Limits
 
-## Implemented boundaries and limits
+- File previews in approvals are limited to 16,000 characters; one screenshot per message.
+- The agent works in a blank private workspace per session; running directly in an existing project folder is not implemented yet.
+- Installers are not code-signed yet, so macOS Gatekeeper and Windows SmartScreen will warn on first launch.
+- arm64 Windows and Linux builds are produced but not exercised in CI.
 
-- Google OIDC/PKCE, rotating hashed service credentials, device proof, secure desktop persistence and stale-account fencing.
-- Idempotent first send/messages, admission and roles, live replay/revocation, decisions and confirmed shared deletion.
-- Original-host leases, explicit Run/Resume/Stop, attributed context and owner resolution of pending directions from several authors.
-- Host provider adapters, bounded streams, controlled UTF-8 workspace tools, exact native write/command review and a durable SQLite effect journal/outbox. Interrupted effects become uncertain and are never automatically repeated.
-- A deterministic private **blank workspace** per account/service/device/session. Registered-project Git worktrees, dirty-checkout baselines and execution in a selected project folder are not implemented.
-
-Complete native write previews are limited to **16,000 characters**. Approved commands retain the host OS user's access; approval is not an OS sandbox. POSIX cancellation is implemented for macOS/Linux; Windows shell execution is unavailable. The SQLite journal has private permissions but is not encrypted credential storage.
-
-Uncertain local effects block further mutations in that session. This conservative gate can also follow a stale-file rejection after reservation. Read-only inspection remains available; a complete owner-facing reconciliation flow is not implemented. Do not edit the journal to bypass it.
-
-One service instance owns a database advisory lock; rate/connection limits are process-local. [Deployment preparation](docs/aws-deployment.md) includes private PostgreSQL, non-root images and verified encrypted restoration. **No AWS resources or public TLS service are deployed.** Google is used only for sign-in, without billing or compute.
-
-Read [authentication](apps/backend/AUTH.md), [collaboration](apps/backend/COLLABORATION.md), [execution](apps/backend/EXECUTION.md), [desktop setup](apps/desktop/README.md), [implementation status](docs/backend-status.md), [verification](docs/verification.md) and [local development preferences](docs/local-environment.md), including the owner's authorized Chrome Apple Events preference. Live provider authorization, Google restart/refresh checks, two installed clients and public release acceptance remain outstanding.
+More detail: [authentication](apps/backend/AUTH.md), [collaboration](apps/backend/COLLABORATION.md), [execution](apps/backend/EXECUTION.md), [desktop](apps/desktop/README.md), [inference connections](docs/inference-connections.md). Licensed [MIT](LICENSE).
