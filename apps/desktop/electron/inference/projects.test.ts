@@ -119,6 +119,9 @@ describe('project helpers',()=>{
     for(const remote of ['git@github.com:acme/shop.git','https://github.com/acme/shop.git','https://github.com/acme/shop','ssh://git@github.com/acme/shop.git'])expect(githubRepo(remote),remote).toBe('acme/shop');
     expect(githubRepo('git@gitlab.com:acme/shop.git')).toBeNull();
     expect(compareUrl('acme/shop','main','multai/fix-1')).toBe('https://github.com/acme/shop/compare/main...multai%2Ffix-1?expand=1');
+    const prefilled=new URL(compareUrl('acme/shop','main','multai/fix-1',{title:'Fix & test',body:'x'.repeat(5000)}));
+    expect(prefilled.searchParams.get('title')).toBe('Fix & test');
+    expect(prefilled.searchParams.get('body')).toHaveLength(4000);
   });
   it('refuses unsafe paths and caps long diffs',()=>{
     for(const bad of ['/etc/passwd','../x','a/../b','.git/config','a\\b',''])expect(()=>safeRelative(bad),bad).toThrow();

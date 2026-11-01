@@ -296,8 +296,10 @@ export function githubRepo(remote:string|null):string|null {
   const match=/^(?:https:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?\/?$/u.exec(remote.trim());
   return match?.[1]??null;
 }
-export function compareUrl(repo:string,base:string,branch:string):string {
-  return `https://github.com/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}?expand=1`;
+/** GitHub's new-pull-request page; title and body prefill its form (the body is cut to keep the link short). */
+export function compareUrl(repo:string,base:string,branch:string,pr?:{title:string;body:string}):string {
+  const query=new URLSearchParams({expand:'1',...(pr?{title:pr.title.slice(0,250),body:pr.body.slice(0,4000)}:{})});
+  return `https://github.com/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}?${query}`;
 }
 
 /** Pushes the session branch with the host's own git credentials. */
@@ -323,5 +325,5 @@ export async function openPullRequest(root:string,info:WorkInfo,input:{title:str
   const created=await git(root,['pr','create','--repo',repo,'--head',info.branch,'--base',base,'--title',input.title.slice(0,250),'--body-file','-'],{command:'gh',input:input.body.slice(0,60_000),allowFail:true,timeout:60_000}).catch(()=>null);
   const url=created&&!created.code?/https:\/\/github\.com\/\S+\/pull\/\d+/u.exec(created.stdout)?.[0]:undefined;
   if(url)return {url,created:true};
-  return {url:compareUrl(repo,base,info.branch),created:false};
+  return {url:compareUrl(repo,base,info.branch,input),created:false};
 }
