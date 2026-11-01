@@ -46,6 +46,28 @@ export function setEffort(effort:Effort):void {
   changed();
 }
 
+/**
+ * Web search is the provider's own (GPT through OpenAI or the ChatGPT plan, and Claude); Muse and other
+ * Chat Completions models don't offer it. Off unless the host turns it on for a chat; remembered per device.
+ */
+export function webSearchSupported():boolean {
+  const connection=getSelectedConnection();
+  return Boolean(connection&&['openai','chatgpt','anthropic'].includes(connection.provider));
+}
+const webSearchKey=(user:string|null)=>`multai.web-search.v1:${user??'signed-out'}`;
+function storedWebSearch():Record<string,boolean>{
+  try{const raw=JSON.parse(localStorage.getItem(webSearchKey(currentUser()))??'{}') as Record<string,unknown>;return Object.fromEntries(Object.entries(raw).filter((entry):entry is [string,boolean]=>entry[1]===true));}catch{return {};}
+}
+export const getWebSearchChoices=():Record<string,boolean>=>storedWebSearch();
+/** sessionId null is the New chat choice, moved to the session when it's created. */
+export function getWebSearch(sessionId:string|null):boolean {return Boolean(storedWebSearch()[sessionId??'new']);}
+export function setWebSearch(sessionId:string|null,on:boolean):void {
+  const all=storedWebSearch();const key=sessionId??'new';
+  if(on)all[key]=true;else delete all[key];
+  try{localStorage.setItem(webSearchKey(currentUser()),JSON.stringify(all));}catch{/* per-device convenience only */}
+  changed();
+}
+
 /** Access chosen on New chat, applied once the session exists. Full access is confirmed when chosen. */
 let newChatAccess:AccessLevel='ask';
 export function getNewChatAccess():AccessLevel {return newChatAccess;}
@@ -54,6 +76,7 @@ export async function chooseNewChatAccess(level:AccessLevel):Promise<void>{
   newChatAccess=level;changed();
 }
 export async function applyNewChatAccess(sessionId:string):Promise<void>{
+  if(getWebSearch(null)){setWebSearch(null,false);setWebSearch(sessionId,true);}
   const level=newChatAccess;newChatAccess='ask';changed();
   if(level!=='ask')await setAccessLevel(sessionId,level,{confirmed:true});
 }
@@ -164,7 +187,7 @@ async function run(sessionId:string):Promise<void> {
   const instruction=lastPendingInstruction(detail.timeline);
   if(!instruction){state.toast('Send a new agent instruction before running. Previously applied instructions are never repeated automatically.','info');return;}
   const user=currentUser(),epoch=accountEpoch;
-  const input={sessionId,instructionId:instruction.id,...selection,effort:getEffort(),...(detail.status==='paused'?{resume:true}:{})};
+  const input={sessionId,instructionId:instruction.id,...selection,effort:getEffort(),...(getWebSearch(sessionId)&&webSearchSupported()?{webSearch:true}:{}),...(detail.status==='paused'?{resume:true}:{})};
   try{
     let result=await inference.run(input);
     if(epoch!==accountEpoch||user!==currentUser())return;

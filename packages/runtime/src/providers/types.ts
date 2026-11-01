@@ -19,7 +19,8 @@ export type AgentEvent =
   | {type: 'tool.result'; callId: string; result: JsonValue}
   | {type: 'usage'; usage: Usage}
   | {type: 'turn.completed'; iterations: number}
-  | {type: 'steer'; count: number};
+  | {type: 'steer'; count: number}
+  | {type: 'web.search'; query: string};
 
 export interface StreamLimits {
   maxBytes?: number;
@@ -61,4 +62,6 @@ export interface Completion {
   calls: ToolCall[];
   output: Record<string, unknown>[];
   usage?: Usage;
+  /** Claude paused a long server-tool turn; send the conversation again to let it finish. */
+  paused?: boolean;
 }

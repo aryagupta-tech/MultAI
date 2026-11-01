@@ -337,3 +337,60 @@ test('directions sent while the agent works reach the next turn in each protocol
     }
   }
 });
+
+test('the provider\'s own web search is requested only when allowed, reported, and kept for the next turn', async () => {
+  // Responses: a hosted web_search_call before the answer.
+  const bodies: Record<string, unknown>[] = [];
+  const searched: string[] = [];
+  const responsesFetch: typeof fetch = async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    const call = {type: 'web_search_call', id: 'ws_1', status: 'completed', action: {type: 'search', query: 'node 24 release date'}};
+    return stream([{type: 'response.output_item.done', item: call}, {type: 'response.completed', response: {status: 'completed', output: [call, {type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'April 2025 ([nodejs.org](https://nodejs.org)).'}]}]}}]);
+  };
+  const answer = await runAgent({credentials, model: 'synthetic', messages: [{role: 'user', content: 'When was Node 24 released?'}], hostedSearch: true, signal: signal(), fetch: responsesFetch, onEvent: event => {if (event.type === 'web.search') searched.push(event.query);}});
+  assert.match(answer.text, /nodejs\.org/u);
+  assert.deepEqual(bodies[0]?.tools, [{type: 'web_search'}]);
+  assert.deepEqual(searched, ['node 24 release date']);
+  // Without permission the same hosted item is refused.
+  await assert.rejects(runAgent({credentials, model: 'synthetic', messages: [{role: 'user', content: 'x'}], signal: signal(), fetch: responsesFetch}), /unsupported hosted tool/u);
+  // Chat Completions providers (Muse) never get it.
+  let chatBody: Record<string, unknown> | undefined;
+  await runAgent({credentials: {kind: 'compatible', apiKey: 'synthetic-meta', baseUrl: 'https://api.meta.ai/v1'}, model: 'muse-spark-1.3', messages: [{role: 'user', content: 'x'}], hostedSearch: true, signal: signal(),
+    fetch: async (_url, init) => {chatBody = JSON.parse(String(init?.body)); return stream([{choices: [{delta: {content: 'ok'}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'stop'}]}, '[DONE]']);}});
+  assert.equal(chatBody?.tools, undefined);
+
+  // Claude: server_tool_use + results, a pause, then a cited answer.
+  const claude: Record<string, unknown>[] = [];
+  const claudeFetch: typeof fetch = async (_url, init) => {
+    claude.push(JSON.parse(String(init?.body)));
+    if (claude.length === 1) return stream([
+      {type: 'message_start', message: {usage: {input_tokens: 5}}},
+      {type: 'content_block_start', index: 0, content_block: {type: 'server_tool_use', id: 'srvtoolu_1', name: 'web_search', input: {}}},
+      {type: 'content_block_delta', index: 0, delta: {type: 'input_json_delta', partial_json: '{"query":"vitest 5 release"}'}},
+      {type: 'content_block_stop', index: 0},
+      {type: 'content_block_start', index: 1, content_block: {type: 'web_search_tool_result', tool_use_id: 'srvtoolu_1', content: [{type: 'web_search_result', url: 'https://vitest.dev', title: 'Vitest', encrypted_content: 'x'}]}},
+      {type: 'content_block_stop', index: 1},
+      {type: 'message_delta', delta: {stop_reason: 'pause_turn'}, usage: {output_tokens: 3}},
+      {type: 'message_stop'},
+    ]);
+    return stream([
+      {type: 'message_start', message: {usage: {input_tokens: 9}}},
+      {type: 'content_block_start', index: 0, content_block: {type: 'text', text: ''}},
+      {type: 'content_block_delta', index: 0, delta: {type: 'text_delta', text: 'Vitest 5 is out.'}},
+      {type: 'content_block_delta', index: 0, delta: {type: 'citations_delta', citation: {type: 'web_search_result_location', url: 'https://vitest.dev', title: 'Vitest', cited_text: 'Vitest 5'}}},
+      {type: 'content_block_stop', index: 0},
+      {type: 'message_delta', delta: {stop_reason: 'end_turn'}, usage: {output_tokens: 4}},
+      {type: 'message_stop'},
+    ]);
+  };
+  const claudeSearched: string[] = [];
+  const cited = await runAgent({credentials: {kind: 'anthropic', apiKey: 'synthetic-claude'}, model: 'synthetic-claude', messages: [{role: 'user', content: 'Is Vitest 5 out?'}], hostedSearch: true, signal: signal(), fetch: claudeFetch, onEvent: event => {if (event.type === 'web.search') claudeSearched.push(event.query);}});
+  assert.equal(cited.text, 'Vitest 5 is out.');
+  assert.deepEqual(claudeSearched, ['vitest 5 release']);
+  assert.deepEqual((claude[0]?.tools as unknown[]).at(-1), {type: 'web_search_20250305', name: 'web_search', max_uses: 5});
+  // The paused turn goes back as-is so Claude can continue from its own search.
+  const resent = (claude[1]?.messages as {role: string; content: {type: string; input?: unknown}[]}[]).at(-1)!;
+  assert.equal(resent.role, 'assistant');
+  assert.deepEqual(resent.content.map(block => block.type), ['server_tool_use', 'web_search_tool_result']);
+  assert.deepEqual(resent.content[0]?.input, {query: 'vitest 5 release'});
+});

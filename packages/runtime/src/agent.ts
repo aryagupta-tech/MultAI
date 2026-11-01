@@ -25,6 +25,8 @@ export interface RunAgentOptions {
    * the run would end. Whatever it returns is added to the conversation as user text the model sees next.
    */
   steer?: (signal: AbortSignal) => Promise<string[]>;
+  /** The provider's own web search, for Responses and Messages providers. Ignored by Chat Completions. */
+  hostedSearch?: boolean;
 }
 
 export interface AgentResult {text: string; iterations: number; usage?: Usage}
@@ -98,6 +100,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     const completion = await complete({
       credentials: options.credentials, model: options.model, system, state, tools, maxOutputTokens,
       ...(options.reasoningEffort ? {reasoningEffort: options.reasoningEffort} : {}),
+      ...(options.hostedSearch && protocol !== 'chat' ? {hostedSearch: true} : {}),
       signal: options.signal, onEvent: iterationEvent,
       ...(options.limits ? {limits: options.limits} : {}), ...(options.fetch ? {fetch: options.fetch} : {}),
     });
@@ -114,6 +117,11 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
       if (inputKnown && outputKnown) totalUsage.totalTokens = totalUsage.inputTokens! + totalUsage.outputTokens!;
       await onEvent({type: 'usage', usage: {...totalUsage}});
     } else {inputKnown = false; outputKnown = false; totalUsage = undefined;}
+    if (completion.paused) {
+      // Claude paused a long hosted search; sending the turn back lets it continue where it stopped.
+      state.items.push(...completion.output);
+      continue;
+    }
     if (!completion.calls.length) {
       // A direction that arrived while the model was answering keeps the run going instead of being dropped.
       const late = await directions(iteration);

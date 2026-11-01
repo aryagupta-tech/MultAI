@@ -169,6 +169,8 @@ interface CompleteInput extends ProviderDependencies {
   maxOutputTokens: number;
   /** Sent as reasoning.effort (Responses) or reasoning_effort (Chat Completions); never for Messages. */
   reasoningEffort?: string;
+  /** The provider's own web search (Responses and Messages only). The provider runs every search itself. */
+  hostedSearch?: boolean;
   onEvent: (event: AgentEvent) => void | Promise<void>;
 }
 
@@ -184,10 +186,12 @@ export async function complete(input: CompleteInput): Promise<Completion> {
     if (credentials.kind !== 'chatgpt') body.max_output_tokens = maxOutputTokens;
     if (input.reasoningEffort) body.reasoning = {effort: input.reasoningEffort};
     if (functions.length) body.tools = credentials.kind === 'chatgpt' ? [{type: 'namespace', name: 'multai', description: 'App-controlled workspace tools. Every effect requires host authority.', tools: functions}] : functions;
+    if (input.hostedSearch) body.tools = [...(body.tools as unknown[] | undefined ?? []), {type: 'web_search'}];
   } else if (state.protocol === 'anthropic') {
     path = 'messages';
     body = {model, messages: state.items, system, stream: true, max_tokens: maxOutputTokens};
     if (tools.length) body.tools = tools.map(tool => ({name: tool.name, description: tool.description, input_schema: tool.parameters}));
+    if (input.hostedSearch) body.tools = [...(body.tools as unknown[] | undefined ?? []), {type: 'web_search_20250305', name: 'web_search', max_uses: 5}];
   } else {
     path = 'chat/completions';
     body = {model, messages: [{role: 'system', content: system}, ...state.items], stream: true, max_tokens: maxOutputTokens, stream_options: {include_usage: true}};
@@ -241,7 +245,9 @@ export async function complete(input: CompleteInput): Promise<Completion> {
       if (event.type === 'response.output_text.delta') await emitText(event.delta);
       else if (event.type === 'response.output_item.done') {
         if (finishedItems.length >= 256) throw new ProviderError('output_limit', 'The provider returned too many output items.');
-        finishedItems.push(record(event.item));
+        const item = record(event.item);
+        finishedItems.push(item);
+        if (item.type === 'web_search_call' && input.hostedSearch) await input.onEvent({type: 'web.search', query: searchQuery(record(item.action).query)});
       }
       else if (event.type === 'response.failed' || event.type === 'response.incomplete') {
         const code = knownErrorCode(event);
@@ -252,7 +258,7 @@ export async function complete(input: CompleteInput): Promise<Completion> {
         const listed = array(completed.output).map(record);
         output = listed.length ? listed : finishedItems;
         calls = output.filter(item => item.type === 'function_call').map(item => parseCall(item.call_id, item.name, item.arguments, item.namespace));
-        if (output.some(item => item.type !== 'message' && item.type !== 'function_call' && item.type !== 'reasoning')) throw new ProviderError('unsupported_tool', 'The provider returned an unsupported hosted tool or output type.');
+        if (output.some(item => item.type !== 'message' && item.type !== 'function_call' && item.type !== 'reasoning' && !(item.type === 'web_search_call' && input.hostedSearch))) throw new ProviderError('unsupported_tool', 'The provider returned an unsupported hosted tool or output type.');
         usage = usageFrom(completed.usage, 'responses');
         if (!text) {
           const terminalText = output.filter(item => item.type === 'message').flatMap(item => array(item.content)).map(record).filter(part => part.type === 'output_text').map(part => typeof part.text === 'string' ? part.text : '').join('');
@@ -271,7 +277,9 @@ export async function complete(input: CompleteInput): Promise<Completion> {
         const index = number(event.index);
         if (!claudeStarted || index === undefined || claudeBlocks.has(index) || claudeBlocks.size >= 64) throw new ProviderError('invalid_stream', 'The provider sent an invalid content block.');
         const block = record(event.content_block);
-        if (!['text', 'tool_use', 'thinking', 'redacted_thinking'].includes(String(block.type))) throw new ProviderError('unsupported_tool', 'The provider returned an unsupported content type.');
+        const hosted = input.hostedSearch && ['server_tool_use', 'web_search_tool_result'].includes(String(block.type));
+        if (block.type === 'server_tool_use' && block.name !== 'web_search') throw new ProviderError('unsupported_tool', 'The provider returned an unsupported hosted tool.');
+        if (!hosted && !['text', 'tool_use', 'thinking', 'redacted_thinking'].includes(String(block.type))) throw new ProviderError('unsupported_tool', 'The provider returned an unsupported content type.');
         claudeBlocks.set(index, {...block});
       } else if (event.type === 'content_block_delta') {
         const index = number(event.index);
@@ -282,8 +290,13 @@ export async function complete(input: CompleteInput): Promise<Completion> {
           if (block.type !== 'text') throw new ProviderError('invalid_stream', 'The provider streamed text into another content type.');
           await emitText(delta.text); block.text = String(block.text ?? '') + String(delta.text);
         }
+        else if (delta.type === 'citations_delta') {
+          if (block.type !== 'text') throw new ProviderError('invalid_stream', 'The provider sent citations outside text.');
+          const citations = Array.isArray(block.citations) ? block.citations : [];
+          if (citations.length < 256) block.citations = [...citations, record(delta.citation)];
+        }
         else if (delta.type === 'input_json_delta') {
-          if (block.type !== 'tool_use') throw new ProviderError('invalid_stream', 'The provider streamed tool arguments into another content type.');
+          if (block.type !== 'tool_use' && block.type !== 'server_tool_use') throw new ProviderError('invalid_stream', 'The provider streamed tool arguments into another content type.');
           const part = typeof delta.partial_json === 'string' ? delta.partial_json : '';
           const previous = argumentParts.get(index!) ?? '';
           if (Buffer.byteLength(previous) + Buffer.byteLength(part) > 65_536) throw new ProviderError('tool_limit', 'Tool arguments exceeded their byte limit.');
@@ -305,13 +318,18 @@ export async function complete(input: CompleteInput): Promise<Completion> {
           const call = parseCall(block.id, block.name, argumentParts.get(index!) ?? JSON.stringify(block.input));
           block.input = call.arguments;
           calls.push(call);
+        } else if (block.type === 'server_tool_use') {
+          // Claude runs this search itself; keep its input for the next turn and say what it searched for.
+          const parts = argumentParts.get(index!);
+          if (parts) {try {block.input = JSON.parse(parts) as unknown;} catch {throw new ProviderError('invalid_stream', 'The provider sent invalid hosted tool input.');}}
+          await input.onEvent({type: 'web.search', query: searchQuery(record(block.input).query)});
         }
       } else if (event.type === 'message_delta') {
         finishReason = typeof record(event.delta).stop_reason === 'string' ? String(record(event.delta).stop_reason) : finishReason;
         usage = usageFrom({...record(event.usage), ...(claudeInputTokens === undefined ? {} : {input_tokens: claudeInputTokens})}, 'anthropic');
       } else if (event.type === 'message_stop') {
         if (!claudeStarted || claudeClosed.size !== claudeBlocks.size || (finishReason === 'tool_use') !== (calls.length > 0)) throw new ProviderError('invalid_stream', 'The provider terminated before its content and tool blocks agreed.');
-        if (finishReason !== 'end_turn' && finishReason !== 'tool_use' && finishReason !== 'stop_sequence') throw new ProviderError('provider_incomplete', 'The provider stopped before completing this turn.');
+        if (finishReason !== 'end_turn' && finishReason !== 'tool_use' && finishReason !== 'stop_sequence' && !(finishReason === 'pause_turn' && input.hostedSearch)) throw new ProviderError('provider_incomplete', 'The provider stopped before completing this turn.');
         output = [{role: 'assistant', content: [...claudeBlocks.entries()].sort(([a], [b]) => a - b).map(([, block]) => block)}];
         terminal = true;
         break;
@@ -353,5 +371,7 @@ export async function complete(input: CompleteInput): Promise<Completion> {
     output = [{role: 'assistant', content: text || null, ...(chatReasoning ? {reasoning_content: chatReasoning} : {}), ...(calls.length ? {tool_calls: calls.map(call => ({id: call.id, type: 'function', function: {name: call.name, arguments: canonicalJson(call.arguments)}}))} : {})}];
   }
   if (calls.length > 32 || new Set(calls.map(call => call.id)).size !== calls.length) throw new ProviderError('tool_limit', 'The provider returned too many or duplicate tool calls.');
-  return {text, calls, output, ...(usage ? {usage} : {})};
+  return {text, calls, output, ...(usage ? {usage} : {}), ...(finishReason === 'pause_turn' ? {paused: true} : {})};
 }
+
+const searchQuery = (value: unknown) => typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim().slice(0, 300) : '';

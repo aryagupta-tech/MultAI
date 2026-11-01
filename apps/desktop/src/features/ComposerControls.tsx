@@ -1,7 +1,7 @@
 // The composer's run settings, side by side like a chat app: which model, how much effort, how much
 // access, plus prompts you've saved. They belong to the host; teammates don't see them.
 import { useEffect, useState } from 'react';
-import { BookMarked, Check, ChevronDown, Gauge, Hand, Infinity as InfinityIcon, Lock, LockOpen, Plus, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
+import { BookMarked, Check, Globe, ChevronDown, Gauge, Hand, Infinity as InfinityIcon, Lock, LockOpen, Plus, Settings2, ShieldCheck, Trash2 } from 'lucide-react';
 import { getBridge } from '../bridge/client';
 import type { AccessLevel } from '../bridge/execution';
 import type { InferenceModel } from '../bridge/inference';
@@ -133,16 +133,27 @@ export function AccessPicker({ sessionId }: { sessionId: string | null }) {
   const pending = useExecutionState(execution.getNewChatAccess);
   const level: AccessLevel = sessionId ? stored : pending;
   const Icon = level === 'ask' ? Lock : ACCESS[level].icon;
+  const web = Boolean(useExecutionState(execution.getWebSearchChoices)[sessionId ?? 'new']);
+  const webSupported = useExecutionState(execution.webSearchSupported);
   return (
     <Menu
       label="Agent access"
       side="top"
       align="end"
       width={300}
-      items={(['ask', 'auto', 'full'] as const).map((id) => ({
-        id, label: ACCESS[id].label, icon: ACCESS[id].icon, description: ACCESS[id].description, checked: id === level, danger: id === 'full',
-        onSelect: () => void (sessionId ? execution.setAccessLevel(sessionId, id) : execution.chooseNewChatAccess(id)),
-      }))}
+      items={[
+        ...(['ask', 'auto', 'full'] as const).map((id) => ({
+          id, label: ACCESS[id].label, icon: ACCESS[id].icon, description: ACCESS[id].description, checked: id === level, danger: id === 'full',
+          onSelect: () => void (sessionId ? execution.setAccessLevel(sessionId, id) : execution.chooseNewChatAccess(id)),
+        })),
+        { id: 'sep', separator: true as const },
+        {
+          id: 'web', label: 'Allow web search', icon: Globe, checked: web && webSupported,
+          description: webSupported ? 'The model’s provider searches the web itself, so searches aren’t approved one by one. Replies cite their sources.' : 'Muse models don’t offer web search. Choose a GPT or Claude model to use it.',
+          disabled: (webSupported ? false : 'Not available for this model') as string | false,
+          onSelect: () => execution.setWebSearch(sessionId, !web),
+        },
+      ]}
       trigger={(t) => (
         <button type="button" {...t} className={cx('composer-pick', level === 'full' && 'is-full')} data-tip="Agent access" data-tip-side="top">
           <Icon size={14} strokeWidth={1.8} aria-hidden />

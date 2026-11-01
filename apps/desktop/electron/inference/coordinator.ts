@@ -13,7 +13,7 @@ import {PROJECT_SKILL_FOLDERS,deletePersonalSkill,loadSkills,savePersonalSkill,t
 
 const selectionSchema=z.object({connectionId:z.uuid(),model:z.string().min(1).max(200),modelName:z.string().max(200).optional()}).strict();
 function selectionValue(input:unknown):InferenceSelection {const value=selectionSchema.parse(input);return {connectionId:value.connectionId,model:value.model,...(value.modelName?{modelName:value.modelName}:{})};}
-const runSchema=selectionSchema.extend({sessionId:z.uuid(),instructionId:z.uuid(),resume:z.boolean().optional(),resolution:z.string().trim().min(1).max(8000).optional(),effort:z.enum(['low','medium','high','xhigh','max']).optional()}).strict();
+const runSchema=selectionSchema.extend({sessionId:z.uuid(),instructionId:z.uuid(),resume:z.boolean().optional(),resolution:z.string().trim().min(1).max(8000).optional(),effort:z.enum(['low','medium','high','xhigh','max']).optional(),webSearch:z.boolean().optional()}).strict();
 const contextSchema=z.object({run:z.object({id:z.uuid(),sessionId:z.uuid(),connectionId:z.uuid(),model:z.string(),generation:z.number().int().positive(),mode:z.enum(['plan','build'])}),messages:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(100),selectedInstruction:z.object({id:z.uuid(),authorId:z.uuid(),text:z.string().min(1).max(16000),image:z.string().max(110_000).optional()}),decisions:z.array(z.object({id:z.uuid(),text:z.string()})).max(100)});
 interface Running {
   id:string;sessionId:string;generation:number;connectionId:string;lease:string;controller:AbortController;
@@ -453,6 +453,8 @@ export class HostCoordinator {
           this.usage.set(body.sessionId,{used:contextBytes(system,[...history,instruction]),limit:MAX_INPUT_BYTES});
           const result=await runAgent({credentials,model:body.model,messages:[...history,instruction],system,
             steer,
+            // The provider runs these searches; the host allowed them for this chat. Muse has no such tool.
+            ...(body.webSearch&&['openai','chatgpt','anthropic'].includes(credentials.kind)?{hostedSearch:true}:{}),
             tools:[...readDefinitions,...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:effectDefinitions)],signal:controller.signal,beforeRequest:()=>this.assertLive(running),fetch:publicProviderFetch,
             limits:(({runMs:_runMs,...limits})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...limits}))(effortLimits(body.effort??'medium',credentials)),
             ...(nativeEffort(body.effort??'medium',credentials)?{reasoningEffort:nativeEffort(body.effort??'medium',credentials)!}:{}),
@@ -465,6 +467,7 @@ export class HostCoordinator {
             onEvent:async event=>{
               if(event.type==='text.delta'){pending+=event.text;if(pending.length>=512&&Date.now()-lastFlush>=1000)await flush();}
               if(event.type==='usage')await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});
+              if(event.type==='web.search'){await flush();await this.publish(running,'activity.completed',{summary:event.query?`Searched the web: ${event.query}`:'Searched the web'});}
             }});
           await flush(true);const final=textChunks(redactText(result.text,running.secrets),13500);const truncated=final.length>1;
           await this.publish(running,'agent.completed',{messageId,text:`${final[0]??''}${truncated?'\n[Final context text truncated by the sharing limit.]':''}`,model:body.model,truncated});
