@@ -34,6 +34,29 @@ describe('host-only AI connections', () => {
     expect((await manager.resolve(added.id)).apiKey).toBe('synthetic-api-key-not-a-real-secret');
     expect([...storage.records.values()][0]?.connections[0]?.apiKey).toBe('synthetic-api-key-not-a-real-secret');
   });
+  it('connects Meta Muse at its fixed endpoint over Chat Completions and never accepts another address',async () => {
+    const identity=account(),storage=memory();
+    const transport=vi.fn(async (url:string,options?:{headers?:Record<string,string>}) => {
+      expect(url).toBe('https://api.meta.ai/v1/models');
+      expect(options?.headers?.authorization).toBe('Bearer synthetic-meta-key');
+      return {object:'list',data:[{id:'muse-spark-1.3'}]};
+    });
+    const manager=new ConnectionManager({account:identity.value,storeFactory:storage.factory,transport});
+    const meta=await manager.add({provider:'meta',apiKey:'synthetic-meta-key'});
+    expect(meta).toMatchObject({provider:'meta',name:'Meta Muse',baseUrl:'https://api.meta.ai/v1'});
+    expect(await manager.resolve(meta.id)).toEqual({kind:'compatible',apiKey:'synthetic-meta-key',baseUrl:'https://api.meta.ai/v1'});
+    expect(await manager.models(meta.id)).toEqual([{id:'muse-spark-1.3',name:'muse-spark-1.3'}]);
+    await expect(manager.add({provider:'meta',apiKey:'synthetic-meta-key',baseUrl:'https://attacker.example/v1'})).rejects.toHaveProperty('code','invalid_provider_url');
+  });
+  it('offers Meta\'s documented models only when its live catalog is empty',async () => {
+    const identity=account(),storage=memory();
+    const transport=vi.fn(async () => ({object:'list',data:[]}));
+    const manager=new ConnectionManager({account:identity.value,storeFactory:storage.factory,transport});
+    const meta=await manager.add({provider:'meta',apiKey:'synthetic-meta-key'});
+    expect((await manager.models(meta.id)).map(model=>model.id)).toEqual(['muse-spark-1.3','muse-wonder-1.0']);
+    const openai=await manager.add({provider:'openai',apiKey:'synthetic-openai-key'});
+    expect(await manager.models(openai.id)).toEqual([]);
+  });
   it('keeps Google account/device/service scopes separate and does not auto-infer on save',async () => {
     const identity=account(),storage=memory(),transport=vi.fn();
     const manager=new ConnectionManager({account:identity.value,storeFactory:storage.factory,transport});

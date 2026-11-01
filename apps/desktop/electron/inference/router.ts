@@ -8,7 +8,7 @@ import {HostCoordinator} from './coordinator';
 import type {AddConnectionInput} from '../../src/bridge/inference';
 
 const schemas={
-  list:z.tuple([]),add:z.tuple([z.object({provider:z.enum(['openai','anthropic','kimi','compatible']),apiKey:z.string().min(1).max(8192),name:z.string().max(120).optional(),baseUrl:z.string().max(2048).optional()}).strict()]),
+  list:z.tuple([]),add:z.tuple([z.object({provider:z.enum(['meta','openai','anthropic','kimi','compatible']),apiKey:z.string().min(1).max(8192),name:z.string().max(120).optional(),baseUrl:z.string().max(2048).optional()}).strict()]),
   remove:z.tuple([z.uuid()]),models:z.tuple([z.uuid()]),connectChatGPT:z.tuple([z.uuid().optional()]),cancelChatGPT:z.tuple([]),
   manageChatGPTUsage:z.tuple([]),acknowledgeChatGPTPlan:z.tuple([z.uuid()]),
   select:z.tuple([z.unknown()]),selection:z.tuple([]),run:z.tuple([z.unknown()]),stop:z.tuple([z.uuid()]),

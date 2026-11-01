@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Check, ChevronDown, CircleAlert, Eye, EyeOff, KeyRound, Loader2, Lock, MessageSquareText, RefreshCw, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, CircleAlert, Eye, EyeOff, KeyRound, Loader2, Lock, MessageSquareText, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
 import type { ConnectionSummary, InferenceConnectionsApi, InferenceModel } from '../bridge/inference';
 import type { ServiceError } from '../bridge/contract';
 import { getSelection } from '../live/execution';
@@ -13,11 +13,11 @@ import {ChatGPTPlanUsage,ChatGPTPlanWelcome,isChatGPTUsageLimit} from './ChatGPT
 
 // AI connection setup: ChatGPT sign-in or API keys, model choice and removal.
 
-type Method = 'chatgpt' | 'api';
+type Method = 'meta' | 'chatgpt' | 'api';
 type Notice = { text: string; tone: 'error' | 'warn' } | null;
 
-const PROVIDER_BADGE: Record<ConnectionSummary['provider'], string> = { chatgpt: 'GPT', openai: 'OAI', anthropic: 'CL', kimi: 'KI', compatible: 'API' };
-const emptyForm = (provider: ApiProvider = 'openai'): FormState => ({ provider, name: '', apiKey: '', baseUrl: '' });
+const PROVIDER_BADGE: Record<ConnectionSummary['provider'], string> = { meta: 'META', chatgpt: 'GPT', openai: 'OAI', anthropic: 'CL', kimi: 'KI', compatible: 'API' };
+const emptyForm = (provider: ApiProvider = 'meta'): FormState => ({ provider, name: '', apiKey: '', baseUrl: '' });
 
 function noticeFrom(error: ServiceError): Notice {
   // Removal succeeded locally even when remote revocation couldn't be confirmed: that's a warning.
@@ -26,7 +26,7 @@ function noticeFrom(error: ServiceError): Notice {
 
 export function AiConnections({ api, onSelect }: { api: InferenceConnectionsApi; onSelect?(connectionId: string, model: InferenceModel): void }) {
   const [connections, setConnections] = useState<ConnectionSummary[] | null>(null);
-  const [method, setMethod] = useState<Method>('chatgpt');
+  const [method, setMethod] = useState<Method>('meta');
   const [form, setForm] = useState<FormState>(emptyForm());
   const [touched, setTouched] = useState<Partial<Record<keyof FormState, boolean>>>({});
   const [showKey, setShowKey] = useState(false);
@@ -152,8 +152,9 @@ export function AiConnections({ api, onSelect }: { api: InferenceConnectionsApi;
     <section className="conn" aria-label="AI connections">
       <div className="conn-methods" role="radiogroup" aria-label="How to connect">
         {([
+          ['meta', Sparkles, 'Meta Muse Spark', 'Recommended. Paste a Meta Model API key from dev.meta.ai.'],
           ['chatgpt', MessageSquareText, 'ChatGPT account', 'Use your ChatGPT plan. Signs in through your browser.'],
-          ['api', KeyRound, 'API key', 'OpenAI, Claude, Kimi or a compatible provider.'],
+          ['api', KeyRound, 'Other API key', 'OpenAI, Claude, Kimi or a compatible provider.'],
         ] as const).map(([value, Icon, title, desc]) => (
           <button
             key={value}
@@ -161,7 +162,7 @@ export function AiConnections({ api, onSelect }: { api: InferenceConnectionsApi;
             role="radio"
             aria-checked={method === value}
             className={cx('conn-method', method === value && 'is-selected')}
-            onClick={() => setMethod(value)}
+            onClick={() => { setMethod(value); if (value === 'meta') set({ provider: 'meta' }); else if (value === 'api' && form.provider === 'meta') set({ provider: 'openai' }); }}
             disabled={busy === 'chatgpt' && value !== 'chatgpt'}
           >
             <span className="conn-method-icon"><Icon size={16} strokeWidth={1.8} aria-hidden /></span>
@@ -188,10 +189,12 @@ export function AiConnections({ api, onSelect }: { api: InferenceConnectionsApi;
         </div>
       ) : (
         <form className="conn-panel" noValidate onSubmit={(e) => { e.preventDefault(); void add(); }}>
-          <div className="conn-field">
+          {method === 'meta' ? (
+            <p className="conn-note">Muse Spark runs the shared agent for every session you host. Create a key at dev.meta.ai → API keys; it stays encrypted on this computer.</p>
+          ) : <div className="conn-field">
             <span className="conn-label" id={`${id}-prov`}>Provider</span>
             <div className="conn-providers" role="radiogroup" aria-labelledby={`${id}-prov`}>
-              {PROVIDERS.map((p) => (
+              {PROVIDERS.filter((p) => p.id !== 'meta').map((p) => (
                 <button
                   key={p.id}
                   type="button"
@@ -206,7 +209,7 @@ export function AiConnections({ api, onSelect }: { api: InferenceConnectionsApi;
               ))}
             </div>
             <span className="conn-help">{form.provider === 'compatible' ? 'Any OpenAI-compatible API over HTTPS.' : `Connects to ${provider.host}.`}</span>
-          </div>
+          </div>}
 
           {form.provider === 'compatible' && (
             <label className="conn-field">

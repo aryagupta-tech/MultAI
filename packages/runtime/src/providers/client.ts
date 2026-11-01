@@ -326,6 +326,7 @@ export async function complete(input: CompleteInput): Promise<Completion> {
           chatCalls.set(index, call);
         }
         if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
+          if (choice.finish_reason === 'length') throw new ProviderError('output_limit', 'The model used up its output budget before finishing (reasoning counts toward it). Try a narrower instruction.');
           if (choice.finish_reason !== 'stop' && choice.finish_reason !== 'tool_calls') throw new ProviderError('provider_incomplete', 'The provider stopped before completing this turn.');
           finishReason = String(choice.finish_reason);
         }

@@ -35,10 +35,12 @@ interface ManagerOptions {
   storeFactory?(scope: string): Store;
   openExternal?(url: string): Promise<void>;
 }
-const baseUrls = {openai: 'https://api.openai.com/v1', anthropic: 'https://api.anthropic.com/v1', kimi: 'https://api.moonshot.ai/v1', chatgpt: 'https://api.openai.com/v1'} as const;
+const baseUrls = {meta: 'https://api.meta.ai/v1', openai: 'https://api.openai.com/v1', anthropic: 'https://api.anthropic.com/v1', kimi: 'https://api.moonshot.ai/v1', chatgpt: 'https://api.openai.com/v1'} as const;
+/** Published at dev.meta.ai/docs; used only when Meta's live catalog comes back empty. */
+const META_DOCUMENTED_MODELS: readonly InferenceModel[] = [{id: 'muse-spark-1.3', name: 'Muse Spark 1.3'}, {id: 'muse-wonder-1.0', name: 'Muse Wonder 1.0'}];
 const keySchema = z.string().trim().min(1).max(8192).regex(/^[^\s\u0000-\u001f\u007f]+$/u);
 const nameSchema = z.string().trim().min(1).max(80).regex(/^[^\u0000-\u001f\u007f]+$/u);
-const addSchema = z.object({provider: z.enum(['openai', 'anthropic', 'kimi', 'compatible']), name: nameSchema.optional(), apiKey: keySchema, baseUrl: z.string().max(1024).optional()}).strict();
+const addSchema = z.object({provider: z.enum(['meta', 'openai', 'anthropic', 'kimi', 'compatible']), name: nameSchema.optional(), apiKey: keySchema, baseUrl: z.string().max(1024).optional()}).strict();
 
 function summary(connection: SecretConnection, acknowledgedSubjects: readonly string[] = []): ConnectionSummary {
   const registration = connection.registration;
@@ -106,7 +108,7 @@ export class ConnectionManager {
       if (record.connections.length >= 32) throw new ConnectionError('connection_capacity', 'Remove a connection before adding another.');
       const baseUrl = parsed.provider === 'compatible' ? validateBaseUrl(parsed.baseUrl ?? '') : baseUrls[parsed.provider];
       if (parsed.provider !== 'compatible' && parsed.baseUrl && validateBaseUrl(parsed.baseUrl) !== baseUrl) throw new ConnectionError('invalid_provider_url', 'Choose the compatible provider option for a custom API endpoint.');
-      const connection: SecretConnection = {id: randomUUID(), name: parsed.name ?? (parsed.provider === 'kimi' ? 'Kimi' : parsed.provider === 'anthropic' ? 'Claude' : parsed.provider === 'openai' ? 'OpenAI' : 'Compatible API'), provider: parsed.provider, baseUrl, apiKey: parsed.apiKey};
+      const connection: SecretConnection = {id: randomUUID(), name: parsed.name ?? (parsed.provider === 'meta' ? 'Meta Muse' : parsed.provider === 'kimi' ? 'Kimi' : parsed.provider === 'anthropic' ? 'Claude' : parsed.provider === 'openai' ? 'OpenAI' : 'Compatible API'), provider: parsed.provider, baseUrl, apiKey: parsed.apiKey};
       this.fresh(scope);
       record.connections.push(connection);
       await scope.store.save(record);
@@ -164,7 +166,8 @@ export class ConnectionManager {
     this.fresh(scope);
     if (connection.provider !== 'chatgpt') {
       if (!connection.apiKey) throw new ConnectionError('connection_not_found', 'This AI connection is incomplete.');
-      return {kind: connection.provider === 'kimi' ? 'compatible' : connection.provider, apiKey: connection.apiKey, baseUrl: connection.baseUrl};
+      // Meta's Model API and Kimi speak OpenAI Chat Completions at their own fixed endpoints.
+      return {kind: connection.provider === 'kimi' || connection.provider === 'meta' ? 'compatible' : connection.provider, apiKey: connection.apiKey, baseUrl: connection.baseUrl};
     }
     let registration = connection.registration;
     if (!registration?.accessToken || registration.reauthorizationRequired) throw new ConnectionError('chatgpt_sign_in_required', 'Sign in to this ChatGPT connection again.');
@@ -232,7 +235,10 @@ export class ConnectionManager {
         all.push(...page.data);
         if (all.length > 2000) throw new ConnectionError('model_catalog_truncated', 'The provider model catalog exceeded the supported bound.');
       }
-      return [...new Map(all.map(model => [model.id,{id: model.id, name: model.display_name ?? model.id}])).values()];
+      const listed = [...new Map(all.map(model => [model.id,{id: model.id, name: model.display_name ?? model.id}])).values()];
+      // Meta's /models has answered with an empty list for working keys; fall back to its documented models.
+      if (!listed.length && record.connections.find(item => item.id === id)?.provider === 'meta') return META_DOCUMENTED_MODELS.map(model => ({...model}));
+      return listed;
       } finally {this.requests.delete(controller);}
     });
   }

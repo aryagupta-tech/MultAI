@@ -7,6 +7,7 @@ import type { AddConnectionInput, ConnectionSummary } from '../bridge/inference'
 export type ApiProvider = AddConnectionInput['provider'];
 
 export const PROVIDERS: { id: ApiProvider; label: string; host: string; keyHint: string }[] = [
+  { id: 'meta', label: 'Meta Muse', host: 'api.meta.ai', keyHint: 'Meta Model API key' },
   { id: 'openai', label: 'OpenAI', host: 'api.openai.com', keyHint: 'sk-…' },
   { id: 'anthropic', label: 'Claude', host: 'api.anthropic.com', keyHint: 'sk-ant-…' },
   { id: 'kimi', label: 'Kimi', host: 'api.moonshot.ai', keyHint: 'sk-…' },

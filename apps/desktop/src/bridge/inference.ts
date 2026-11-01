@@ -1,6 +1,6 @@
 import type {Result} from './contract';
 
-export type InferenceProvider = 'openai' | 'anthropic' | 'kimi' | 'compatible' | 'chatgpt';
+export type InferenceProvider = 'meta' | 'openai' | 'anthropic' | 'kimi' | 'compatible' | 'chatgpt';
 export interface ConnectionSummary {
   id: string;
   name: string;
