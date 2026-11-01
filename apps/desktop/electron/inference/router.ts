@@ -11,7 +11,7 @@ const schemas={
   list:z.tuple([]),add:z.tuple([z.object({provider:z.enum(['meta','openai','anthropic','kimi','compatible']),apiKey:z.string().min(1).max(8192),name:z.string().max(120).optional(),baseUrl:z.string().max(2048).optional()}).strict()]),
   remove:z.tuple([z.uuid()]),models:z.tuple([z.uuid()]),connectChatGPT:z.tuple([z.uuid().optional()]),cancelChatGPT:z.tuple([]),
   manageChatGPTUsage:z.tuple([]),acknowledgeChatGPTPlan:z.tuple([z.uuid()]),
-  select:z.tuple([z.unknown()]),selection:z.tuple([]),run:z.tuple([z.unknown()]),stop:z.tuple([z.uuid()]),
+  select:z.tuple([z.unknown()]),brief:z.tuple([z.unknown()]),selection:z.tuple([]),run:z.tuple([z.unknown()]),stop:z.tuple([z.uuid()]),
 };
 export type InferenceOp=keyof typeof schemas;
 export async function routeInference(manager:ConnectionManager,coordinator:HostCoordinator,op:unknown,args:unknown):Promise<Result<unknown>>{
@@ -35,6 +35,7 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'selection':value=await coordinator.selection();break;
       case 'run':value=await coordinator.run(values[0]);break;
       case 'stop':value=await coordinator.stop(values[0] as string);break;
+      case 'brief':value=await coordinator.brief(values[0]);break;
     }
     return {ok:true,value};
   }catch(error){

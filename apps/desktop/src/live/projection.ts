@@ -102,6 +102,7 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
     case 'action.completed': return {...base,type:'system',tone:'info',text:'The approved action completed.'};
     case 'action.canceled': return {...base,type:'system',tone:'warn',text:'The pending action was canceled.'};
     case 'action.uncertain': return {...base,type:'system',tone:'warn',text:'The action outcome is uncertain and will not be repeated automatically.'};
+    case 'brief.created': return typeof p.text === 'string' ? {...base,type:'brief',text:p.text.slice(0,6000),model:typeof p.model === 'string' ? p.model.slice(0,200) : 'Model'} : null;
     case 'decision.saved': return typeof p.id === 'string' && typeof p.text === 'string' ? {...base,type:'decision',decisionId:p.id} : null;
     case 'activity.completed':
     case 'activity.failed': {

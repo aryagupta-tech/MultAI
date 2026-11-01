@@ -255,6 +255,30 @@ export class ExecutionService extends CollaborationService {
       return {stopped:true,runtimeGeneration:session.runtime_generation,status:session.status};
     });
   }
+  /** The original host reads a bounded transcript to write a catch-up brief with its own model connection. */
+  async briefContext(actor:Actor,sessionId:string){
+    return transaction(this.db,async client=>{
+      const session=await this.host(client,actor,sessionId);
+      const events=await client.query<{sequence:number;type:string;payload:{text?:string;summary?:string;tool?:string};name:string|null}>(`SELECT e.sequence,e.type,e.payload,u.display_name AS name FROM shared_events e LEFT JOIN users u ON u.id=e.actor_id
+        WHERE e.session_id=$1 AND e.type IN ('message.discussion','message.instruction','agent.completed','activity.completed','activity.failed','decision.saved','participant.admitted','brief.created')
+        ORDER BY e.sequence DESC LIMIT 200`,[session.id]);
+      const latest=await client.query<{sequence:number}>('SELECT COALESCE(max(sequence),0)::int AS sequence FROM shared_events WHERE session_id=$1',[session.id]);
+      return {title:session.title,mode:session.mode,throughSequence:latest.rows[0]!.sequence,
+        events:events.rows.reverse().map(event=>({sequence:event.sequence,type:event.type,author:event.name??'MultAI',text:(event.payload.text??event.payload.summary??event.payload.tool??'').slice(0,4000)})).filter(event=>event.text||event.type==='participant.admitted')};
+    });
+  }
+  async postBrief(actor:Actor,sessionId:string,input:unknown){
+    const body=z.object({requestId:uuid,model:text(200),text:text(6000),throughSequence:z.number().int().nonnegative()}).strict().parse(input);
+    return transaction(this.db,async client=>{
+      const session=await this.host(client,actor,sessionId);
+      const previous=await client.query<{sequence:number}>("SELECT sequence FROM shared_events WHERE session_id=$1 AND type='brief.created' AND payload->>'requestId'=$2",[session.id,body.requestId]);
+      if(previous.rows[0]) return {sequence:previous.rows[0].sequence};
+      const count=await client.query<{count:number}>("SELECT count(*)::int AS count FROM shared_events WHERE session_id=$1 AND type='brief.created'",[session.id]);
+      if(count.rows[0]!.count>=200) throw new ApiError(409,'brief_capacity','This session has reached its catch-up brief limit.');
+      const event=await this.append(client,session,actor,'brief.created',{requestId:body.requestId,text:redact(body.text),model:body.model,throughSequence:body.throughSequence});
+      return {sequence:event.sequence};
+    });
+  }
   async saveDecision(actor:Actor,sessionId:string,input:unknown){
     const body=z.object({text:text(8000),reason:text(2000).optional(),replacesId:uuid.optional()}).strict().parse(input);
     return transaction(this.db,async client=>{
@@ -282,6 +306,8 @@ export async function registerExecutionRoutes(app:FastifyInstance,service:Execut
   const params=(request:FastifyRequest)=>z.object({sessionId:uuid,runId:uuid.optional(),actionId:uuid.optional()}).parse(request.params);
   app.post('/v1/sessions/:sessionId/runs',async request=>service.startRun(await authenticate(request),params(request).sessionId,request.body));
   app.post('/v1/sessions/:sessionId/stop',async request=>service.stop(await authenticate(request),params(request).sessionId,request.body));
+  app.get('/v1/sessions/:sessionId/brief-context',async request=>service.briefContext(await authenticate(request),params(request).sessionId));
+  app.post('/v1/sessions/:sessionId/briefs',async request=>service.postBrief(await authenticate(request),params(request).sessionId,request.body));
   app.post('/v1/sessions/:sessionId/decisions',async request=>service.saveDecision(await authenticate(request),params(request).sessionId,request.body));
   app.post('/v1/sessions/:sessionId/runs/:runId/heartbeat',async request=>{const p=params(request);return service.heartbeat(await authenticate(request),p.sessionId,p.runId!,request.body);});
   app.post('/v1/sessions/:sessionId/runs/:runId/events',async request=>{const p=params(request);return service.publish(await authenticate(request),p.sessionId,p.runId!,request.body);});

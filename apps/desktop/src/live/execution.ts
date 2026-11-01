@@ -151,6 +151,22 @@ async function run(sessionId:string):Promise<void> {
   }catch{useApp.getState().toast('The run could not be confirmed. Refresh this session before trying again.','error');}
 }
 
+const briefing=new Set<string>();
+/** The host writes a catch-up brief with its own connection; quiet=true for the automatic one on admit. */
+export async function writeBrief(sessionId:string,quiet=false):Promise<void> {
+  const inference=api(),selection=getSelection(),state=useApp.getState();
+  if(!inference||briefing.has(sessionId))return;
+  if(!selection){if(!quiet){state.toast('Connect an AI provider and choose a model first.','info');state.openOverlay('settings','models');}return;}
+  briefing.add(sessionId);
+  if(!quiet)state.toast('Writing a catch-up brief…','info');
+  try{
+    const result=await inference.brief({sessionId,connectionId:selection.connectionId,model:selection.model});
+    if(!result.ok){if(!quiet||result.error.code!=='NOTHING_TO_BRIEF')useApp.getState().toast(describe(result.error),'error');return;}
+    await open(sessionId);
+  }catch{useApp.getState().toast('The catch-up brief could not be written. Try again.','error');}
+  finally{briefing.delete(sessionId);}
+}
+
 export async function stopRun(sessionId:string):Promise<void> {
   const inference=api();if(!inference)return;
   try{

@@ -472,7 +472,9 @@ export async function admit(id: string, requestId: string, role: 'collaborator' 
   const value = await call(api().admit(id, requestId, role));
   if (!value) return false;
   await loadJoinRequests(id);
-  useApp.getState().toast(`Admitted as ${role}.`, 'success');
+  useApp.getState().toast(`Admitted as ${role}. Writing them a catch-up brief…`, 'success');
+  // Someone new is in: the host's connection summarizes the session for them.
+  void execution.writeBrief(id, true);
   return true;
 }
 

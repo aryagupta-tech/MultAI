@@ -43,6 +43,7 @@ const bridge: DesktopBridge = {
     selection:()=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'selection',[]),
     run:(input)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'run',[input]),
     stop:(id)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'stop',[id]),
+    brief:(input)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'brief',[input]),
     onConnectionsChange:listen(INFERENCE_IPC.connections),
     onRunChange:listen(INFERENCE_IPC.run),
   } as DesktopBridge['inference']),

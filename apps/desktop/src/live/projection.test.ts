@@ -118,6 +118,10 @@ describe('execution event projection',()=>{
     expect(d.decisions).toEqual([expect.objectContaining({id:'decision-one',status:'replaced',authorId:me.id}),expect.objectContaining({id:'decision-two',status:'current',authorId:other,reason:'Concurrent updates'})]);
     expect(d.timeline.filter(item=>item.type==='decision')).toHaveLength(2);
   });
+  test('shows a catch-up brief as its own card and skips a malformed one',()=>{
+    const d=project([ev(1,'brief.created',me.id,{requestId:'r',text:'**Goal** Fix login',model:'muse-wonder-1.0',throughSequence:0}),ev(2,'brief.created',me.id,{model:'muse-wonder-1.0'})]);
+    expect(d.timeline.filter(item=>item.type==='brief')).toEqual([expect.objectContaining({type:'brief',text:'**Goal** Fix login',model:'muse-wonder-1.0'})]);
+  });
   test('uses only reported usage and bounded shared activity summaries',()=>{
     const d=project([ev(1,'usage.reported',me.id,{}),ev(2,'usage.reported',me.id,{usage:{inputTokens:12}}),ev(3,'activity.completed',me.id,{tool:'read_file',summary:'Read a selected file',output:'x'.repeat(40000),exitCode:0})]);
     expect(d.timeline[0]).toMatchObject({type:'system',text:'Provider-reported usage: 12 input tokens.'});

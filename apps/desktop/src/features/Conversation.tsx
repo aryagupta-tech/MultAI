@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowDown, Bookmark, Check, ChevronRight, CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX,
-  FileText, FolderTree, GitMerge, Info, Loader2, PenLine, Search, ShieldCheck, Split, TerminalSquare, Users, Wrench,
+  FileText, FolderTree, GitMerge, Info, Loader2, PenLine, Search, ShieldCheck, Sparkles, Split, TerminalSquare, Users, Wrench,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { clockTime } from '../model/format';
@@ -91,6 +91,7 @@ function TimelineRow({ item, d, people, decisions, grouped }: {
     case 'tools': return <ToolGroup item={item} />;
     case 'approval': return <ApprovalCard item={item} d={d} people={people} />;
     case 'plan': return <PlanCard item={item} />;
+    case 'brief': return <BriefCard item={item} />;
     case 'decision': return <DecisionRow decision={decisions.get(item.decisionId)} people={people} />;
     case 'conflict': return <ConflictCard item={item} d={d} people={people} />;
     case 'question': return <QuestionCard item={item} d={d} />;
@@ -144,6 +145,20 @@ function AgentRow({ item }: { item: Item<'agent'> }) {
           <div className="thinking" role="status"><span /><span /><span /><span className="sr-only">Agent is thinking</span></div>
         )}
       </div>
+    </article>
+  );
+}
+
+function BriefCard({ item }: { item: Item<'brief'> }) {
+  return (
+    <article className="brief-card" aria-label="Catch-up brief">
+      <header className="brief-head">
+        <Sparkles size={14} aria-hidden />
+        <span className="brief-title">Catch-up brief</span>
+        <span className="msg-model">{item.model}</span>
+        <time className="msg-time" dateTime={item.at}>{clockTime(item.at)}</time>
+      </header>
+      <div className="msg-text"><Markdown text={item.text} streaming={false} /></div>
     </article>
   );
 }

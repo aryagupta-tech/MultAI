@@ -110,6 +110,7 @@ export type TimelineItem =
   | (TimelineBase & { type: 'approval'; title: string; reason: string; descriptor: ApprovalDescriptor; state: ApprovalState; decidedBy?: string })
   | (TimelineBase & { type: 'plan'; title: string; steps: PlanStep[] })
   | (TimelineBase & { type: 'decision'; decisionId: string })
+  | (TimelineBase & { type: 'brief'; text: string; model: string })
   | (TimelineBase & { type: 'conflict'; instructionIds: [string, string]; resolved: boolean })
   | (TimelineBase & { type: 'question'; prompt: string; options: string[]; answer?: string })
   | (TimelineBase & { type: 'system'; tone: 'info' | 'warn' | 'error'; text: string });

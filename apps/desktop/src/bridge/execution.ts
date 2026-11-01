@@ -6,6 +6,8 @@ export interface HostExecutionApi {
   select(input:InferenceSelection):Promise<Result<InferenceSelection>>;
   selection():Promise<Result<InferenceSelection|null>>;
   run(input:StartInferenceInput):Promise<Result<{runId:string}>>;
+  /** The host's connection writes a catch-up brief into the shared session. */
+  brief(input:{sessionId:string;connectionId:string;model:string}):Promise<Result<{sequence:number;model:string}>>;
   stop(sessionId:string):Promise<Result<null>>;
   onRunChange(listener:(change:HostRunChange)=>void):()=>void;
 }

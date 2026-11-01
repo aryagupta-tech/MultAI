@@ -989,3 +989,9 @@ ol.md-list { list-style: decimal; }
 :root:not([data-theme='light']) .cmd-meta { background: #0a0a0a; }
 :root:not([data-theme='light']) .kbd { background: #111; }
 :root:not([data-theme='light']) .avatar { filter: saturate(0.35); }
+
+/* Catch-up brief: written by the host's model for anyone joining. */
+.brief-card { margin: 8px 0 8px 40px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: var(--r-lg); background: var(--surface-3); }
+.brief-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--text-2); }
+.brief-title { font-weight: 600; color: var(--text); font-size: var(--fs-sm); }
+.brief-head .msg-time { margin-left: auto; }

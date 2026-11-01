@@ -456,3 +456,37 @@ test('service restart fences the prior epoch and only one service may own a data
   assert.equal(late.statusCode, 409);
   assert.equal(late.json().error.code, 'stale_execution');
 });
+
+test('only the original host writes catch-up briefs, from a bounded transcript, and every participant sees them', async t => {
+  const ctx = await createTestContext(); t.after(() => ctx.close());
+  const owner = await seedActor(ctx.db, 'Synthetic host');
+  const teammate = await seedActor(ctx.db, 'Synthetic teammate');
+  const target = await session(ctx, owner);
+  await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/messages`, headers: headers(owner), payload: {requestId: randomUUID(), kind: 'discussion', text: 'The login test fails on Safari only.'}});
+  await admit(ctx, owner, target, teammate, 'collaborator');
+
+  const context = await ctx.app.inject({method: 'GET', url: `/v1/sessions/${target.id}/brief-context`, headers: headers(owner)});
+  assert.equal(context.statusCode, 200, context.body);
+  const body = context.json();
+  assert.ok(body.throughSequence > 0);
+  assert.ok(body.events.some((event: {author: string; text: string}) => event.author === 'Synthetic host' && event.text.includes('Safari')));
+  assert.ok(body.events.some((event: {type: string}) => event.type === 'participant.admitted'));
+
+  const denied = await ctx.app.inject({method: 'GET', url: `/v1/sessions/${target.id}/brief-context`, headers: headers(teammate)});
+  assert.equal(denied.statusCode, 403);
+  const forged = await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/briefs`, headers: headers(teammate), payload: {requestId: randomUUID(), model: 'muse-wonder-1.0', text: 'Forged brief', throughSequence: 1}});
+  assert.equal(forged.statusCode, 403);
+
+  const brief = {requestId: randomUUID(), model: 'muse-wonder-1.0', text: 'So far: a Safari-only login failure. Token sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX0123 was mentioned.', throughSequence: body.throughSequence};
+  const posted = await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/briefs`, headers: headers(owner), payload: brief});
+  assert.equal(posted.statusCode, 200, posted.body);
+  const retried = await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/briefs`, headers: headers(owner), payload: brief});
+  assert.equal(retried.json().sequence, posted.json().sequence);
+
+  const seen = await ctx.app.inject({method: 'GET', url: `/v1/sessions/${target.id}/events?after=0`, headers: headers(teammate)});
+  assert.equal(seen.statusCode, 200, seen.body);
+  const briefs = seen.json().events.filter((event: {type: string}) => event.type === 'brief.created');
+  assert.equal(briefs.length, 1);
+  assert.equal(briefs[0].payload.model, 'muse-wonder-1.0');
+  assert.doesNotMatch(briefs[0].payload.text, /sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX0123/);
+});

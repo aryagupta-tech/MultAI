@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import {
   Archive, ChevronDown, Cpu, Hammer, Laptop, ListChecks, MoreHorizontal, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain, Radio,
+  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain, Radio, Sparkles,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import type { SessionDetail } from '../model/types';
@@ -171,6 +171,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           align="end"
           width={232}
           items={[
+            ...(d.source === 'live' && d.capabilities.configure ? [{ id: 'brief', label: 'Write catch-up brief', icon: Sparkles, description: 'Muse Wonder summarizes the session for everyone', onSelect: () => void execution.writeBrief(d.id) }] : []),
             { id: 'rename', label: 'Rename', icon: Pencil, ...(d.source === 'live' ? { description: 'Only you see this name' } : {}), onSelect: () => renamePrompt(d) },
             { id: 'pin', label: summary?.pinned ? 'Unpin' : 'Pin to sidebar', icon: Pin, onSelect: () => app.togglePin(d.id) },
             { id: 'archive', label: 'Archive', icon: Archive, description: 'Hides it for you only', onSelect: () => app.setArchived(d.id, true) },
