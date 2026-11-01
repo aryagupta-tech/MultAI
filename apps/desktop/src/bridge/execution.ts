@@ -1,7 +1,7 @@
 import type {ProjectGit,Result} from './contract';
 import type {FileChange} from '../model/types';
 export interface InferenceSelection {connectionId:string;model:string;modelName?:string}
-export interface StartInferenceInput extends InferenceSelection {sessionId:string;instructionId:string;resume?:boolean;resolution?:string;effort?:'low'|'medium'|'high'}
+export interface StartInferenceInput extends InferenceSelection {sessionId:string;instructionId:string;resume?:boolean;resolution?:string;effort?:'low'|'medium'|'high'|'xhigh'|'max'}
 export interface HostRunChange {sessionId:string;status:'running'|'completed'|'failed'|'stopped';error?:{code:string;message:string}}
 export type AccessLevel='ask'|'auto'|'full';
 /** An action waiting for the original host, shown as a card in that session's conversation. */

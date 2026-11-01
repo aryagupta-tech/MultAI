@@ -18,6 +18,8 @@ export interface RunAgentOptions {
   onEvent?: (event: AgentEvent) => void | Promise<void>;
   limits?: AgentLimits;
   fetch?: typeof globalThis.fetch;
+  /** Provider-native reasoning effort, sent only when the caller knows this provider accepts it. */
+  reasoningEffort?: string;
 }
 
 export interface AgentResult {text: string; iterations: number; usage?: Usage}
@@ -46,7 +48,8 @@ function withImages(protocol: ConversationState['protocol'], text: string, image
 export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   const maxIterations = boundedInteger(options.limits?.maxIterations, 12, 32);
   const maxToolCalls = boundedInteger(options.limits?.maxToolCalls, 32, 64);
-  const maxOutputTokens = boundedInteger(options.limits?.maxOutputTokens, 8192, 32768);
+  const maxOutputTokens = boundedInteger(options.limits?.maxOutputTokens, 8192, 65536);
+  if (options.reasoningEffort !== undefined && !/^[a-z]{2,16}$/u.test(options.reasoningEffort)) throw new ProviderError('invalid_limits', 'The reasoning effort is invalid.');
   const maxInputBytes = boundedInteger(options.limits?.maxInputBytes, 524_288, 1_048_576);
   if (!options.model || options.model.length > 256 || /[\u0000-\u001f]/u.test(options.model)) throw new ProviderError('invalid_model', 'Select a model from the connected provider.');
   if (!Array.isArray(options.messages) || options.messages.length < 1 || options.messages.length > 1000 || options.messages.some(message => !['user', 'assistant'].includes(message.role) || typeof message.content !== 'string' || !validImages(message))) throw new ProviderError('invalid_context', 'The agent context is invalid.');
@@ -81,6 +84,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     };
     const completion = await complete({
       credentials: options.credentials, model: options.model, system, state, tools, maxOutputTokens,
+      ...(options.reasoningEffort ? {reasoningEffort: options.reasoningEffort} : {}),
       signal: options.signal, onEvent: iterationEvent,
       ...(options.limits ? {limits: options.limits} : {}), ...(options.fetch ? {fetch: options.fetch} : {}),
     });

@@ -36,10 +36,10 @@ export function getSelectedConnection():ConnectionSummary|null {
 export function getConnections():ConnectionSummary[]{return connections.filter(connection=>connection.status==='ready').map(connection=>({...connection}));}
 
 /** How much time and output the agent may spend per run; remembered per account on this device. */
-export type Effort='low'|'medium'|'high';
+export type Effort='low'|'medium'|'high'|'xhigh'|'max';
 const effortKey=(user:string|null)=>`multai.effort.v1:${user??'signed-out'}`;
 export function getEffort():Effort {
-  try{const value=localStorage.getItem(effortKey(currentUser()));return value==='low'||value==='high'?value:'medium';}catch{return 'medium';}
+  try{const value=localStorage.getItem(effortKey(currentUser()));return value==='low'||value==='high'||value==='xhigh'||value==='max'?value:'medium';}catch{return 'medium';}
 }
 export function setEffort(effort:Effort):void {
   try{localStorage.setItem(effortKey(currentUser()),effort);}catch{/* per-device convenience only */}

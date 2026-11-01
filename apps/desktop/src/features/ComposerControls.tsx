@@ -89,25 +89,27 @@ function prettyModel(id: string): string {
 /* ---------------------------------------------------------------- Effort */
 
 const EFFORT: Record<execution.Effort, { label: string; description: string }> = {
-  low: { label: 'Low', description: 'Quick answers and small edits. Fewest steps.' },
+  low: { label: 'Low', description: 'Fastest. Quick answers and small edits.' },
   medium: { label: 'Medium', description: 'Balanced for most tasks.' },
-  high: { label: 'High', description: 'More thinking, steps and time for hard problems.' },
+  high: { label: 'High', description: 'Thinks longer for harder problems.' },
+  xhigh: { label: 'Very high', description: 'Deep reasoning and more steps for complex work.' },
+  max: { label: 'Max', description: 'The most thinking, steps and time. Slowest and uses the most tokens.' },
 };
 
 export function EffortPicker() {
   const effort = useExecutionState(execution.getEffort);
   return (
     <Menu
-      label="Effort"
+      label="Reasoning"
       side="top"
       align="end"
-      width={260}
-      items={(['low', 'medium', 'high'] as const).map((id) => ({
+      width={280}
+      items={(['low', 'medium', 'high', 'xhigh', 'max'] as const).map((id) => ({
         id, label: EFFORT[id].label, description: EFFORT[id].description, checked: id === effort,
         onSelect: () => execution.setEffort(id),
       }))}
       trigger={(t) => (
-        <button type="button" {...t} className="composer-pick" data-tip="Effort" data-tip-side="top">
+        <button type="button" {...t} className="composer-pick" data-tip="Reasoning" data-tip-side="top">
           <Gauge size={14} strokeWidth={1.8} aria-hidden />
           <span>{EFFORT[effort].label}</span>
           <ChevronDown size={13} aria-hidden />

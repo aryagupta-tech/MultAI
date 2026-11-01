@@ -167,6 +167,8 @@ interface CompleteInput extends ProviderDependencies {
   state: ConversationState;
   tools: ToolDefinition[];
   maxOutputTokens: number;
+  /** Sent as reasoning.effort (Responses) or reasoning_effort (Chat Completions); never for Messages. */
+  reasoningEffort?: string;
   onEvent: (event: AgentEvent) => void | Promise<void>;
 }
 
@@ -180,6 +182,7 @@ export async function complete(input: CompleteInput): Promise<Completion> {
     path = 'responses';
     body = {model, input: state.items, store: false, stream: true, instructions: system, include: ['reasoning.encrypted_content']};
     if (credentials.kind !== 'chatgpt') body.max_output_tokens = maxOutputTokens;
+    if (input.reasoningEffort) body.reasoning = {effort: input.reasoningEffort};
     if (functions.length) body.tools = credentials.kind === 'chatgpt' ? [{type: 'namespace', name: 'multai', description: 'App-controlled workspace tools. Every effect requires host authority.', tools: functions}] : functions;
   } else if (state.protocol === 'anthropic') {
     path = 'messages';
@@ -188,6 +191,7 @@ export async function complete(input: CompleteInput): Promise<Completion> {
   } else {
     path = 'chat/completions';
     body = {model, messages: [{role: 'system', content: system}, ...state.items], stream: true, max_tokens: maxOutputTokens, stream_options: {include_usage: true}};
+    if (input.reasoningEffort) body.reasoning_effort = input.reasoningEffort;
     if (functions.length) body.tools = functions.map(({type, ...fn}) => ({type, function: fn}));
   }
   const response = await send(credentials, path, body, input);
