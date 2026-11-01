@@ -101,7 +101,8 @@ describe('synthetic host integration with real private workspace and SQLite jour
     x.state.generation++; x.state.userId = randomUUID(); x.state.deviceId = randomUUID();
     gate.resolve([{id: x.input.model, name: 'Synthetic model'}]);
     expect(await starting).toMatchObject({code: 'STALE_ACCOUNT'});
-    expect(x.requests).toHaveLength(0);
+    // The session is read alongside the model lookup; nothing is claimed or published.
+    expect(x.requests.filter(request => request.method !== 'GET')).toHaveLength(0);
     expect(runtime.run).not.toHaveBeenCalled();
   });
 

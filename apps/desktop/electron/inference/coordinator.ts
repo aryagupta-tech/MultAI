@@ -26,6 +26,8 @@ interface Running {
   /** MCP tools offered this run, by the name the model sees. */
   mcp:Map<string,{serverId:string;server:string;tool:string}>;
   cwd:string;
+  /** When the service last confirmed this run's lease. */
+  aliveAt:number;
 }
 interface Slot {lifecycle:number;accountGeneration:number;finished:Promise<void>;settle():void}
 interface StartSlot extends Slot {sessionId:string;controller:AbortController}
@@ -373,6 +375,15 @@ export class HostCoordinator {
     return {sequence:posted.sequence,model:body.model};
   }
   private usage=new Map<string,{used:number;limit:number}>();
+  /** Each connection's model list, so starting a run doesn't wait on the provider's /models every time. */
+  private modelLists=new Map<string,{at:number;ids:Set<string>}>();
+  private async modelAvailable(connectionId:string,model:string):Promise<boolean>{
+    const cached=this.modelLists.get(connectionId);
+    if(cached&&Date.now()-cached.at<10*60_000&&cached.ids.has(model))return true;
+    const ids=new Set((await this.options.connections.models(connectionId)).map(item=>item.id));
+    this.modelLists.set(connectionId,{at:Date.now(),ids});
+    return ids.has(model);
+  }
   /** How full the agent's input was at the start of the session's last run on this computer. */
   async contextUsage(sessionId:string):Promise<{used:number;limit:number;compactedAt:string|null}|null>{
     z.uuid().parse(sessionId);
@@ -442,11 +453,11 @@ export class HostCoordinator {
     this.starting=operation;let claim:ClaimedRun|undefined;let activated=false;
     try{
       const {identity,key,directory}=await this.scope();this.freshStart(operation,identity);
-      const credentials=await this.options.connections.resolve(body.connectionId);this.freshStart(operation,identity);
-      const models=await this.options.connections.models(body.connectionId);this.freshStart(operation,identity);
-      if(!models.some(model=>model.id===body.model))throw new RuntimeError('MODEL_UNAVAILABLE','The selected model is unavailable.');
-      const snapshot=z.object({session:z.object({runtimeGeneration:z.number().int().positive(),capabilities:z.object({manage:z.boolean()}),status:z.string()})}).parse(await this.options.account.request('GET',`/v1/sessions/${body.sessionId}`));
+      // Independent lookups go out together: they used to add a round trip each before the run started.
+      const [credentials,available,session]=await Promise.all([this.options.connections.resolve(body.connectionId),this.modelAvailable(body.connectionId,body.model),this.options.account.request('GET',`/v1/sessions/${body.sessionId}`)]);
       this.freshStart(operation,identity);
+      if(!available)throw new RuntimeError('MODEL_UNAVAILABLE','The selected model is unavailable.');
+      const snapshot=z.object({session:z.object({runtimeGeneration:z.number().int().positive(),capabilities:z.object({manage:z.boolean()}),status:z.string()})}).parse(session);
       if(!snapshot.session.capabilities.manage)throw new RuntimeError('HOST_REQUIRED','Only the original owner on the original host can start inference.');
       const root=path.join(directory,'workspaces',body.sessionId);
       await mkdir(root,{recursive:true,mode:0o700});this.freshStart(operation,identity);
@@ -464,7 +475,7 @@ export class HostCoordinator {
       if(claimed.run.sessionId!==body.sessionId||claimed.run.connectionId!==body.connectionId||claimed.run.model!==body.model||claimed.selectedInstruction.id!==body.instructionId||claimed.run.generation<=snapshot.session.runtimeGeneration)throw new RuntimeError('STALE_EXECUTION','The service claim does not match this exact instruction, model and connection.');
       const controller=operation.controller;
       const authority:Authority={actorId:identity.userId,actorDeviceId:identity.deviceId,role:'owner',sessionId:body.sessionId,originalOwnerId:identity.userId,originalDeviceId:identity.deviceId,accountGeneration:identity.generation,sessionGeneration:claimed.run.generation,runtimeGeneration:claimed.run.generation,connectionId:body.connectionId,payerId:identity.userId,mode:claimed.run.mode,connected:true};
-      const running:Running={...claim!,generation:claimed.run.generation,connectionId:body.connectionId,controller,journal,authority,secrets:[credentials.apiKey],finished:Promise.resolve(),skills,codebase:null,mcp:new Map(),cwd:workspace.root};
+      const running:Running={...claim!,generation:claimed.run.generation,connectionId:body.connectionId,controller,journal,authority,secrets:[credentials.apiKey],finished:Promise.resolve(),skills,codebase:null,mcp:new Map(),cwd:workspace.root,aliveAt:Date.now()};
       running.codebase=this.codebaseFor(directory,body.sessionId,workspace.root,running.secrets);
       this.freshStart(operation,identity);this.active=running;this.starting=null;activated=true;
       this.emit({sessionId:body.sessionId,status:'running'});
@@ -474,6 +485,11 @@ export class HostCoordinator {
       running.finished=(async()=>{
         let pending='';let lastFlush=Date.now();const messageId=randomUUID();
         const flush=async(final=false)=>{if(!pending)return;lastFlush=Date.now();const cutoff=safePrefixLength(pending,running.secrets,final);if(!cutoff)return;const text=redactText(pending.slice(0,cutoff),running.secrets);pending=pending.slice(cutoff);for(const chunk of textChunks(text))await this.publish(running,'agent.delta',{messageId,text:chunk,model:body.model});};
+        // Text is shared a few times a second in the background, so a short reply shows while it streams
+        // instead of when the run ends. Anything else published waits for it, which keeps the order.
+        let sharing:Promise<void>=Promise.resolve();let scheduled=false;
+        const share=()=>{if(scheduled||Date.now()-lastFlush<250)return;scheduled=true;sharing=sharing.then(()=>{scheduled=false;return flush();});sharing.catch(()=>undefined);};
+        const shared=async(final=false)=>{await sharing;await flush(final);};
         try{
           // Undo starts here: the worktree as it was before this run.
           if(work)await snapshotWork(root,claimed.selectedInstruction.text).catch(()=>null);
@@ -493,7 +509,7 @@ export class HostCoordinator {
             if(!parsed.success){steering=false;return [];}
             const texts:string[]=[];
             for(const item of parsed.data.instructions)texts.push(`Direction from participant ${item.authorId}, sent while you were working. Follow it from now on:\n${expandCommand(item.text,skills).text}${await attachMentions(item.text,mentionIo)}`);
-            if(texts.length)await this.publish(running,'activity.completed',{summary:texts.length===1?'The agent picked up a new direction.':`The agent picked up ${texts.length} new directions.`});
+            if(texts.length){await shared();await this.publish(running,'activity.completed',{summary:texts.length===1?'The agent picked up a new direction.':`The agent picked up ${texts.length} new directions.`});}
             return texts;
           };
           const instruction:ContextMessage&{images?:string[]}={role:'user',content:`Instruction from participant ${claimed.selectedInstruction.authorId}:\n${asked.text}${attached}`,...(claimed.selectedInstruction.image?{images:[claimed.selectedInstruction.image]}:{})};
@@ -526,21 +542,21 @@ export class HostCoordinator {
             steer,
             // The provider runs these searches; the host allowed them for this chat. Muse has no such tool.
             ...(body.webSearch&&['openai','chatgpt','anthropic'].includes(credentials.kind)?{hostedSearch:true}:{}),
-            tools:[...readDefinitions,...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:[...effectDefinitions,...mcpDefinitions])],signal:controller.signal,beforeRequest:()=>this.assertLive(running),fetch:publicProviderFetch,
+            tools:[...readDefinitions,...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:[...effectDefinitions,...mcpDefinitions])],signal:controller.signal,beforeRequest:()=>this.assertLive(running,true),fetch:publicProviderFetch,
             limits:(({runMs:_runMs,...limits})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...limits}))(effortLimits(body.effort??'medium',credentials)),
             ...(nativeEffort(body.effort??'medium',credentials)?{reasoningEffort:nativeEffort(body.effort??'medium',credentials)!}:{}),
-            executeTool:async(call,signal)=>{await flush();try{return await this.executeTool(running,workspace,call,signal);}catch(error){
+            executeTool:async(call,signal)=>{await shared();try{return await this.executeTool(running,workspace,call,signal);}catch(error){
               // Looking before creating is normal: a missing path is an answer for read-only tools, never for effects.
               if(READ_ONLY_TOOLS.has(call.name)&&error instanceof Error&&['ENOENT','ENOTDIR'].includes(String((error as {code?:unknown}).code)))return {error:'not_found',message:'That path does not exist in the workspace yet.'};
               // Malformed arguments fail before any effect or approval, so the model may correct them.
               if(error instanceof z.ZodError)return {error:'invalid_arguments',message:`Arguments for ${call.name} did not match its schema: ${error.issues.map(issue=>`${issue.path.join('.')||'(root)'} ${issue.message}`).join('; ').slice(0,500)}`};
               throw error;}},
             onEvent:async event=>{
-              if(event.type==='text.delta'){pending+=event.text;if(pending.length>=512&&Date.now()-lastFlush>=1000)await flush();}
-              if(event.type==='usage')await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});
-              if(event.type==='web.search'){await flush();await this.publish(running,'activity.completed',{summary:event.query?`Searched the web: ${event.query}`:'Searched the web'});}
+              if(event.type==='text.delta'){pending+=event.text;share();}
+              if(event.type==='usage'){await sharing;await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}
+              if(event.type==='web.search'){await shared();await this.publish(running,'activity.completed',{summary:event.query?`Searched the web: ${event.query}`:'Searched the web'});}
             }});
-          await flush(true);const final=textChunks(redactText(result.text,running.secrets),13500);const truncated=final.length>1;
+          await shared(true);const final=textChunks(redactText(result.text,running.secrets),13500);const truncated=final.length>1;
           await this.publish(running,'agent.completed',{messageId,text:`${final[0]??''}${truncated?'\n[Final context text truncated by the sharing limit.]':''}`,model:body.model,truncated});
           await this.request(running,'/finish',{status:'completed'});if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:'completed'});
         }catch(error){
@@ -572,11 +588,14 @@ export class HostCoordinator {
       else await this.options.account.request('POST',`/v1/sessions/${run.sessionId}/runs/${run.id}/finish`,{leaseToken:run.lease,status:'failed'});
     }catch{/* Revoked or expired leases are already fenced. Never retry as another account. */}
   }
-  private async assertLive(run:Running):Promise<void>{
+  private async assertLive(run:Running,recent=false):Promise<void>{
     run.controller.signal.throwIfAborted();
     const identity=await this.options.account.identitySnapshot();
     if(identity.generation!==run.snapshot.generation||identity.userId!==run.snapshot.userId||identity.deviceId!==run.snapshot.deviceId)throw new RuntimeError('STALE_ACCOUNT','Account or device changed.');
+    // The lease lasts 30 seconds; one confirmed in the last 5 doesn't need another round trip.
+    if(recent&&Date.now()-run.aliveAt<5000)return;
     await this.request(run,'/heartbeat',{});
+    run.aliveAt=Date.now();
     run.controller.signal.throwIfAborted();
   }
   private request(run:Running,suffix:string,body:Record<string,unknown>):Promise<unknown>{
