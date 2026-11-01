@@ -1004,3 +1004,22 @@ ol.md-list { list-style: decimal; }
 .composer-attachment img { display: block; max-height: 96px; max-width: 220px; border-radius: var(--r-md); border: 1px solid var(--border-strong); }
 .composer-attachment button { position: absolute; top: -7px; right: -7px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface-3); color: var(--text); }
 .msg-image { display: block; margin-top: 8px; max-width: min(100%, 560px); max-height: 420px; border-radius: var(--r-md); border: 1px solid var(--border-strong); }
+
+/* ---------------------------------------------------------------- Project work */
+.work-chip { flex: 0 1 auto; min-width: 72px; max-width: 240px; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.work-chip:hover { color: var(--text); }
+.work-intro { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); font-size: var(--fs-sm); }
+.work-intro > svg { color: var(--accent); flex: none; margin-top: 3px; }
+.work-intro .mono { font-size: 12px; word-break: break-all; }
+.work-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.start-from { display: flex; justify-content: center; margin-top: 10px; }
+.terminal-panel { grid-template-rows: auto minmax(160px, 1fr) auto auto; height: 100%; }
+.terminal-out {
+  margin: 0; padding: 10px 12px; min-height: 160px; max-height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; color: var(--text-2);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+}
+.terminal-form { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-1); }
+.terminal-form:focus-within { border-color: var(--accent); }
+.terminal-prompt { font-family: var(--font-mono); color: var(--text-3); }
+.terminal-input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--text); font-size: 12.5px; }

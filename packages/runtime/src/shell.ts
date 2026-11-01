@@ -1,5 +1,6 @@
 import {spawn, spawnSync} from 'node:child_process';
 import {lstat, realpath} from 'node:fs/promises';
+import {isAbsolute} from 'node:path';
 import {ExecutionJournal} from './journal.js';
 import {assertAuthority, fail, validateDescriptor} from './policy.js';
 import type {ActionDescriptor, Authority, JsonValue} from './policy.js';
@@ -14,6 +15,8 @@ export interface ApprovedShellOptions {
   /** Exact connected-provider secret values may be redacted in addition to known formats. */
   secrets?: string[];
   onOutput?: (text: string) => void;
+  /** Absolute directories of developer tools (node, python…) to search after the system ones. Only PATH changes. */
+  toolPath?: string;
 }
 export interface ShellResult {exitCode: number | null; signal: string | null; output: string; truncated: boolean}
 
@@ -41,10 +44,11 @@ export function hostShell(command: string): {executable: string; argv: string[]}
 }
 
 /** Only what the shell needs to start; nothing is inherited from the host's environment. */
-function shellEnvironment(): NodeJS.ProcessEnv {
-  if (!windows) return {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8'};
+function shellEnvironment(toolPath?: string): NodeJS.ProcessEnv {
+  const extra = (toolPath ?? '').split(windows ? ';' : ':').filter(directory => isAbsolute(directory) && !/[\u0000-\u001f]/u.test(directory));
+  if (!windows) return {PATH: [...new Set(['/usr/bin', '/bin', '/usr/sbin', '/sbin', ...extra])].join(':'), LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8'};
   const root = systemRoot();
-  return {SystemRoot: root, windir: root, ComSpec: `${root}\\System32\\cmd.exe`, PATHEXT: '.COM;.EXE;.BAT;.CMD', PATH: `${root}\\System32;${root};${root}\\System32\\Wbem;${root}\\System32\\WindowsPowerShell\\v1.0`};
+  return {SystemRoot: root, windir: root, ComSpec: `${root}\\System32\\cmd.exe`, PATHEXT: '.COM;.EXE;.BAT;.CMD', PATH: [`${root}\\System32`, root, `${root}\\System32\\Wbem`, `${root}\\System32\\WindowsPowerShell\\v1.0`, ...extra].join(';')};
 }
 
 /** Ends a Windows process and every process it started that is still running. */
@@ -88,7 +92,7 @@ export async function executeApprovedShell(options: ApprovedShellOptions): Promi
   const verbatim = windows && /(^|\\)cmd\.exe$/i.test(operation.executable);
   const child = spawn(operation.executable, [...operation.argv], {
     cwd: descriptor.cwd,
-    env: shellEnvironment(),
+    env: shellEnvironment(options.toolPath),
     shell: false,
     // POSIX: a new process group, so the whole tree can be signaled. Windows: arguments are
     // passed exactly as reviewed (cmd.exe does its own parsing) and no console window opens.

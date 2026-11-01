@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useApp, type Preferences } from '../model/store';
 import { fuzzyFilter } from '../model/fuzzy';
+import type { Project } from '../model/types';
 import { getBridge } from '../bridge/client';
 import * as live from '../live/controller';
 import * as execution from '../live/execution';
@@ -498,7 +499,7 @@ export function NewProjectDialog() {
   const open = useApp((s) => s.overlay === 'new-project');
   const app = useApp.getState();
   const [name, setName] = useState('');
-  const [folder, setFolder] = useState<{ name: string; folderHint: string } | null>(null);
+  const [folder, setFolder] = useState<{ id: string; name: string; folderHint: string; git: Project['git'] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -517,17 +518,21 @@ export function NewProjectDialog() {
       return;
     }
     const result = await bridge.pickProjectFolder();
-    if (!result.canceled) {
-      setFolder({ name: result.name, folderHint: result.folderHint });
-      if (!name) setName(result.name);
+    if (result.canceled) return;
+    if (result.projectId === null) {
+      setFolder(null);
+      setError(result.problem);
+      return;
     }
+    setFolder({ id: result.projectId, name: result.name, folderHint: result.folderHint, git: result.git });
+    if (!name) setName(result.name);
   };
 
   return (
-    <Dialog open={open} onClose={app.closeOverlay} title="New project" description="Saving registers the folder on this computer. Nothing in the folder changes and no agent starts." width={480}>
+    <Dialog open={open} onClose={app.closeOverlay} title="New project" description="Choose a git repository. Each chat in it gets its own branch and worktree, so the agent never edits your checkout directly." width={480}>
       <form className="dialog-body" onSubmit={(e) => {
         e.preventDefault();
-        if (name.trim() && folder) app.addProject({ name: name.trim(), folderHint: folder.folderHint });
+        if (name.trim() && folder) app.addProject({ id: folder.id, name: name.trim(), folderHint: folder.folderHint, git: folder.git });
       }}>
         <label className="field">
           <span className="field-label">Name</span>
@@ -540,7 +545,7 @@ export function NewProjectDialog() {
             <span className="truncate">{folder ? folder.folderHint : 'Choose a folder…'}</span>
             {folder && <span className="link-btn">Change</span>}
           </button>
-          <span className="field-help">The full path stays private to this computer and account.</span>
+          <span className="field-help">{folder?.git ? <>On <strong>{folder.git.branch ?? 'a detached HEAD'}</strong>{folder.git.dirty ? ` · ${folder.git.dirty} uncommitted change${folder.git.dirty === 1 ? '' : 's'}` : ' · clean'}. </> : null}The full path stays private to this computer and account.</span>
           {error && <span className="field-error" role="alert">{error}</span>}
         </div>
         <div className="form-actions">

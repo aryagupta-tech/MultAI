@@ -1,13 +1,16 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Activity, Bookmark, Check, ChevronRight, CircleAlert, CircleCheck, CircleX, Crown, FileCode2, FileDiff, FolderTree, Laptop,
-  Loader2, Plus, ShieldCheck, UserCheck, UserMinus, Users, WrapText, X, Clock,
+  Loader2, Plus, ShieldCheck, UserCheck, UserMinus, Users, WrapText, X, Clock, Undo2, SquareTerminal, GitBranch, RefreshCw,
+  GitCommitHorizontal, FolderInput, GitPullRequestArrow, MoreHorizontal, Trash2, Sparkles, Share2, Eraser, Square,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import * as live from '../live/controller';
+import * as work from '../live/work';
+import { useWork } from '../live/work';
 import { hueFor, relativeTime } from '../model/format';
 import type { FileChange, InspectorTab, SessionDetail, ToolCall } from '../model/types';
-import { Avatar, Button, EmptyState, IconButton, Menu, Segmented, cx } from '../ui/primitives';
+import { Avatar, Button, Dialog, EmptyState, IconButton, Menu, Segmented, Spinner, cx } from '../ui/primitives';
 
 const TABS: { id: InspectorTab; label: string; icon: typeof FileDiff }[] = [
   { id: 'changes', label: 'Changes', icon: FileDiff },
@@ -16,6 +19,7 @@ const TABS: { id: InspectorTab; label: string; icon: typeof FileDiff }[] = [
   { id: 'decisions', label: 'Decisions', icon: Bookmark },
   { id: 'people', label: 'People', icon: Users },
   { id: 'files', label: 'Files', icon: FolderTree },
+  { id: 'terminal', label: 'Terminal', icon: SquareTerminal },
 ];
 
 export function Inspector({ d }: { d: SessionDetail }) {
@@ -67,7 +71,9 @@ export function Inspector({ d }: { d: SessionDetail }) {
         })}
       </div>
       <div className="inspector-body" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-        {d.source === 'live' && (tab === 'changes' || tab === 'approvals' || tab === 'files') ? <LiveUnavailable tab={tab} /> : <>
+        {d.source === 'live' && tab === 'changes' && d.capabilities.approve ? <WorkChanges d={d} />
+        : d.source === 'live' && tab === 'terminal' && d.capabilities.approve ? <TerminalPanel d={d} />
+        : (d.source === 'live' || tab === 'terminal') && (tab === 'changes' || tab === 'approvals' || tab === 'files' || tab === 'terminal') ? <LiveUnavailable tab={tab} /> : <>
         {tab === 'changes' && <ChangesPanel d={d} />}
         {tab === 'activity' && <ActivityPanel d={d} />}
         {tab === 'approvals' && <ApprovalsPanel d={d} />}
@@ -85,11 +91,12 @@ export function Inspector({ d }: { d: SessionDetail }) {
 }
 
 const LIVE_COPY: Record<Exclude<InspectorTab, 'people'>, { icon: typeof FileDiff; title: string; body: string }> = {
-  changes: { icon: FileDiff, title: 'File changes are in the conversation', body: 'Every file the agent writes is shown in full on its approval and listed in Activity.' },
+  changes: { icon: FileDiff, title: 'Changes are reviewed on the host', body: 'The host reviews the agent’s changes to their project here. Every file the agent writes is also shown in full on its approval card in the chat.' },
+  terminal: { icon: SquareTerminal, title: 'The terminal is the host’s', body: 'Only the host can run commands in this session’s worktree. They can share output to the chat.' },
   activity: { icon: Activity, title: 'No agent activity yet', body: 'Tool calls show up here once the service can run an agent. For now, plan and discuss together.' },
   approvals: { icon: ShieldCheck, title: 'Approvals happen in the conversation', body: 'When the agent needs permission, the host sees an Approve card in the chat. Everyone sees what was asked and decided.' },
   decisions: { icon: Bookmark, title: 'Decisions aren’t available yet', body: 'This service doesn’t store shared decisions yet. Agree in Team discussion for now.' },
-  files: { icon: FolderTree, title: 'Files stay on the host', body: 'The agent works in a private folder on the host’s computer. Ask it to list or read files and the results appear in the chat.' },
+  files: { icon: FolderTree, title: 'Files stay on the host', body: 'The agent works in a private worktree on the host’s computer. Ask it to list or read files and the results appear in the chat.' },
 };
 
 function LiveUnavailable({ tab }: { tab: InspectorTab }) {
@@ -111,44 +118,225 @@ function PanelHeader({ title, sub, children }: { title: string; sub?: ReactNode;
   );
 }
 
+/* ---------------------------------------------------------------- Project work (host) */
+
+type WorkDialog = null | 'keep' | 'apply' | 'discard' | 'pr';
+
+function WorkChanges({ d }: { d: SessionDetail }) {
+  const summary = useWork((s) => s.summary[d.id]);
+  const changes = useWork((s) => s.changes[d.id]);
+  const busy = useWork((s) => s.busy[d.id]);
+  const [dialog, setDialog] = useState<WorkDialog>(null);
+  useEffect(() => { void work.refreshWork(d.id); }, [d.id]);
+
+  if (summary === undefined) return <div className="panel"><p className="panel-sub"><Spinner /> Loading this session’s worktree…</p></div>;
+  if (summary === null) {
+    return (
+      <EmptyState icon={FileDiff} title="No project worktree">
+        This chat works in a private folder, or its worktree was discarded. To let the agent work on your code, add a project folder in the sidebar and start a chat inside it.
+      </EmptyState>
+    );
+  }
+  const files = changes ?? [];
+  const base = `${summary.baseBranch ?? 'detached'}@${(summary.fromCommit ?? summary.baseCommit).slice(0, 7)}`;
+  const intro = (
+    <div className="work-intro">
+      <GitBranch size={14} aria-hidden />
+      <div>
+        <strong className="mono">{summary.branch}</strong>
+        <span className="tone-muted"> from {base}{summary.carried ? ', with your uncommitted changes' : ''}</span>
+        <div className="field-help">
+          {summary.pushedTo ? 'Pushed to origin. ' : summary.kept ? `Kept as ${summary.kept.slice(0, 7)}. ` : ''}
+          Your own checkout of {summary.projectName} isn’t touched until you apply.
+        </div>
+      </div>
+      <span className="spacer" />
+      <IconButton size="sm" icon={RefreshCw} label="Refresh changes" disabled={Boolean(busy)} onClick={() => void work.refreshWork(d.id)} />
+    </div>
+  );
+  const actions = (
+    <div className="work-actions">
+      <Button size="sm" variant="primary" icon={GitCommitHorizontal} disabled={Boolean(busy) || !files.length} onClick={() => setDialog('keep')}>Keep on branch</Button>
+      <Button size="sm" icon={FolderInput} disabled={Boolean(busy) || !files.length} onClick={() => setDialog('apply')}>Apply to my folder</Button>
+      <Button size="sm" icon={GitPullRequestArrow} disabled={Boolean(busy) || !files.length || !summary.remote} title={summary.remote ? undefined : 'This project has no origin remote.'} onClick={() => setDialog('pr')}>Push & open PR</Button>
+      <span className="spacer" />
+      {busy && <Spinner />}
+      <Menu
+        label="More actions"
+        align="end"
+        trigger={(p) => <IconButton {...p} size="sm" icon={MoreHorizontal} label="More actions" />}
+        items={[{ id: 'discard', label: 'Discard this work…', icon: Trash2, danger: true, onSelect: () => setDialog('discard') }]}
+      />
+    </div>
+  );
+  return (
+    <>
+      <ChangesPanel
+        key={d.id}
+        d={d}
+        changes={files}
+        intro={intro}
+        actions={actions}
+        onRevert={busy ? undefined : (path) => void work.revertFile(d.id, path)}
+        empty={<>{actions}<EmptyState icon={FileDiff} title="No changes yet">When the agent edits files in this worktree, the diff shows up here. Keep it on the branch, apply it to your folder or open a pull request.</EmptyState></>}
+      />
+      <WorkDialogs d={d} dialog={dialog} close={() => setDialog(null)} projectName={summary.projectName} branch={summary.branch} kept={Boolean(summary.kept)} pushed={Boolean(summary.pushedTo)} />
+    </>
+  );
+}
+
+function WorkDialogs({ d, dialog, close, projectName, branch, kept, pushed }: { d: SessionDetail; dialog: WorkDialog; close: () => void; projectName: string; branch: string; kept: boolean; pushed: boolean }) {
+  const busy = useWork((s) => s.busy[d.id]);
+  const [message, setMessage] = useState(d.title);
+  const [title, setTitle] = useState(d.title);
+  const [body, setBody] = useState('');
+  useEffect(() => { if (dialog === 'keep') setMessage(d.title); if (dialog === 'pr') { setTitle(d.title); setBody(''); } }, [dialog, d.title]);
+  const finish = (ok: boolean) => { if (ok) close(); };
+  return (
+    <>
+      <Dialog open={dialog === 'keep'} onClose={close} title="Keep these changes on the branch?" description={<>Commits the agent’s work to <strong className="mono">{branch}</strong> in {projectName}. Your checkout and current branch aren’t touched.</>}>
+        <form className="dialog-body" onSubmit={(e) => { e.preventDefault(); void work.keepOnBranch(d.id, message).then(finish); }}>
+          <label className="field">
+            <span className="field-label">Commit message</span>
+            <textarea rows={3} value={message} maxLength={2000} onChange={(e) => setMessage(e.target.value)} />
+          </label>
+          <div className="form-actions">
+            <Button variant="ghost" onClick={close}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={Boolean(busy) || !message.trim()}>Keep on branch</Button>
+          </div>
+        </form>
+      </Dialog>
+      <Dialog open={dialog === 'apply'} onClose={close} title={`Apply to ${projectName}?`}>
+        <div className="dialog-body">
+          <p className="dialog-text">Copies the agent’s changes into your project folder as uncommitted edits, so you can test and commit them yourself.</p>
+          <p className="callout callout-ok"><ShieldCheck size={14} aria-hidden /><span>All or nothing: if any of these files changed in your folder since the session started, nothing is applied and you’re told which.</span></p>
+          <div className="form-actions">
+            <Button variant="ghost" onClick={close}>Cancel</Button>
+            <Button variant="primary" disabled={Boolean(busy)} onClick={() => void work.applyToFolder(d.id).then(finish)}>Apply changes</Button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog open={dialog === 'discard'} onClose={close} title="Discard this session’s work?">
+        <div className="dialog-body">
+          <p className="dialog-text">Removes the worktree{kept || pushed ? '' : <> and the <strong className="mono">{branch}</strong> branch</>}. Anything not kept, applied or pushed is lost. The conversation stays.</p>
+          <div className="form-actions">
+            <Button variant="ghost" onClick={close}>Cancel</Button>
+            <Button variant="danger" disabled={Boolean(busy)} onClick={() => void work.discardWork(d.id).then(finish)}>Discard work</Button>
+          </div>
+        </div>
+      </Dialog>
+      <Dialog open={dialog === 'pr'} onClose={close} title="Push and open a pull request" width={560} description={<>Pushes <strong className="mono">{branch}</strong> to origin with your own git sign-in, then opens the pull request. Uncommitted work is kept on the branch first.</>}>
+        <form className="dialog-body" onSubmit={(e) => {
+          e.preventDefault();
+          void (async () => {
+            const changes = useWork.getState().changes[d.id] ?? [];
+            if (changes.length && !(await work.keepOnBranch(d.id, title))) return;
+            finish(Boolean(await work.pushAndOpen(d.id, { title, body })));
+          })();
+        }}>
+          <label className="field">
+            <span className="field-label">Title</span>
+            <input value={title} maxLength={250} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+          <label className="field">
+            <span className="field-label">Description</span>
+            <textarea rows={9} value={body} maxLength={60000} onChange={(e) => setBody(e.target.value)} placeholder="What changed and why." />
+          </label>
+          <div className="form-actions">
+            <Button variant="ghost" icon={Sparkles} disabled={Boolean(busy)} onClick={() => void work.draftPullRequest(d.id).then((draft) => { if (draft) { setTitle(draft.title); setBody(draft.body); } })}>{busy === 'draft' ? 'Writing…' : 'Write it for me'}</Button>
+            <span className="spacer" />
+            <Button variant="ghost" onClick={close}>Cancel</Button>
+            <Button variant="primary" type="submit" disabled={Boolean(busy) || !title.trim()}>Push & open PR</Button>
+          </div>
+        </form>
+      </Dialog>
+    </>
+  );
+}
+
+/* ---------------------------------------------------------------- Terminal (host) */
+
+function TerminalPanel({ d }: { d: SessionDetail }) {
+  const terminal = useWork((s) => s.terminal[d.id]);
+  const summary = useWork((s) => s.summary[d.id]);
+  const [command, setCommand] = useState('');
+  const output = useRef<HTMLPreElement>(null);
+  const running = Boolean(terminal?.running);
+  useEffect(() => { if (summary === undefined) void work.refreshWork(d.id); }, [d.id, summary]);
+  useEffect(() => { const el = output.current; if (el) el.scrollTop = el.scrollHeight; }, [terminal?.output]);
+  const share = () => {
+    const text = (terminal?.output ?? '').trim().slice(-3000);
+    if (!text) return;
+    useApp.getState().setDraft(d.id, { text: `Terminal output from my computer:\n\n\`\`\`text\n${text}\n\`\`\``, kind: 'discussion' });
+    window.dispatchEvent(new Event('multai:focus-composer'));
+  };
+  return (
+    <div className="panel terminal-panel">
+      <PanelHeader title="Terminal" sub={summary ? <>In the <span className="mono">{summary.branch}</span> worktree</> : 'In this session’s private folder'}>
+        <IconButton size="sm" icon={Share2} label="Put the output in your message box" disabled={!terminal?.output} onClick={share} />
+        <IconButton size="sm" icon={Eraser} label="Clear" disabled={!terminal?.output || running} onClick={() => work.clearTerminal(d.id)} />
+      </PanelHeader>
+      <pre className="terminal-out" ref={output} aria-live="polite">{terminal?.output || 'Run tests, builds or scripts here. Commands run as you, on this computer, in this session’s folder. Only you see the output until you share it.'}</pre>
+      <form className="terminal-form" onSubmit={(e) => { e.preventDefault(); if (!command.trim() || running) return; void work.runInTerminal(d.id, command.trim()); setCommand(''); }}>
+        <span className="terminal-prompt" aria-hidden>$</span>
+        <input className="terminal-input mono" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npm test" aria-label="Command" spellCheck={false} autoCapitalize="off" autoComplete="off" disabled={running} />
+        {running ? <Button size="sm" variant="danger" icon={Square} onClick={() => void work.stopTerminal(d.id)}>Stop</Button> : <Button size="sm" type="submit" disabled={!command.trim()}>Run</Button>}
+      </form>
+      <p className="field-help">Line by line, no full-screen programs (vim, top). Output stays on your computer; share puts an excerpt in your message box to edit before sending.</p>
+    </div>
+  );
+}
+
 /* ---------------------------------------------------------------- Changes */
 
-function ChangesPanel({ d }: { d: SessionDetail }) {
+function ChangesPanel({ d, changes = d.changes, intro, actions, onRevert, empty }: {
+  d: SessionDetail;
+  changes?: FileChange[];
+  /** Shown above the file list: where the work came from. */
+  intro?: ReactNode;
+  /** Buttons that act on the whole change set. */
+  actions?: ReactNode;
+  onRevert?: ((path: string) => void) | undefined;
+  empty?: ReactNode;
+}) {
   const [layout, setLayout] = useState<'unified' | 'split'>('unified');
   const [wrap, setWrap] = useState(false);
   const [viewed, setViewed] = useState<Record<string, boolean>>({});
-  const [open, setOpen] = useState<Record<string, boolean>>(() => Object.fromEntries(d.changes.map((c, i) => [c.path, i < 2])));
-  const add = d.changes.reduce((n, c) => n + c.additions, 0);
-  const del = d.changes.reduce((n, c) => n + c.deletions, 0);
-  const viewedCount = d.changes.filter((c) => viewed[c.path]).length;
+  const [open, setOpen] = useState<Record<string, boolean>>(() => Object.fromEntries(changes.map((c, i) => [c.path, i < 2])));
+  const add = changes.reduce((n, c) => n + c.additions, 0);
+  const del = changes.reduce((n, c) => n + c.deletions, 0);
+  const viewedCount = changes.filter((c) => viewed[c.path]).length;
 
-  if (d.changes.length === 0) {
-    return <EmptyState icon={FileDiff} title="No changes yet">Edits the agent makes in this session’s worktree show up here for review.</EmptyState>;
+  if (changes.length === 0) {
+    return <div className="panel">{intro}{empty ?? <EmptyState icon={FileDiff} title="No changes yet">Edits the agent makes in this session’s worktree show up here for review.</EmptyState>}</div>;
   }
 
   return (
     <div className="panel">
+      {intro}
       <PanelHeader
-        title={`${d.changes.length} files changed`}
-        sub={<><span className="tone-ok">+{add}</span> <span className="tone-danger">−{del}</span> · {viewedCount}/{d.changes.length} viewed by you</>}
+        title={`${changes.length} file${changes.length === 1 ? '' : 's'} changed`}
+        sub={<><span className="tone-ok">+{add}</span> <span className="tone-danger">−{del}</span> · {viewedCount}/{changes.length} viewed by you</>}
       >
         <Segmented label="Diff layout" size="sm" value={layout} onChange={setLayout} options={[{ value: 'unified', label: 'Unified' }, { value: 'split', label: 'Split' }]} />
         <IconButton size="sm" icon={WrapText} label={wrap ? 'Don’t wrap lines' : 'Wrap lines'} active={wrap} onClick={() => setWrap(!wrap)} />
       </PanelHeader>
+      {actions}
       <div className="files">
-        {d.changes.map((c) => (
+        {changes.map((c) => (
           <div key={c.path} className={cx('file', viewed[c.path] && 'is-viewed')}>
             <div className="file-head">
               <button type="button" className="file-toggle" aria-expanded={Boolean(open[c.path])} onClick={() => setOpen({ ...open, [c.path]: !open[c.path] })}>
                 <ChevronRight size={13} className={cx('chev', open[c.path] && 'is-open')} aria-hidden />
                 <FileCode2 size={14} aria-hidden className="tone-muted" />
                 <span className="file-path">
-                  <span className="file-dir">{c.path.split('/').slice(0, -1).join('/')}/</span>
+                  {c.path.includes('/') && <span className="file-dir">{c.path.split('/').slice(0, -1).join('/')}/</span>}
                   <span className="file-name">{c.path.split('/').at(-1)}</span>
                 </span>
                 <span className={cx('file-status', `is-${c.status}`)}>{c.status === 'added' ? 'A' : c.status === 'deleted' ? 'D' : 'M'}</span>
                 <span className="file-stat"><span className="tone-ok">+{c.additions}</span> <span className="tone-danger">−{c.deletions}</span></span>
               </button>
+              {onRevert && <IconButton size="sm" icon={Undo2} label={`Undo changes to ${c.path.split('/').at(-1)}`} onClick={() => onRevert(c.path)} />}
               <label className="viewed-toggle" title="Private to you. Not a shared review claim.">
                 <input type="checkbox" checked={Boolean(viewed[c.path])} onChange={(e) => {
                   setViewed({ ...viewed, [c.path]: e.target.checked });

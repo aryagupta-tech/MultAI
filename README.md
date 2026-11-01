@@ -10,11 +10,26 @@ Built for the **Meta Global AI Developer Hackathon** (Build for Your World), on 
 
 | Model | What it does in MultAI |
 |---|---|
-| **Muse Spark 1.3** | The shared coding agent. It reads, writes and runs code in the session's private workspace with tool calls, and every effect goes through the host's approval rules. |
-| **Muse Wonder 1.0** | Writes the **catch-up brief** when someone joins: a short chat-style summary of the goal, what was tried and fixed, decisions and who is waiting on what. |
+| **Muse Spark 1.3** | The shared coding agent. It reads, writes and runs code in a private git worktree of the host's project (or an empty private folder) with tool calls, and every effect goes through the host's approval rules. |
+| **Muse Wonder 1.0** | Writes the **catch-up brief** when someone joins: a short chat-style summary of the goal, what was tried and fixed, decisions and who is waiting on what. It also drafts the **pull request** for the session's work, including who directed the agent. |
 | **Muse Spark (vision)** | Teammates paste a **screenshot of the bug**; the agent sees it alongside the instruction. |
 
 The host connects once with a Meta Model API key. Teammates never need a key: every model call runs on the host's machine with the host's connection.
+
+## Work in your real project
+
+Add a git repository as a project and start a chat in it. The agent never edits your checkout directly:
+
+- **Its own branch.** Each chat gets a git worktree on a `multai/<title>-<id>` branch, outside your folder.
+- **Start from what you see.** If you have uncommitted changes, choose *My uncommitted changes* and they become the session's starting point. Your folder, index and stash are left exactly as they were.
+- **Project notes.** `AGENTS.md`, `MULTAI.md` or `CLAUDE.md` at the repository root is given to the agent as guidance.
+- **Review.** The Changes tab shows the live diff of the agent's work, with undo per file.
+- **Three ways out, all host-only:**
+  - *Keep on branch* commits it to the session branch;
+  - *Apply to my folder* copies it into your checkout as uncommitted edits, all or nothing, and refuses with the file names if your folder changed underneath;
+  - *Discard* removes the worktree.
+- **Push & open PR.** Pushes the branch with your own git sign-in and opens the pull request (with `gh` if installed, otherwise GitHub's compare page). Muse Wonder writes the title and description, and you edit them first.
+- **Terminal.** The host's own command line in the session's worktree, for tests and builds. Output stays on your computer until you share an excerpt to the chat.
 
 ## What happens in a session
 
@@ -35,13 +50,14 @@ Everything in this repository was built during the hackathon: the first commit i
 - **Desktop app** (Electron + React) for macOS, Windows and Linux, with Google sign-in, `multai://` invite links, a sandboxed renderer and OS-encrypted credentials.
 - **Collaboration service** (Fastify + PostgreSQL), deployed at `https://api.multai.si` on AWS Lightsail with Supabase Postgres: sessions, admission and roles, ordered live events, decisions, host-only run leases and approvals.
 - **Host runtime**: provider adapters (Meta Model API, OpenAI, Claude, Kimi, ChatGPT plan, compatible APIs), a controlled workspace, exact approval descriptors and a durable effect journal so an interrupted action is never silently repeated.
-- **Meta features**: Muse Spark as the agent, Muse Wonder catch-up briefs, screenshot input, access levels and in-chat approvals.
+- **Meta features**: Muse Spark as the agent, Muse Wonder catch-up briefs and pull request drafts, screenshot input, access levels and in-chat approvals.
+- **Developer workflow**: per-chat git worktrees of your real project, live diff review, keep, apply or discard, push and open a PR, and a host terminal.
 - **Cross-platform CI**: Windows (NSIS installer) and Linux (AppImage, .deb, .tar.gz) builds installed and tested on every push.
 
 ## Safety model
 
 - Code, files, credentials and processes stay on the **host's** computer. The service only relays the shared conversation and decisions.
-- The agent works in a **private workspace** per session. Every write and command is an exact descriptor (file hash or command text) that the host approves once; approvals expire, and Stop, sign-out or sleep cancel them.
+- The agent works in a **private git worktree** of the host's project (or an empty private folder). Private paths such as `.git`, `.env`, keys and `node_modules` stay out of its reach. Every write and command is an exact descriptor (file hash or command text) that the host approves once; approvals expire, and Stop, sign-out or sleep cancel them. Only the host's own buttons move work back into their checkout.
 - Teammates' instructions are attributed; team discussion is context, never an instruction.
 - Secrets that look like API keys are redacted from shared text, briefs and command output.
 - Approval is not an OS sandbox: approved commands run as the host's user. Full access says so before it turns on.
@@ -80,7 +96,7 @@ The **Desktop on Windows and Linux** workflow builds the installers, installs th
 ## Limits
 
 - File previews in approvals are limited to 16,000 characters; one screenshot per message.
-- The agent works in a blank private workspace per session; running directly in an existing project folder is not implemented yet.
+- Projects must be git repositories with at least one commit. The terminal is line-based (no full-screen programs such as vim). Opening a pull request from the app needs a GitHub remote; other remotes are pushed only.
 - Installers are not code-signed yet, so macOS Gatekeeper and Windows SmartScreen will warn on first launch.
 - arm64 Windows and Linux builds are produced but not exercised in CI.
 

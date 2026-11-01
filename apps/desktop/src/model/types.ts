@@ -56,6 +56,8 @@ export interface Project {
   /** Display-only folder hint; the canonical path never leaves this device. */
   folderHint: string;
   expanded: boolean;
+  /** Git state when the folder was added; refreshed when a chat starts in it. */
+  git?: { branch: string | null; head: string; dirty: number; remote: string | null };
 }
 
 export type ToolStatus = 'pending' | 'running' | 'completed' | 'failed' | 'uncertain';
@@ -162,4 +164,4 @@ export interface Account {
 
 export type ConnectionState = 'connected' | 'connecting' | 'offline';
 
-export type InspectorTab = 'changes' | 'activity' | 'approvals' | 'decisions' | 'people' | 'files';
+export type InspectorTab = 'changes' | 'activity' | 'approvals' | 'decisions' | 'people' | 'files' | 'terminal';

@@ -11,6 +11,8 @@ import {HostCoordinator} from './inference/coordinator';
 import {routeInference} from './inference/router';
 import {ApprovalBroker} from './inference/approvals';
 import {INFERENCE_IPC} from '../src/bridge/execution';
+import {ProjectError,ProjectRegistry,git} from './inference/projects';
+import {TerminalHost} from './inference/terminal';
 
 // Injected by scripts/build-electron.mjs.
 declare const __BUILD_INFO__: Omit<BuildInfo, 'platform' | 'serviceOrigin'>;
@@ -53,6 +55,8 @@ const send = (channel: string, payload: unknown) => {
 let connections:ConnectionManager|undefined;
 let coordinator:HostCoordinator|undefined;
 let approvals:ApprovalBroker|undefined;
+const projects=new ProjectRegistry(()=>path.join(app.getPath('userData'),'projects.json'));
+const terminal=new TerminalHost(event=>send(INFERENCE_IPC.terminal,event));
 const account = new Account(origin, (state) => {
   if(state.status!=='signed-in'){
     connections?.invalidate();
@@ -119,15 +123,20 @@ function registerIpc(): void {
     });
     const folder = result.filePaths[0];
     if (result.canceled || !folder) return { canceled: true };
-    // The renderer receives a display hint only; the canonical path stays in the main process.
-    return { canceled: false, name: path.basename(folder), folderHint: displayFolder(folder) };
+    // The renderer receives an id and a display hint only; the canonical path stays in the main process.
+    try {
+      const project = await projects.register(folder);
+      return { canceled: false, projectId: project.projectId, name: project.name, folderHint: displayFolder(project.root), git: project.git };
+    } catch (error) {
+      return { canceled: false, projectId: null, name: path.basename(folder), folderHint: displayFolder(folder), problem: error instanceof ProjectError ? error.message : 'That folder couldn’t be opened.' };
+    }
   });
 
   ipcMain.handle(IPC.invoke, async (event, op: unknown, args: unknown) => {
     assertTrustedSender(event);
     if (!isServiceOp(op)) throw new Error('Unknown service operation.');
     if(op==='signOut'){
-      connections?.invalidate();
+      connections?.invalidate();terminal.stopAll();
       approvals?.rejectAll();await coordinator?.invalidate();
     }
     const result = await route(account, live, op, args);
@@ -147,7 +156,7 @@ function registerIpc(): void {
   ipcMain.handle(INFERENCE_IPC.invoke,async(event,op:unknown,args:unknown)=>{
     assertTrustedSender(event);
     if(!connections||!coordinator||!approvals)return {ok:false,error:{code:'not_ready',message:'Desktop inference is starting.'}};
-    return routeInference(connections,coordinator,approvals,op,args);
+    return routeInference(connections,coordinator,approvals,op,args,{projects,terminal});
   });
 }
 
@@ -226,9 +235,11 @@ if (!app.requestSingleInstanceLock()) {
     connections=new ConnectionManager({account,onChange:(items)=>send(INFERENCE_IPC.connections,items)});
     approvals=new ApprovalBroker(pending=>send(INFERENCE_IPC.approvals,pending));
     // Approvals appear as cards in the session; the host's access level decides what runs unasked.
-    coordinator=new HostCoordinator({account,connections,dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
+    coordinator=new HostCoordinator({account,connections,projects,dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
       confirm:(descriptor,_hash,signal,preview)=>!mainWindow||mainWindow.isDestroyed()?Promise.resolve(false):approvals!.request(descriptor,signal,preview)});
     powerMonitor.on('suspend',()=>{connections?.invalidate();live.closeAll();approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);void account.cancelSignIn().catch(()=>undefined);});
+    // Forget worktrees whose folders are gone (deleted by hand, or left by a crash).
+    void projects.all().then(list=>Promise.all(list.map(project=>git(project.root,['worktree','prune'],{allowFail:true}).catch(()=>undefined)))).catch(()=>undefined);
     hardenSession();
     registerIpc();
     createWindow();
@@ -243,7 +254,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', event => {
     if(quitting)return;
     event.preventDefault();quitting=true;
-    live.closeAll();connections?.invalidate();
+    live.closeAll();connections?.invalidate();terminal.stopAll();
     void (coordinator?.invalidate()??Promise.resolve()).catch(()=>undefined).finally(()=>app.quit());
   });
   app.on('window-all-closed', () => {

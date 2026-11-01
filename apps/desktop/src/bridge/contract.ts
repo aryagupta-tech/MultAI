@@ -19,9 +19,11 @@ export interface BuildInfo {
   serviceOrigin: string;
 }
 
+export interface ProjectGit { branch: string | null; head: string; dirty: number; remote: string | null }
 export type FolderPick =
   | { canceled: true }
-  | { canceled: false; name: string; folderHint: string };
+  | { canceled: false; projectId: string; name: string; folderHint: string; git: ProjectGit }
+  | { canceled: false; projectId: null; name: string; folderHint: string; problem: string };
 
 export interface ServiceError {
   code: string;

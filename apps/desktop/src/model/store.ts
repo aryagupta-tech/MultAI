@@ -106,7 +106,7 @@ interface Actions {
   rename(id: string, title: string): void;
   deleteSession(id: string): void;
   toggleProject(id: string): void;
-  addProject(p: { name: string; folderHint: string }): void;
+  addProject(p: { id: string; name: string; folderHint: string; git?: Project['git'] }): void;
   setPrefs(p: Partial<Preferences>): void;
   setShowArchived(v: boolean): void;
   toast(text: string, tone?: Toast['tone']): void;
@@ -392,10 +392,11 @@ export const useApp = create<State & Actions>()((set, get) => {
       set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, expanded: !p.expanded } : p)) }));
       live.persistLocal();
     },
-    addProject: ({ name, folderHint }) => {
-      set((s) => ({ projects: [...s.projects, { id: `p-${crypto.randomUUID()}`, name, folderHint, expanded: true }], overlay: null }));
+    addProject: ({ id, name, folderHint, git }) => {
+      // The same folder added again keeps its id; refresh it in place.
+      set((s) => ({ projects: [...s.projects.filter((p) => p.id !== id), { id, name, folderHint, expanded: true, ...(git ? { git } : {}) }], overlay: null }));
       live.persistLocal();
-      get().toast(`Project “${name}” saved. No agent was started.`, 'success');
+      get().toast(`Project “${name}” saved. Chats in it work on their own branch; your folder isn’t changed.`, 'success');
     },
     setPrefs: (p) => set((s) => {
       const prefs = { ...s.prefs, ...p };

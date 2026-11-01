@@ -6,6 +6,7 @@ import type { AuthState, LiveBatch, LiveStatusChange, Result, ServiceError } fro
 import type { WireEvent, WireMe, WireParticipant, WireSession } from '../bridge/wire';
 import { hueFor } from '../model/format';
 import type { Draft } from '../model/store';
+import * as work from './work';
 import { useApp } from '../model/store';
 import type { MessageKind, Project, SessionMode } from '../model/types';
 import { mergeEvents, projectSession, projectSummary, projectSessionState, titleFromMessage, type LocalSessionMeta } from './projection';
@@ -379,6 +380,8 @@ export async function send(key: string, kind: MessageKind, text: string, image?:
       const { session, event } = r.value;
       const projectId = useApp.getState().draftTarget.projectId;
       local.meta[session.id] = { ...local.meta[session.id], projectId };
+      // Projects added before worktree support have no registered folder; their chats stay private.
+      if (projectId && !projectId.startsWith('p-')) await work.startWork(session.id, projectId, session.title ?? title ?? 'session');
       cache.set(session.id, { session, participants: [], events: [event], loaded: false });
       useApp.getState().setDraft('new', { text: '', image: undefined });
       useApp.setState((s) => ({ sessions: [projectSummary(session, metaFor(session.id), [event]), ...s.sessions.filter((x) => x.id !== session.id)], activeId: session.id }));

@@ -7,6 +7,7 @@ import { useApp } from '../model/store';
 import type { SessionDetail } from '../model/types';
 import { Avatar, Button, IconButton, Menu, Segmented, cx, shortcutText } from '../ui/primitives';
 import * as execution from '../live/execution';
+import {refreshWork,useWork} from '../live/work';
 import {getBridge} from '../bridge/client';
 import {ChatGPTPlanUsage,isChatGPTUsageLimit} from './ChatGPTPlanUsage';
 
@@ -80,6 +81,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
               <span className="truncate">{d.baseline}</span>
             </span>
           )}
+          {d.source === 'live' && d.capabilities.approve && <WorkChip sessionId={d.id} />}
           {d.source === 'live' && <LiveIndicator status={liveStatus[d.id]} />}
         </div>
       </div>
@@ -243,5 +245,19 @@ function AccessPicker({ sessionId }: { sessionId: string }) {
         </button>
       )}
     />
+  );
+}
+
+/** The session's branch in the host's project, when the chat works in one. */
+function WorkChip({sessionId}:{sessionId:string}) {
+  const summary=useWork(s=>s.summary[sessionId]);
+  const app=useApp.getState();
+  useEffect(()=>{if(summary===undefined)void refreshWork(sessionId);},[sessionId,summary]);
+  if(!summary)return null;
+  return (
+    <button type="button" className="meta-item work-chip" title={`Working on ${summary.branch} from ${summary.baseBranch??'detached'}@${(summary.fromCommit??summary.baseCommit).slice(0,7)}${summary.carried?' with your uncommitted changes':''} in ${summary.projectName}. Review in Changes.`} onClick={()=>app.setInspector(true,'changes')}>
+      <GitBranch size={12} aria-hidden />
+      <span className="truncate mono">{summary.branch}</span>
+    </button>
   );
 }
