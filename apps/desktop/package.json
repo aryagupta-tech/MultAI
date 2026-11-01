@@ -1,6 +1,6 @@
 {
   "name": "@multai/desktop",
-  "version": "0.0.0-dev.1",
+  "version": "0.1.0",
   "private": true,
   "description": "MultAI desktop shell and renderer",
   "license": "MIT",
