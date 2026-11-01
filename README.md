@@ -42,6 +42,15 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 - **Live plan.** For work with several steps the agent posts a checklist that everyone in the session sees and that updates as it goes.
 - **Context meter and compaction.** A ring shows how full the agent's input was on the last run. `/compact` (or a click on the ring) summarizes the conversation so later runs start from the summary, and it's posted as a brief so teammates see what the agent remembers. Long chats compact automatically before they run out of room.
 - **Run on send.** Your own instructions start the agent right away; teammates' still wait for you. Switch it off in Settings.
+- **Steer while it works.** A message sent while the agent runs reaches it at its next step ("use cents, not floats"), from anyone in the session, without stopping the run.
+- **`@codebase`.** Finds the code most related to your request from a local search index of the project, and attaches it. The agent can search the same way with its `codebase_search` tool.
+- **Web search.** For GPT (OpenAI or your ChatGPT plan) and Claude models, turn on *Allow web search* in the access menu: the provider runs the searches, the timeline shows each one, and replies cite their sources. Muse models don't offer web search.
+
+## Tools, presence and replays
+
+- **MCP tools.** Add MCP servers that run on your computer in *Settings → Tools (MCP)*. Their tools are offered to the agent in Build mode, and every call waits for your approval. Server settings and tokens are stored encrypted; a repository can't add servers.
+- **Live presence.** See who's online, who's typing, and which file each teammate is looking at in Changes.
+- **Shareable replays.** *Share replay link…* in a chat's menu creates a read-only link (1 to 30 days, revocable) that anyone can open in a browser and play back step by step. Screenshots, commands and account details are left out.
 
 ## What happens in a session
 
