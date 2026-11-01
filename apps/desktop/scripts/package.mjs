@@ -24,6 +24,8 @@ const identity = release
   : { bundleId: 'dev.multai.desktop.development', copyright: 'MultAI development build', linkName: 'MultAI development links', scheme: 'multai-dev' };
 
 // npm is a .cmd script on Windows, which Node only starts through a shell.
+// The app bundles the runtime's compiled output, so build it first; otherwise a stale copy ships.
+execFileSync('npm', ['run', 'build', '--workspace', '@multai/runtime'], { cwd: path.resolve(root, '../..'), stdio: 'inherit', shell: process.platform === 'win32' });
 execFileSync('npm', ['run', release ? 'build:release' : 'build'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
 
 await rm(stage, { recursive: true, force: true });
