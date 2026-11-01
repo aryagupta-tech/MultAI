@@ -151,14 +151,16 @@ function AgentRow({ item }: { item: Item<'agent'> }) {
 
 function BriefCard({ item }: { item: Item<'brief'> }) {
   return (
-    <article className="brief-card" aria-label="Catch-up brief">
-      <header className="brief-head">
-        <Sparkles size={14} aria-hidden />
-        <span className="brief-title">Catch-up brief</span>
-        <span className="msg-model">{item.model}</span>
-        <time className="msg-time" dateTime={item.at}>{clockTime(item.at)}</time>
-      </header>
-      <div className="msg-text"><Markdown text={item.text} streaming={false} /></div>
+    <article className="msg msg-agent msg-brief" aria-label="Catch-up brief">
+      <div className="msg-gutter"><span className="agent-avatar"><Sparkles size={15} strokeWidth={1.8} aria-hidden /></span></div>
+      <div className="msg-body">
+        <header className="msg-head">
+          <span className="msg-author">Catch-up</span>
+          <span className="msg-model">{item.model}</span>
+          <time className="msg-time" dateTime={item.at}>{clockTime(item.at)}</time>
+        </header>
+        <div className="msg-text"><Markdown text={item.text} streaming={false} /></div>
+      </div>
     </article>
   );
 }
