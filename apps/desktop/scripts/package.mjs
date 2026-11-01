@@ -1,5 +1,6 @@
-// Packages the built app for the current platform into release/. Only the bundled output is
-// staged: no source, node_modules, fixtures or credentials go into the package.
+// Packages the built app into release/. Only the bundled output is staged: no source,
+// node_modules, fixtures or credentials go into the package. macOS builds an app bundle for this
+// machine; --win and --linux build installers (NSIS; AppImage, .deb and .tar.gz) for x64 and arm64.
 import { packager } from '@electron/packager';
 import { execFileSync } from 'node:child_process';
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -17,6 +18,7 @@ const electronVersion = createRequire(import.meta.url)('electron/package.json').
 // --release packages the public identity (multai:// links, hosted service); the default stays a
 // development build that can be installed beside it.
 const release = process.argv.includes('--release');
+const target = process.argv.includes('--win') ? 'win32' : process.argv.includes('--linux') ? 'linux' : process.platform;
 const identity = release
   ? { bundleId: 'dev.multai.desktop', copyright: 'Copyright © 2026 MultAI', linkName: 'MultAI links', scheme: 'multai' }
   : { bundleId: 'dev.multai.desktop.development', copyright: 'MultAI development build', linkName: 'MultAI development links', scheme: 'multai-dev' };
@@ -35,8 +37,59 @@ await writeFile(path.join(stage, 'package.json'), JSON.stringify({
   productName: 'MultAI',
   version: pkg.version,
   private: true,
+  description: 'Work on one AI coding session together.',
+  // The .deb maintainer field requires an address.
+  author: { name: 'MultAI', email: 'noreply@multai.si' },
+  homepage: 'https://multai.si',
   main: 'dist/electron/main.cjs',
 }, null, 2));
+
+const git = (...a) => { try { return execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim(); } catch { return ''; } };
+const provenance = (platform) => ({
+  version: pkg.version,
+  channel: release ? 'production' : 'development',
+  bundleId: identity.bundleId,
+  commit: git('rev-parse', 'HEAD'),
+  dirty: git('status', '--porcelain') !== '',
+  builtAt: new Date().toISOString(),
+  electron: electronVersion,
+  platform,
+  thirdPartyNoticesSha256: notices.sha256,
+  thirdPartyPackages: notices.packages.map(({ name, version, license }) => ({ name, version, license })),
+});
+
+if (target !== 'darwin') {
+  const { build, Platform, Arch } = await import('electron-builder');
+  const linux = target === 'linux';
+  const artifacts = await build({
+    projectDir: stage,
+    targets: (linux ? Platform.LINUX : Platform.WINDOWS).createTarget(linux ? ['AppImage', 'deb', 'tar.gz'] : ['nsis'], Arch.x64, Arch.arm64),
+    publish: 'never',
+    config: {
+      appId: identity.bundleId,
+      productName: 'MultAI',
+      executableName: linux ? 'multai' : 'MultAI',
+      copyright: identity.copyright,
+      electronVersion,
+      asar: true,
+      npmRebuild: false,
+      directories: { output: path.join(out, linux ? 'linux' : 'win'), buildResources: path.join(root, 'build') },
+      files: ['dist/**/*', 'package.json'],
+      extraFiles: [{ from: 'LICENSE', to: 'LICENSE.multai.txt' }, 'THIRD_PARTY_NOTICES.txt'],
+      artifactName: release ? 'MultAI-${version}-${arch}.${ext}' : 'MultAI-dev-${version}-${arch}.${ext}',
+      // Registers multai:// with Windows (installer) and the Linux desktop entry (MimeType).
+      protocols: [{ name: identity.linkName, schemes: [identity.scheme] }],
+      win: { icon: path.join(root, 'build', 'icon.png'), signAndEditExecutable: true },
+      // Per-user install: no administrator prompt, and uninstalling keeps the user's sign-in data.
+      nsis: { oneClick: false, perMachine: false, allowElevation: false, allowToChangeInstallationDirectory: false, deleteAppDataOnUninstall: false, createDesktopShortcut: true, shortcutName: 'MultAI' },
+      linux: { icon: path.join(root, 'build', 'icon.png'), category: 'Development', synopsis: 'Work on one AI coding session together.', maintainer: 'MultAI <noreply@multai.si>', desktop: { entry: { StartupWMClass: 'MultAI' } } },
+      deb: { depends: ['libgtk-3-0 | libgtk-3-0t64', 'libnotify4', 'libnss3', 'libxss1', 'libxtst6', 'xdg-utils', 'libatspi2.0-0 | libatspi2.0-0t64', 'libuuid1', 'libsecret-1-0'] },
+    },
+  });
+  await writeFile(path.join(out, linux ? 'linux' : 'win', 'build-manifest.json'), JSON.stringify({ ...provenance(`${target}-x64,arm64`), artifacts: artifacts.filter(a => !a.endsWith('.blockmap') && !a.endsWith('.yml')).map(a => path.basename(a)), signing: 'unsigned' }, null, 2));
+  for (const artifact of artifacts) console.log(`packaged: ${artifact}`);
+  process.exit(0);
+}
 
 const iconPath = path.join(root, 'build', 'icon.icns');
 const [appDir] = await packager({
@@ -70,19 +123,9 @@ if (process.platform === 'darwin') {
 
 // Provenance: record what was packaged from which source state.
 const asar = path.join(appDir, process.platform === 'darwin' ? 'MultAI.app/Contents/Resources/app.asar' : 'resources/app.asar');
-const git = (...a) => { try { return execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim(); } catch { return ''; } };
 await writeFile(path.join(appDir, 'build-manifest.json'), JSON.stringify({
-  version: pkg.version,
-  channel: release ? 'production' : 'development',
-  bundleId: identity.bundleId,
-  commit: git('rev-parse', 'HEAD'),
-  dirty: git('status', '--porcelain') !== '',
-  builtAt: new Date().toISOString(),
-  electron: electronVersion,
-  platform: `${process.platform}-${process.arch}`,
+  ...provenance(`${process.platform}-${process.arch}`),
   appAsarSha256: createHash('sha256').update(await readFile(asar)).digest('hex'),
-  thirdPartyNoticesSha256: notices.sha256,
-  thirdPartyPackages: notices.packages.map(({ name, version, license }) => ({ name, version, license })),
   signing: process.platform === 'darwin' ? 'ad-hoc (not notarized)' : 'unsigned',
 }, null, 2));
 

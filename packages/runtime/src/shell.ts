@@ -1,4 +1,4 @@
-import {spawn} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {lstat, realpath} from 'node:fs/promises';
 import {ExecutionJournal} from './journal.js';
 import {assertAuthority, fail, validateDescriptor} from './policy.js';
@@ -27,6 +27,36 @@ export function redactSecrets(text: string, secrets: string[] = []): string {
     .replace(/\bBearer\s+[A-Za-z0-9._~-]{16,}/giu, 'Bearer [REDACTED]');
 }
 
+const windows = process.platform === 'win32';
+const systemRoot = () => process.env.SystemRoot ?? 'C:\\Windows';
+
+/**
+ * The reviewed shell for this host: `/bin/sh -c` on macOS and Linux, `cmd.exe /d /s /c` on Windows.
+ * On Windows the command sits between two lone quote arguments, which `/s` strips, so the exact
+ * reviewed text is one argv element and reaches cmd.exe byte for byte.
+ */
+export function hostShell(command: string): {executable: string; argv: string[]} {
+  if (windows) return {executable: `${systemRoot()}\\System32\\cmd.exe`, argv: ['/d', '/s', '/c', '"', command, '"']};
+  return {executable: '/bin/sh', argv: ['-c', command]};
+}
+
+/** Only what the shell needs to start; nothing is inherited from the host's environment. */
+function shellEnvironment(): NodeJS.ProcessEnv {
+  if (!windows) return {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8'};
+  const root = systemRoot();
+  return {SystemRoot: root, windir: root, ComSpec: `${root}\\System32\\cmd.exe`, PATHEXT: '.COM;.EXE;.BAT;.CMD', PATH: `${root}\\System32;${root};${root}\\System32\\Wbem;${root}\\System32\\WindowsPowerShell\\v1.0`};
+}
+
+/** Ends a Windows process and every process it started that is still running. */
+function killWindowsTree(pid: number, startedAt: number): void {
+  // taskkill /T reaches descendants of a live leader. A leader that already exited leaves
+  // orphans taskkill can't find, so also end processes that name it as parent and were
+  // created after it started (ruling out an unrelated process reusing the id).
+  spawnSync(`${systemRoot()}\\System32\\taskkill.exe`, ['/pid', String(pid), '/T', '/F'], {windowsHide: true, stdio: 'ignore', timeout: 10_000});
+  const sweep = `$ErrorActionPreference='SilentlyContinue';$start=[DateTime]::FromFileTimeUtc(${BigInt(startedAt) * 10_000n + 116_444_736_000_000_000n});$queue=@(${pid});while($queue.Count){$parent=$queue[0];$queue=@($queue|Select-Object -Skip 1);foreach($p in Get-CimInstance Win32_Process -Filter "ParentProcessId=$parent"){if($p.CreationDate.ToUniversalTime() -ge $start){$queue+=$p.ProcessId;Stop-Process -Id $p.ProcessId -Force}}}`;
+  spawnSync(`${systemRoot()}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`, ['-NoProfile', '-NonInteractive', '-Command', sweep], {windowsHide: true, stdio: 'ignore', timeout: 15_000});
+}
+
 /**
  * Dispatches only a prepared+approved exact descriptor. There is no implicit shell,
  * profile sourcing, inherited credential environment or automatic command retry.
@@ -35,7 +65,6 @@ export function redactSecrets(text: string, secrets: string[] = []): string {
 export async function executeApprovedShell(options: ApprovedShellOptions): Promise<ShellResult> {
   const descriptor = validateDescriptor(options.descriptor);
   if (descriptor.operation.kind !== 'shell') fail('REQUEST_CONFLICT', 'The reviewed action is not a shell command.');
-  if (process.platform === 'win32') fail('UNSUPPORTED_PLATFORM', 'Reviewed process-tree cancellation is currently supported on macOS and Linux only.');
   const timeout = options.timeoutMs ?? 60_000;
   const maximum = options.maxOutputBytes ?? 65_536;
   if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 120_000 || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 131_072) fail('INVALID_LIMIT', 'Shell output and deadline limits are invalid.');
@@ -54,15 +83,21 @@ export async function executeApprovedShell(options: ApprovedShellOptions): Promi
   let truncated = false;
   let stopping = false;
   let stoppedBy: 'abort' | 'timeout' | null = null;
+  const startedAt = Date.now();
   const child = spawn(operation.executable, [...operation.argv], {
     cwd: descriptor.cwd,
-    env: {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8'},
+    env: shellEnvironment(),
     shell: false,
-    detached: true,
+    // POSIX: a new process group, so the whole tree can be signaled. Windows: arguments are
+    // passed exactly as reviewed (cmd.exe does its own parsing) and no console window opens.
+    detached: !windows,
+    windowsHide: true,
+    windowsVerbatimArguments: windows,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const killTree = (signal: NodeJS.Signals) => {
     if (!child.pid) return;
+    if (windows) {killWindowsTree(child.pid, startedAt); return;}
     try {process.kill(-child.pid, signal);} catch (error) {if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;}
   };
   let forceKill: NodeJS.Timeout | undefined;
@@ -87,6 +122,9 @@ export async function executeApprovedShell(options: ApprovedShellOptions): Promi
   };
   child.stdout.on('data', append);
   child.stderr.on('data', append);
+  // Background processes the command left behind hold its output pipes open, so 'close' would
+  // wait for them until the deadline. End them as soon as the command itself exits.
+  child.once('exit', () => {if (!stopping) killTree('SIGKILL');});
   let exitCode: number | null;
   let exitSignal: NodeJS.Signals | null;
   try {

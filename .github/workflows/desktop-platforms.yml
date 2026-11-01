@@ -1,0 +1,166 @@
+name: Desktop on Windows and Linux
+on:
+  push:
+    branches: [frontend]
+    paths: ['apps/desktop/**', 'packages/runtime/**', 'package-lock.json', '.github/workflows/desktop-platforms.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-platforms-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Electron binary for the native smoke
+        run: node node_modules/electron/install.js
+      - run: npm run build -w @multai/runtime
+      - name: Runtime tests (real shell, workspace and journal)
+        run: npm test -w @multai/runtime
+      - name: Desktop typecheck and unit tests
+        run: npm run typecheck -w @multai/desktop && npm test -w @multai/desktop
+      - name: Package AppImage, .deb and .tar.gz (x64 and arm64)
+        run: node apps/desktop/scripts/package.mjs --release --linux
+      - name: Desktop session for GUI tests
+        run: sudo apt-get update && sudo apt-get install -y xvfb dbus-x11 gnome-keyring libsecret-1-0 libfuse2t64 xdg-utils desktop-file-utils
+
+      - name: Install the .deb
+        run: |
+          deb=$(ls apps/desktop/release/linux/*amd64.deb apps/desktop/release/linux/*x64.deb 2>/dev/null | head -1)
+          sudo apt-get install -y "./$deb"
+          dpkg -L $(dpkg-deb -f "$deb" Package) | grep -E '\.desktop$|/multai$|chrome-sandbox' | tee installed.txt
+          desktop=$(grep '\.desktop$' installed.txt | head -1)
+          grep -q 'x-scheme-handler/multai' "$desktop" && echo "PASS  desktop entry claims multai:// links"
+          desktop-file-validate "$desktop" && echo "PASS  desktop entry is valid"
+          sandbox=$(grep chrome-sandbox installed.txt | head -1)
+          [ "$(stat -c %a "$sandbox")" = "4755" ] && echo "PASS  Chromium sandbox helper is setuid root"
+          xdg-mime default "$(basename "$desktop")" x-scheme-handler/multai
+          [ "$(xdg-mime query default x-scheme-handler/multai)" = "$(basename "$desktop")" ] && echo "PASS  multai:// resolves to MultAI"
+          echo "MULTAI_BIN=$(grep '/multai$' installed.txt | head -1)" >> "$GITHUB_ENV"
+          echo "MULTAI_PACKAGE=$(dpkg-deb -f "$deb" Package)" >> "$GITHUB_ENV"
+      - name: Installed .deb acceptance (links through xdg-open)
+        run: dbus-run-session -- xvfb-run -a node apps/desktop/scripts/platform-acceptance.mjs "$MULTAI_BIN" --os-open xdg-open
+      - name: Development build for the native smoke (packaging left a release build)
+        run: npm run build -w @multai/desktop
+      - name: Native smoke with an unlocked keyring (encrypted credential round trip)
+        env:
+          MULTAI_SERVICE_ORIGIN: https://api.multai.si
+          MULTAI_NATIVE_SMOKE_KEYRING: '1'
+        run: |
+          dbus-run-session -- sh -c 'printf "ci\n" | gnome-keyring-daemon --unlock --components=secrets >/dev/null; xvfb-run -a node apps/desktop/scripts/native-smoke.cjs' | tee smoke-keyring.json
+          grep -q '"ok":true' smoke-keyring.json
+      - name: Native smoke without any keyring (credentials must be refused, not stored in clear)
+        env:
+          MULTAI_SERVICE_ORIGIN: https://api.multai.si
+          MULTAI_NATIVE_SMOKE_KEYRING: '1'
+        run: |
+          dbus-run-session -- xvfb-run -a node apps/desktop/scripts/native-smoke.cjs | tee smoke-nokeyring.json || true
+          grep -o '"osCrypto":{[^}]*}' smoke-nokeyring.json
+      - name: AppImage acceptance
+        continue-on-error: true
+        run: |
+          img=$(ls apps/desktop/release/linux/*x86_64.AppImage apps/desktop/release/linux/*x64.AppImage 2>/dev/null | head -1)
+          chmod +x "$img"
+          dbus-run-session -- xvfb-run -a node apps/desktop/scripts/platform-acceptance.mjs "$PWD/$img"
+      - name: .tar.gz acceptance
+        continue-on-error: true
+        run: |
+          mkdir -p tgz && tar -xzf $(ls apps/desktop/release/linux/*x64.tar.gz | head -1) -C tgz
+          dbus-run-session -- xvfb-run -a node apps/desktop/scripts/platform-acceptance.mjs "$(find "$PWD/tgz" -maxdepth 2 -name multai -type f | head -1)"
+      - name: Uninstall the .deb
+        run: |
+          sudo apt-get remove -y "$MULTAI_PACKAGE"
+          ! dpkg -s "$MULTAI_PACKAGE" 2>/dev/null && [ ! -e "$MULTAI_BIN" ] && echo "PASS  package and binary removed"
+          ! ls /usr/share/applications | grep -qi multai && echo "PASS  desktop entry removed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multai-linux
+          path: |
+            apps/desktop/release/linux/*.AppImage
+            apps/desktop/release/linux/*.deb
+            apps/desktop/release/linux/*.tar.gz
+            apps/desktop/release/linux/build-manifest.json
+          if-no-files-found: warn
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Electron binary for the native smoke
+        run: node node_modules/electron/install.js
+      - run: npm run build -w @multai/runtime
+      - name: Runtime tests (real cmd.exe, process trees, NTFS paths)
+        run: npm test -w @multai/runtime
+      - name: Desktop typecheck and unit tests
+        run: |
+          npm run typecheck -w @multai/desktop
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm test -w @multai/desktop
+      - name: Package NSIS installers (x64 and arm64)
+        run: node apps/desktop/scripts/package.mjs --release --win
+      - name: Silent per-user install
+        run: |
+          $installer = Get-ChildItem apps/desktop/release/win -Filter '*x64.exe' | Select-Object -First 1
+          if (-not $installer) { $installer = Get-ChildItem apps/desktop/release/win -Filter 'MultAI-*.exe' | Where-Object Name -notmatch 'arm64' | Select-Object -First 1 }
+          Start-Process $installer.FullName -ArgumentList '/S' -Wait
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter MultAI.exe | Select-Object -First 1
+          if (-not $exe) { throw 'MultAI.exe was not installed for this user.' }
+          "PASS  installed without administrator rights at $($exe.FullName)"
+          "MULTAI_EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+          "MULTAI_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
+          $command = (Get-ItemProperty 'HKCU:\Software\Classes\multai\shell\open\command').'(default)'
+          if ($command -notlike "*$($exe.FullName)*") { throw "multai:// is registered to: $command" }
+          "PASS  multai:// is registered to the installed app"
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\MultAI.lnk")) { throw 'No Start menu shortcut.' }
+          "PASS  Start menu shortcut created"
+      - name: Installed app acceptance (links through the Windows shell)
+        run: node apps/desktop/scripts/platform-acceptance.mjs "$env:MULTAI_EXE" --os-open 'cmd /c start ""'
+      - name: Development build for the native smoke (packaging left a release build)
+        run: npm run build -w @multai/desktop
+      - name: Native smoke with DPAPI credential encryption
+        env:
+          MULTAI_SERVICE_ORIGIN: https://api.multai.si
+          MULTAI_NATIVE_SMOKE_KEYRING: '1'
+        run: |
+          node apps/desktop/scripts/native-smoke.cjs | Tee-Object smoke.json
+          if (-not (Select-String -Path smoke.json -Pattern '"ok":true' -Quiet)) { throw 'Native smoke failed.' }
+      - name: Silent uninstall keeps the user's data
+        run: |
+          New-Item -ItemType Directory -Force "$env:APPDATA\dev.multai.desktop" | Out-Null
+          Set-Content "$env:APPDATA\dev.multai.desktop\keep.txt" 'user data'
+          $uninstaller = Get-ChildItem $env:MULTAI_DIR -Filter 'Uninstall*.exe' | Select-Object -First 1
+          Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait
+          Start-Sleep 5
+          if (Test-Path $env:MULTAI_EXE) { throw 'MultAI.exe is still installed.' }
+          "PASS  app removed"
+          if (Test-Path 'HKCU:\Software\Classes\multai') { throw 'multai:// is still registered after uninstall.' }
+          "PASS  multai:// registration removed"
+          if (-not (Test-Path "$env:APPDATA\dev.multai.desktop\keep.txt")) { throw 'Uninstall deleted the user data.' }
+          "PASS  sign-in data kept for a reinstall"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multai-windows
+          path: |
+            apps/desktop/release/win/*.exe
+            apps/desktop/release/win/build-manifest.json
+          if-no-files-found: warn

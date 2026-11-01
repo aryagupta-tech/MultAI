@@ -9,5 +9,5 @@ export {ProviderError} from './providers/types.js';
 export type {ProviderCredentials, ModelInfo, AgentMessage, ToolDefinition, ToolCall, Usage, AgentEvent, StreamLimits, AgentLimits} from './providers/types.js';
 export {ControlledWorkspace} from './workspace.js';
 export type {WorkspaceEntry, WorkspaceRead, ReviewedWrite} from './workspace.js';
-export {executeApprovedShell, redactSecrets} from './shell.js';
+export {executeApprovedShell, hostShell, redactSecrets} from './shell.js';
 export type {ApprovedShellOptions, ShellResult} from './shell.js';

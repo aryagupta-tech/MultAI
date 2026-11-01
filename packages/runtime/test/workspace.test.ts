@@ -106,3 +106,15 @@ test('atomic text replacement preserves ordinary executable bits and strips spec
   await x.workspace.write('new.ts', 'export const fresh = true;', null, x.approve(fresh));
   assert.equal((await lstat(join(x.root, 'new.ts'))).mode & 0o7777, 0o600);
 });
+
+test('private names match in any case and Windows-special names are refused on every host', async t => {
+  const x = await fixture(); t.after(() => x.close());
+  await mkdir(join(x.root, '.git'));
+  await writeFile(join(x.root, '.git', 'config'), '[remote "origin"]');
+  for (const path of ['.GIT/config', '.Git/config', '.SSH/id', 'Node_Modules/x.js', '.ENV']) await assert.rejects(x.workspace.read(path), /PRIVATE_PATH|unavailable/, path);
+  for (const path of ['notes.txt:hidden', 'C:evil.txt', 'CON', 'nul.txt', 'Com1.log', 'lpt9', 'trailing.', 'trailing ', 'a<b', 'a|b', 'what?.txt', 'star*.md', 'quote".txt']) {
+    await assert.rejects(x.workspace.read(path), /UNSAFE_PATH|portable/, path);
+    await assert.rejects(x.workspace.write(path, 'x', null, x.approve(x.descriptor(path, 'x'))), /UNSAFE_PATH|portable/, path);
+  }
+  for (const path of ['console.ts', 'nullable.ts', 'com.example.txt', 'auxiliary.md', 'a.b.c']) await assert.doesNotReject(x.workspace.write(path, 'ok', null, x.approve(x.descriptor(path, 'ok'))), path);
+});
