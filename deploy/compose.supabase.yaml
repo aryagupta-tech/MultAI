@@ -54,12 +54,12 @@ services:
     cpus: 0.2
     environment:
       COLLABORATION_DOMAIN: ${COLLABORATION_DOMAIN:?Set the collaboration domain}
-      ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact}
     ports:
       - "80:8080"
       - "443:8443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Same as ./Caddyfile without an ACME contact address.
+      - ./Caddyfile.supabase:/etc/caddy/Caddyfile:ro
       - certificates:/data
     tmpfs:
       - /config:rw,noexec,nosuid,nodev,size=16m,uid=10001,gid=10001,mode=0700
