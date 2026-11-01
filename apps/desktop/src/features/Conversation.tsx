@@ -195,7 +195,7 @@ function HostApprovals({ sessionId }: { sessionId: string }) {
           <div className="msg-gutter"><span className="agent-avatar"><ShieldCheck size={15} strokeWidth={1.8} aria-hidden /></span></div>
           <div className="msg-body">
             <header className="msg-head">
-              <span className="msg-author">{a.kind === 'file_write' ? (a.newFile ? 'Create a file?' : 'Change a file?') : 'Run a command?'}</span>
+              <span className="msg-author">{a.kind === 'file_write' ? (a.newFile ? 'Create a file?' : 'Change a file?') : a.kind === 'external' ? 'Use a tool?' : 'Run a command?'}</span>
               <span className="msg-model">{a.reason}</span>
             </header>
             {a.kind === 'file_write' ? (
