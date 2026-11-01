@@ -23,7 +23,8 @@ const identity = release
   ? { bundleId: 'dev.multai.desktop', copyright: 'Copyright © 2026 MultAI', linkName: 'MultAI links', scheme: 'multai' }
   : { bundleId: 'dev.multai.desktop.development', copyright: 'MultAI development build', linkName: 'MultAI development links', scheme: 'multai-dev' };
 
-execFileSync('npm', ['run', release ? 'build:release' : 'build'], { cwd: root, stdio: 'inherit' });
+// npm is a .cmd script on Windows, which Node only starts through a shell.
+execFileSync('npm', ['run', release ? 'build:release' : 'build'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
 
 await rm(stage, { recursive: true, force: true });
 await mkdir(stage, { recursive: true });
