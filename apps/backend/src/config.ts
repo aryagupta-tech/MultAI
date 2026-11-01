@@ -6,6 +6,8 @@ export interface Config {
   databaseUrl: string;
   publicOrigin: string;
   desktopCallbackUri: string;
+  /** Fixed public desktop client identity bound into every sign-in flow. */
+  desktopClientId: string;
   googleClientId?: string;
   googleClientSecret?: string;
   googleRedirectUri?: string;
@@ -19,7 +21,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     PORT: z.coerce.number().int().min(1).max(65535).default(4310),
     DATABASE_URL: z.url(),
     PUBLIC_ORIGIN: z.url().default('http://127.0.0.1:4310'),
-    DESKTOP_CALLBACK_URI: z.url().default('multai-dev://auth/callback'),
+    DESKTOP_CALLBACK_URI: z.url().optional(),
     GOOGLE_CLIENT_ID: z.string().min(1).optional(),
     GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
   }).parse(env);
@@ -29,9 +31,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const db = new URL(values.DATABASE_URL);
   if (!['postgres:', 'postgresql:'].includes(db.protocol)) throw new Error('DATABASE_URL must use PostgreSQL.');
-  const callback = new URL(values.DESKTOP_CALLBACK_URI);
-  if (callback.protocol !== 'multai-dev:' || callback.hostname !== 'auth' || callback.pathname !== '/callback' || callback.search || callback.hash || callback.username || callback.password || callback.port) {
-    throw new Error('DESKTOP_CALLBACK_URI must be multai-dev://auth/callback for this development identity.');
+  // Production serves the release app (multai://); development and test serve development builds
+  // (multai-dev://). Each environment accepts only its own fixed callback.
+  const production = values.NODE_ENV === 'production';
+  const expectedCallback = production ? 'multai://auth/callback' : 'multai-dev://auth/callback';
+  const callback = new URL(values.DESKTOP_CALLBACK_URI ?? expectedCallback);
+  if (callback.href !== expectedCallback) {
+    throw new Error(`DESKTOP_CALLBACK_URI must be ${expectedCallback} when NODE_ENV is ${values.NODE_ENV}.`);
   }
   if (values.NODE_ENV === 'production' && (origin.protocol !== 'https:' || origin.hostname === 'localhost' || origin.hostname === '127.0.0.1')) {
     throw new Error('Production requires a public HTTPS origin.');
@@ -49,6 +55,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl: values.DATABASE_URL,
     publicOrigin: origin.origin,
     desktopCallbackUri: callback.href,
+    desktopClientId: production ? 'multai-desktop' : 'multai-desktop-development',
     environment: values.NODE_ENV,
     ...(values.GOOGLE_CLIENT_ID ? {
       googleClientId: values.GOOGLE_CLIENT_ID,

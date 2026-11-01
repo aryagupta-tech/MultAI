@@ -40,10 +40,10 @@ class MemoryStore implements CredentialPersistence {
   async save(next: CredentialRecord) { this.record = structuredClone(next); }
   async clearActive() { this.record = {...this.record, active: null}; }
 }
-function account(fetcher: (url: URL, init?: RequestInit) => Promise<Response>, store = new MemoryStore()) {
+function account(fetcher: (url: URL, init?: RequestInit) => Promise<Response>, store = new MemoryStore(), callbackScheme?: 'multai' | 'multai-dev') {
   const changes = vi.fn();
   const openExternal = vi.fn(async () => undefined);
-  const instance = new Account(origin, changes, {store, fetch: fetcher as typeof fetch, openExternal, now: () => now, hostname: () => 'Synthetic device'});
+  const instance = new Account(origin, changes, {store, fetch: fetcher as typeof fetch, openExternal, now: () => now, hostname: () => 'Synthetic device', ...(callbackScheme ? {callbackScheme} : {})});
   return {instance, store, changes, openExternal};
 }
 
@@ -68,6 +68,24 @@ describe('native collaboration identity fences', () => {
     expect(challenge).toBe(createHash('sha256').update(exchangeVerifier).digest('base64url'));
     expect(await ctx.instance.identitySnapshot()).toEqual({userId, deviceId, generation: ctx.instance.accountGeneration});
     expect(Object.keys(await ctx.instance.identitySnapshot()).sort()).toEqual(['deviceId', 'generation', 'userId']);
+    expect(ctx.store.record.active?.userId).toBe(userId);
+  });
+
+  it('a release build completes only multai:// callbacks', async () => {
+    const flow = start();
+    let exchangeCount = 0;
+    const ctx = account(async (url) => {
+      if (url.pathname.endsWith('/start')) return json(flow);
+      if (url.pathname.endsWith('/exchange')) { exchangeCount++; return json(bundle()); }
+      if (url.pathname === '/v1/me') return json(identity);
+      throw new Error('Unexpected synthetic endpoint');
+    }, new MemoryStore(), 'multai');
+    expect((await ctx.instance.signIn()).ok).toBe(true);
+    await ctx.instance.completeSignIn(callback(flow.flowId));
+    expect(exchangeCount).toBe(0);
+    const release = callback(flow.flowId);
+    await ctx.instance.completeSignIn(new URL(release.href.replace(/^multai-dev:/, 'multai:')));
+    expect(exchangeCount).toBe(1);
     expect(ctx.store.record.active?.userId).toBe(userId);
   });
 

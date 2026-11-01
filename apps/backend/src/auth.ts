@@ -12,7 +12,6 @@ const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const opaqueSecret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const verifierSchema = z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/);
-const desktopClientId = 'multai-desktop-development';
 
 function equal(left: string, right: string): boolean {
   const a = Buffer.from(left);
@@ -77,7 +76,7 @@ export class AuthService {
       `INSERT INTO oauth_flows(id,state_hash,nonce,desktop_challenge,provider_verifier,expires_at,
          desktop_client_id,desktop_callback_uri,provider_redirect_uri,provider_client_id)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, hash(state), nonce, codeChallenge, verifier, expiresAt, desktopClientId,
+      [id, hash(state), nonce, codeChallenge, verifier, expiresAt, this.config.desktopClientId,
         this.config.desktopCallbackUri, this.redirectUri(), this.config.googleClientId ?? null],
     );
     return { flowId: id, authorizationUrl, expiresAt: expiresAt.toISOString() };
@@ -91,7 +90,7 @@ export class AuthService {
        WHERE state_hash=$1 AND state_consumed_at IS NULL AND expires_at>now()
          AND desktop_client_id=$2 AND desktop_callback_uri=$3 AND provider_redirect_uri=$4
          AND provider_client_id IS NOT DISTINCT FROM $5
-       RETURNING *`, [hash(state), desktopClientId, this.config.desktopCallbackUri,
+       RETURNING *`, [hash(state), this.config.desktopClientId, this.config.desktopCallbackUri,
         this.redirectUri(), this.config.googleClientId ?? null],
     );
     const flow = claimed.rows[0];
@@ -140,7 +139,7 @@ export class AuthService {
       const result = await client.query<Flow>('SELECT * FROM oauth_flows WHERE id=$1 FOR UPDATE', [input.flowId]);
       const flow = result.rows[0];
       if (!flow || flow.consumed_at || flow.expires_at.getTime() <= Date.now() || !flow.completion_hash || !flow.identity ||
-          flow.desktop_client_id !== desktopClientId || flow.desktop_callback_uri !== this.config.desktopCallbackUri ||
+          flow.desktop_client_id !== this.config.desktopClientId || flow.desktop_callback_uri !== this.config.desktopCallbackUri ||
           flow.provider_redirect_uri !== this.config.googleRedirectUri || flow.provider_client_id !== (this.config.googleClientId ?? null) ||
           !equal(flow.completion_hash, hash(input.completionCode)) || !equal(flow.desktop_challenge, pkceChallenge(input.codeVerifier))) {
         throw new ApiError(401, 'invalid_flow', 'Sign-in proof is invalid, expired, or already used.');

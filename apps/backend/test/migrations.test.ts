@@ -21,7 +21,7 @@ test('migration lock handles concurrent startup and rejects changed applied SQL'
   }
   await assert.rejects(migrate(ctx.db, pathToFileURL(`${folder}/`)), /differ from source/);
   const count = await ctx.db.query('SELECT count(*)::int AS count FROM schema_migrations');
-  assert.equal(count.rows[0]?.count, 3);
+  assert.equal(count.rows[0]?.count, (await readdir(source)).filter(name => name.endsWith('.sql')).length);
 });
 
 test('transaction failure rolls back the full mutation', async t => {

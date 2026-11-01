@@ -11,6 +11,7 @@
     "dev:demo": "node scripts/dev.mjs --demo",
     "dev:web": "vite --mode demo",
     "build": "vite build && node scripts/build-electron.mjs",
+    "build:release": "vite build && node scripts/build-electron.mjs --release",
     "build:demo": "vite build --mode demo && node scripts/build-electron.mjs --demo",
     "start": "electron .",
     "package": "node scripts/package.mjs",

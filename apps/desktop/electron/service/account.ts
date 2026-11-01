@@ -26,6 +26,8 @@ export interface AccountOptions {
   openExternal?: (url: string) => Promise<void>;
   now?: () => number;
   hostname?: () => string;
+  /** Link scheme the service's sign-in callback uses: `multai` in release builds. */
+  callbackScheme?: 'multai' | 'multai-dev';
 }
 interface PendingFlow {flowId: string; verifier: string; expiresAt: number; generation: number; completing: boolean}
 interface Refresh {generation: number; promise: Promise<string>}
@@ -61,6 +63,7 @@ export class Account {
   private readonly openExternal: (url: string) => Promise<void>;
   private readonly now: () => number;
   private readonly hostname: () => string;
+  private readonly callbackProtocol: string;
   private readonly inFlight = new Set<AbortController>();
   private pending: PendingFlow | null = null;
   private refreshing: Refresh | null = null;
@@ -78,6 +81,7 @@ export class Account {
     this.openExternal = options.openExternal ?? (url => shell.openExternal(url));
     this.now = options.now ?? Date.now;
     this.hostname = options.hostname ?? os.hostname;
+    this.callbackProtocol = `${options.callbackScheme ?? 'multai-dev'}:`;
   }
 
   get accountGeneration(): number { return this.generation; }
@@ -173,7 +177,7 @@ export class Account {
   }
 
   async completeSignIn(callback: URL): Promise<void> {
-    if (callback.protocol !== 'multai-dev:' || callback.hostname !== 'auth' || callback.pathname !== '/callback' || callback.username || callback.password || callback.port || callback.hash) return;
+    if (callback.protocol !== this.callbackProtocol || callback.hostname !== 'auth' || callback.pathname !== '/callback' || callback.username || callback.password || callback.port || callback.hash) return;
     if (callback.searchParams.getAll('flowId').length !== 1 || callback.searchParams.getAll('completionCode').length !== 1 || [...callback.searchParams.keys()].some(key => !['flowId', 'completionCode'].includes(key))) return;
     const input = z.object({flowId: z.uuid(), completionCode: opaque}).safeParse(Object.fromEntries(callback.searchParams));
     const pending = this.pending;

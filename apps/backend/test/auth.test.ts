@@ -12,7 +12,7 @@ import { createTestContext } from './helpers.js';
 const syntheticConfig: Config = {
   environment: 'test', host: '127.0.0.1', port: 4310,
   databaseUrl: 'postgres://synthetic.invalid/multai',
-  publicOrigin: 'http://127.0.0.1:4310', desktopCallbackUri: 'multai-dev://auth/callback',
+  publicOrigin: 'http://127.0.0.1:4310', desktopCallbackUri: 'multai-dev://auth/callback', desktopClientId: 'multai-desktop-development',
   googleClientId: 'synthetic-client', googleClientSecret: 'synthetic-secret',
   googleRedirectUri: 'http://127.0.0.1:4310/v1/auth/google/callback',
 };
@@ -208,4 +208,20 @@ test('sign-in completion page opens the app with an escaped link and runs no scr
   assert.match(page, /href="multai-dev:\/\/auth\/callback\?flowId=a&#38;completionCode=&#34;&#60;x&#62;"/);
   assert.doesNotMatch(page, /<script/i);
   assert.doesNotMatch(page, /"<x>/);
+});
+
+test('the release identity signs in with multai:// and cannot complete a development flow', async (t) => {
+  const context = await createTestContext(); t.after(context.close);
+  const releaseConfig: Config = { ...syntheticConfig, environment: 'production', desktopCallbackUri: 'multai://auth/callback', desktopClientId: 'multai-desktop' };
+  const release = new AuthService(context.db, releaseConfig, syntheticOidc());
+  const { tokens } = await signIn(release);
+  assert.equal(typeof tokens.accessToken, 'string');
+
+  const development = new AuthService(context.db, syntheticConfig, syntheticOidc());
+  const codeVerifier = randomBytes(32).toString('base64url');
+  const start = await development.start(pkceChallenge(codeVerifier));
+  const callback = new URL(await development.callback(new URL(start.authorizationUrl).searchParams.get('state')!, 'synthetic-code'));
+  assert.equal(callback.protocol, 'multai-dev:');
+  const input = { flowId: start.flowId, completionCode: callback.searchParams.get('completionCode')!, codeVerifier, deviceName: 'Synthetic desktop' };
+  await assert.rejects(release.exchange(input), rejectedWith('invalid_flow'));
 });

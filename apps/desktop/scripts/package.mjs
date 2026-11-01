@@ -14,8 +14,14 @@ const stage = path.join(root, 'release', 'stage');
 const out = path.join(root, 'release');
 const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 const electronVersion = createRequire(import.meta.url)('electron/package.json').version;
+// --release packages the public identity (multai:// links, hosted service); the default stays a
+// development build that can be installed beside it.
+const release = process.argv.includes('--release');
+const identity = release
+  ? { bundleId: 'dev.multai.desktop', copyright: 'Copyright © 2026 MultAI', linkName: 'MultAI links', scheme: 'multai' }
+  : { bundleId: 'dev.multai.desktop.development', copyright: 'MultAI development build', linkName: 'MultAI development links', scheme: 'multai-dev' };
 
-execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' });
+execFileSync('npm', ['run', release ? 'build:release' : 'build'], { cwd: root, stdio: 'inherit' });
 
 await rm(stage, { recursive: true, force: true });
 await mkdir(stage, { recursive: true });
@@ -38,9 +44,9 @@ const [appDir] = await packager({
   out,
   name: 'MultAI',
   executableName: 'MultAI',
-  appBundleId: 'dev.multai.desktop.development',
+  appBundleId: identity.bundleId,
   appVersion: pkg.version,
-  appCopyright: 'MultAI development build',
+  appCopyright: identity.copyright,
   electronVersion,
   asar: true,
   overwrite: true,
@@ -48,7 +54,7 @@ const [appDir] = await packager({
   platform: process.platform,
   arch: process.arch,
   ...(await exists(iconPath) ? { icon: iconPath } : {}),
-  protocols: [{ name: 'MultAI development links', schemes: ['multai-dev'] }],
+  protocols: [{ name: identity.linkName, schemes: [identity.scheme] }],
   extendInfo: { LSApplicationCategoryType: 'public.app-category.developer-tools' },
 });
 // Keep readable standalone copies beside the application as well as inside app.asar.
@@ -67,6 +73,8 @@ const asar = path.join(appDir, process.platform === 'darwin' ? 'MultAI.app/Conte
 const git = (...a) => { try { return execFileSync('git', a, { cwd: root, encoding: 'utf8' }).trim(); } catch { return ''; } };
 await writeFile(path.join(appDir, 'build-manifest.json'), JSON.stringify({
   version: pkg.version,
+  channel: release ? 'production' : 'development',
+  bundleId: identity.bundleId,
   commit: git('rev-parse', 'HEAD'),
   dirty: git('status', '--porcelain') !== '',
   builtAt: new Date().toISOString(),

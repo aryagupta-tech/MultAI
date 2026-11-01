@@ -8,7 +8,7 @@ import type { OidcClient } from '../src/oidc.js';
 
 export const testConfig: Config = {
   host: '127.0.0.1', port: 4310, databaseUrl: 'postgresql://unused@127.0.0.1/test',
-  publicOrigin: 'http://127.0.0.1:4310', desktopCallbackUri: 'multai-dev://auth/callback', environment: 'test',
+  publicOrigin: 'http://127.0.0.1:4310', desktopCallbackUri: 'multai-dev://auth/callback', desktopClientId: 'multai-desktop-development', environment: 'test',
 };
 
 export async function createTestContext(options: {config?: Config; oidc?: OidcClient} = {}) {

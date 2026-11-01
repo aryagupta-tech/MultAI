@@ -15,17 +15,21 @@ import {INFERENCE_IPC} from '../src/bridge/execution';
 declare const __BUILD_INFO__: Omit<BuildInfo, 'platform' | 'serviceOrigin'>;
 declare const __DEV_SERVER_URL__: string;
 
-const PROTOCOL = 'multai-dev';
+// Release builds get their own link scheme, profile and service so they never share state with
+// development builds installed on the same machine.
+const isRelease = __BUILD_INFO__.channel === 'production';
+const PROTOCOL = isRelease ? 'multai' : 'multai-dev';
+const RELEASE_SERVICE_ORIGIN = 'https://api.multai.si';
 const isDev = __DEV_SERVER_URL__ !== '';
 const rendererIndex = path.join(__dirname, '..', 'renderer', 'index.html');
 const rendererUrl = isDev ? __DEV_SERVER_URL__ : pathToFileURL(rendererIndex).toString();
 
 /**
- * Development builds talk to a loopback service by default. MULTAI_SERVICE_ORIGIN may point at
- * another loopback port or an HTTPS origin; anything else is refused.
+ * Release builds talk to the hosted service; development builds to a loopback service. Either may
+ * be pointed elsewhere with MULTAI_SERVICE_ORIGIN, but only at a loopback port or an HTTPS origin.
  */
 function serviceOrigin(): string {
-  const raw = process.env.MULTAI_SERVICE_ORIGIN ?? 'http://127.0.0.1:4310';
+  const raw = process.env.MULTAI_SERVICE_ORIGIN ?? (isRelease ? RELEASE_SERVICE_ORIGIN : 'http://127.0.0.1:4310');
   const url = new URL(raw);
   const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
@@ -35,8 +39,8 @@ function serviceOrigin(): string {
 }
 
 const origin = serviceOrigin();
-// Fresh development namespace; never import a historical MultAI profile implicitly.
-app.setPath('userData',path.join(app.getPath('appData'),'dev.multai.desktop.development'));
+// Fresh namespace per channel; never import a historical MultAI profile implicitly.
+app.setPath('userData',path.join(app.getPath('appData'),isRelease?'dev.multai.desktop':'dev.multai.desktop.development'));
 let mainWindow: BrowserWindow | null = null;
 let pendingJoinToken: string | null = null;
 
@@ -53,7 +57,7 @@ const account = new Account(origin, (state) => {
     void coordinator?.invalidate().catch(()=>undefined);
   }
   send(IPC.authChanged,state);
-});
+}, {callbackScheme: PROTOCOL});
 const live = new LiveHub(account, (batch) => send(IPC.liveEvents, batch), (change) => send(IPC.liveStatus, change));
 
 /** Only our own top-level renderer document may call the bridge. */
@@ -73,7 +77,7 @@ function displayFolder(folder: string): string {
   return folder.startsWith(home + path.sep) ? '~' + folder.slice(home.length) : folder;
 }
 
-/** Handles multai-dev:// links: sign-in completion and invitation links. */
+/** Handles multai:// (multai-dev:// in development) links: sign-in completion and invitations. */
 function handleDeepLink(raw: string): void {
   let url: URL;
   try {
@@ -235,7 +239,7 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
-  }).catch(()=>{dialog.showErrorBox('MultAI could not start','Check the local application storage and development build. No inference was started.');app.quit();});
+  }).catch(()=>{dialog.showErrorBox('MultAI could not start','MultAI could not open its local storage. Quit and open it again. No inference was started.');app.quit();});
 
   let quitting=false;
   app.on('before-quit', event => {
