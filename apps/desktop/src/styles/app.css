@@ -742,6 +742,10 @@ ol.md-list { list-style: decimal; }
 
 /* ============================================================ Welcome */
 
+.launch { display: grid; place-items: center; height: 100vh; background: var(--bg); }
+.launch > * { animation: launch-in 400ms ease-out 300ms both; }
+@keyframes launch-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .launch > * { animation: none; } }
 .welcome { position: relative; display: grid; place-items: center; height: 100vh; overflow: auto; padding: 48px 24px; background: var(--bg); }
 .welcome-glow {
   position: absolute; inset: 0; pointer-events: none;

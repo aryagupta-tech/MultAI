@@ -13,6 +13,7 @@ import {
   CommandPalette, DeleteSessionDialog, InviteDialog, JoinDialog, NewProjectDialog, SettingsDialog, ShortcutsDialog, Toasts,
 } from './features/Overlays';
 import { cx } from './ui/primitives';
+import { LogoMark } from './ui/Logo';
 
 async function loadDemo() {
   // Compile-time guard: production builds drop the fixtures chunk entirely.
@@ -80,7 +81,7 @@ function useGlobalShortcuts() {
 }
 
 export function App() {
-  const { account, activeId, details, sidebarOpen, inspectorOpen, dataMode, build, onboarding, loading } = useApp();
+  const { account, activeId, details, sidebarOpen, inspectorOpen, dataMode, build, onboarding, loading, auth } = useApp();
   const d = activeId ? details[activeId] ?? null : null;
 
   usePreferencesOnRoot();
@@ -91,6 +92,16 @@ export function App() {
     if (dataMode === 'demo') void loadDemo();
     else if (getBridge()) void live.start();
   }, [dataMode]);
+
+  // Until the saved sign-in has been checked, neither the sign-in page nor the app is the right
+  // screen: showing sign-in first flashes it at people who are already signed in.
+  if (dataMode === 'live' && getBridge() && !auth) {
+    return (
+      <div className="launch" role="status" aria-label="Opening MultAI">
+        <LogoMark size={56} />
+      </div>
+    );
+  }
 
   if (!account || onboarding !== 'done') {
     return (

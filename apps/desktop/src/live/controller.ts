@@ -199,7 +199,9 @@ export async function start(): Promise<void> {
   svc.onLiveStatus(onLiveStatus);
   svc.onJoinLink((token) => useApp.setState({ joinPrompt: token, overlay: 'join' }));
   void checkHealth();
-  await applyAuth(await svc.authState());
+  // The launch screen waits for this answer, so a failed check must still end in a state.
+  const initial = await svc.authState().catch((): AuthState => ({ status: 'signed-out', error: { code: 'network_uncertain', message: 'MultAI couldn’t check your sign-in.' } }));
+  await applyAuth(initial);
   // Membership changes (admissions, new sessions from another device) arrive by polling.
   pollTimer = setInterval(() => {
     if (me && document.visibilityState === 'visible') void refreshSessions(true);
