@@ -1038,7 +1038,7 @@ ol.md-list { list-style: decimal; }
 .composer-pick:hover, .composer-pick[aria-expanded='true'] { background: var(--chip-hover); color: var(--text); }
 .composer-pick > svg:last-child { color: var(--text-3); flex: none; }
 .composer-pick.is-empty { color: var(--accent); }
-.composer-pick.is-full { color: var(--warn, #f59e0b); }
+.composer-pick.is-full { color: var(--warn); }
 .composer-pick .meta-mark { color: #0a7cff; flex: none; }
 .prompt-list { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
 .prompt-list li { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
@@ -1083,3 +1083,47 @@ body.is-resizing .app { transition: none; }
 .team-composer { padding: 10px 12px 14px; flex: none; }
 .team-composer .composer { border-radius: var(--r-xl); }
 .team-composer .composer-input { min-height: 40px; }
+
+/* ---------------------------------------------------------------- Composer suggestions (@ files, / commands) */
+.composer-suggest {
+  position: absolute; bottom: calc(100% + 6px); z-index: 60; width: min(440px, calc(100% - 8px));
+  border-radius: var(--r-lg); background: var(--surface-2); box-shadow: var(--shadow-pop); border: 1px solid var(--border);
+  animation: pop-in 120ms var(--ease); overflow: hidden;
+}
+.composer-suggest-list { max-height: min(320px, 45vh); overflow-y: auto; padding: 4px; }
+.composer-suggest-empty { padding: 14px 12px; color: var(--text-3); font-size: var(--fs-sm); }
+.composer-suggest-footer { padding: 6px 12px; border-top: 1px solid var(--border); color: var(--text-3); font-size: var(--fs-xs); }
+.suggest-item { height: 32px; }
+.suggest-item .suggest-label { flex: 0 1 auto; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-sm); }
+.suggest-item .suggest-detail { flex: 1 1 0; min-width: 0; color: var(--text-3); font-size: var(--fs-xs); text-align: right; }
+.suggest-item mark { background: transparent; color: var(--accent); font-weight: 600; }
+
+/* ---------------------------------------------------------------- Context meter */
+.context-meter {
+  display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 6px; border-radius: var(--r-pill);
+  color: var(--text-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums;
+}
+.context-meter:hover:not(:disabled) { background: var(--chip-hover); color: var(--text); }
+.context-meter-track { fill: none; stroke: var(--border-strong); stroke-width: 2.5; }
+.context-meter-fill { fill: none; stroke: var(--text-2); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dasharray var(--dur) var(--ease); }
+.context-meter.is-mid .context-meter-fill { stroke: var(--warn); }
+.context-meter.is-high { color: var(--danger); }
+.context-meter.is-high .context-meter-fill { stroke: var(--danger); }
+@media (max-width: 900px) { .context-meter-label { display: none; } }
+
+/* ---------------------------------------------------------------- Help, undo and skills dialogs */
+.help-list, .help-commands { display: grid; gap: 8px; margin: 0 0 14px; }
+.help-list li { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: var(--fs-sm); }
+.help-list kbd { min-width: 26px; justify-content: center; }
+.help-commands { grid-template-columns: max-content 1fr; column-gap: 14px; row-gap: 6px; max-height: 40vh; overflow: auto; }
+.help-commands li { display: contents; }
+.help-commands code { color: var(--text); }
+.help-commands span { color: var(--text-2); font-size: var(--fs-sm); }
+.undo-files { display: grid; gap: 4px; max-height: 40vh; overflow: auto; margin: 0 0 14px; }
+.undo-files li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-sm); }
+.undo-status { flex: none; width: 56px; font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-3); }
+.undo-status.is-added { color: var(--danger); }
+.undo-status.is-deleted { color: var(--ok); }
+.skill-group { margin-bottom: 14px; }
+.skill-group-title { font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-3); margin: 0 0 8px; }
+.skill-group .prompt-list li { align-items: center; }

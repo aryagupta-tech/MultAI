@@ -11,6 +11,7 @@ import { useApp } from '../model/store';
 import type { MessageKind, Project, SessionMode } from '../model/types';
 import { mergeEvents, projectSession, projectSummary, projectSessionState, titleFromMessage, type LocalSessionMeta } from './projection';
 import * as execution from './execution';
+import * as assist from './assist';
 
 interface Cached {
   session: WireSession;
@@ -389,6 +390,7 @@ export async function send(key: string, kind: MessageKind, text: string, image?:
       useApp.setState((s) => ({ sessions: [projectSummary(session, metaFor(session.id), [event]), ...s.sessions.filter((x) => x.id !== session.id)], activeId: session.id }));
       persistLocal();
       await open(session.id);
+      if (kind === 'instruction') assist.autoRun(session.id);
     } else {
       const r = await api().postMessage(target, { requestId, kind, text, ...(image ? { image } : {}) });
       if (!r.ok) return fail(r.error);
@@ -398,6 +400,7 @@ export async function send(key: string, kind: MessageKind, text: string, image?:
         publish(target);
       }
       useApp.getState().setDraft(key, { text: '', image: undefined });
+      if (kind === 'instruction') assist.autoRun(target);
     }
   } finally {
     useApp.setState((s) => ({ sending: { ...s.sending, [key]: false } }));

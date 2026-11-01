@@ -4,7 +4,8 @@ import {mkdtemp,mkdir,readFile,readdir,realpath,rm,writeFile} from 'node:fs/prom
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach,describe,expect,it} from 'vitest';
-import {ProjectRegistry,applyWork,compareUrl,createWork,diffWork,discardWork,githubRepo,keepWork,parseDiff,pushWork,readWork,revertFile,safeRelative} from './projects';
+import {ProjectRegistry,applyWork,checkpointChanges,compareUrl,createWork,diffWork,discardWork,githubRepo,keepWork,listWorkFiles,parseDiff,pushWork,readWork,restoreCheckpoint,revertFile,safeRelative,snapshotWork} from './projects';
+import {isDeniedPath} from '@multai/runtime';
 import {TerminalHost,type TerminalEvent} from './terminal';
 
 const cleanup:string[]=[];
@@ -113,6 +114,48 @@ describe('project worktrees',()=>{
     const info=await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'throwaway'});
     await discardWork(root,{root:x.repo},{branch:info.branch,deleteBranch:true});
     expect(sh(x.repo,'branch','--list',info.branch)).toBe('');
+  });
+});
+
+describe('checkpoints and file lists',()=>{
+  it('lists the worktree\'s files without ignored or private ones',async()=>{
+    const x=await fixture();const sessionId=randomUUID();const root=join(x.workspaces,sessionId);
+    const info=await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'files'});
+    await writeFile(join(root,'.gitignore'),'dist/\n');await mkdir(join(root,'dist'));await writeFile(join(root,'dist','out.js'),'x');
+    await mkdir(join(root,'node_modules','pkg'),{recursive:true});await writeFile(join(root,'node_modules','pkg','index.js'),'x');
+    await writeFile(join(root,'.env'),'KEY=1');await writeFile(join(root,'notes.md'),'n');
+    const {files}=await listWorkFiles(root);
+    const visible=files.filter(file=>!isDeniedPath(file));
+    expect(visible.sort()).toEqual(['.gitignore','README.md','notes.md','old.txt','src/cart.js']);
+    expect(files).not.toContain('dist/out.js');
+    void info;
+  });
+  it('undoes exactly what a run changed and leaves earlier work alone',async()=>{
+    const x=await fixture();const sessionId=randomUUID();const root=join(x.workspaces,sessionId);
+    await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'undo'});
+    // Work from an earlier run, uncommitted, that undo must keep.
+    await writeFile(join(root,'README.md'),'# Shop, edited before\n');await writeFile(join(root,'kept.txt'),'earlier\n');
+    const checkpoint=await snapshotWork(root,'Change the cart');
+    expect(checkpoint).toMatchObject({instruction:'Change the cart'});
+    const again=await snapshotWork(root,'Same again');
+    expect(again).toMatchObject({commit:checkpoint!.commit,instruction:'Same again'});
+    expect((await readWork(root))!.checkpoints).toHaveLength(1);
+    // The run: modify, add, delete.
+    await writeFile(join(root,'src','cart.js'),'broken\n');await writeFile(join(root,'src','new.js'),'new\n');await rm(join(root,'old.txt'));
+    const preview=(await checkpointChanges(root))!;
+    expect(preview.files.sort((a,b)=>a.path.localeCompare(b.path))).toEqual([{path:'old.txt',status:'deleted'},{path:'src/cart.js',status:'modified'},{path:'src/new.js',status:'added'}]);
+    const undone=await restoreCheckpoint(root);
+    expect(undone.files.sort()).toEqual(['old.txt','src/cart.js','src/new.js']);
+    expect(await readFile(join(root,'src','cart.js'),'utf8')).toContain('reduce');
+    expect(await readFile(join(root,'old.txt'),'utf8')).toBe('remove me\n');
+    expect(await readdir(join(root,'src'))).toEqual(['cart.js']);
+    expect(await readFile(join(root,'README.md'),'utf8')).toBe('# Shop, edited before\n');
+    expect(await readFile(join(root,'kept.txt'),'utf8')).toBe('earlier\n');
+    expect((await readWork(root))!.checkpoints).toEqual([]);
+    await expect(restoreCheckpoint(root)).rejects.toMatchObject({code:'NO_CHECKPOINT'});
+    // The host's checkout and refs: untouched apart from the checkpoint ref, which is gone again.
+    expect(sh(x.repo,'status','--porcelain')).toBe('');
+    expect(sh(x.repo,'for-each-ref','refs/multai/')).toBe('');
   });
 });
 

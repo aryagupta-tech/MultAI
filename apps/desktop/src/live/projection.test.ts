@@ -140,3 +140,18 @@ describe('execution event projection',()=>{
     expect(tools?.type==='tools'&&tools.calls[0]?.detail?.length).toBe(32000);
   });
 });
+
+describe('agent plan checklist', () => {
+  test('one checklist per run, replaced by later updates and bounded', () => {
+    const run = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const d = projectSession({ session: session(), participants: [], me, events: [
+      ev(1, 'activity.completed', me.id, { runId: run, tool: 'update_plan', summary: 'Plan: 0 of 2 done', plan: { steps: [{ text: 'Read cart.js', state: 'active' }, { text: 'Fix total', state: 'todo' }] } }),
+      ev(2, 'activity.completed', me.id, { runId: run, tool: 'read_file', summary: 'Read selected workspace file', path: 'cart.js' }),
+      ev(3, 'activity.completed', me.id, { runId: run, tool: 'update_plan', summary: 'Plan: 1 of 2 done', plan: { steps: [{ text: 'Read cart.js', state: 'done' }, { text: 'Fix total', state: 'active' }, { text: 'bad', state: 'maybe' }] } }),
+    ] });
+    const plans = d.timeline.filter((item) => item.type === 'plan');
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({ sequence: 1, steps: [{ text: 'Read cart.js', state: 'done' }, { text: 'Fix total', state: 'active' }] });
+    expect(d.timeline.map((item) => item.type)).toEqual(['plan', 'tools']);
+  });
+});

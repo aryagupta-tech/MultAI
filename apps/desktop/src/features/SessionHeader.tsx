@@ -10,6 +10,7 @@ import * as execution from '../live/execution';
 import {refreshWork,useWork} from '../live/work';
 import {setTeamOpen,useTeam,useUnreadTeam} from './TeamPanel';
 import {getBridge} from '../bridge/client';
+import {useEditorItems} from './AssistDialogs';
 import {ChatGPTPlanUsage,isChatGPTUsageLimit} from './ChatGPTPlanUsage';
 
 export function SessionHeader({ d }: { d: SessionDetail | null }) {
@@ -193,12 +194,20 @@ function WorkChip({sessionId}:{sessionId:string}) {
   const summary=useWork(s=>s.summary[sessionId]);
   const app=useApp.getState();
   useEffect(()=>{if(summary===undefined)void refreshWork(sessionId);},[sessionId,summary]);
+  const editorItems=useEditorItems({sessionId});
   if(!summary)return null;
   return (
-    <button type="button" className="meta-item work-chip" title={`Working on ${summary.branch} from ${summary.baseBranch??'detached'}@${(summary.fromCommit??summary.baseCommit).slice(0,7)}${summary.carried?' with your uncommitted changes':''} in ${summary.projectName}. Review in Changes.`} onClick={()=>app.setInspector(true,'changes')}>
-      <GitBranch size={12} aria-hidden />
-      <span className="truncate mono">{summary.branch}</span>
-    </button>
+    <Menu
+      label="Branch"
+      width={240}
+      items={[{id:'changes',label:'Review changes',icon:GitBranch,onSelect:()=>app.setInspector(true,'changes')},...editorItems]}
+      trigger={t=>(
+        <button type="button" {...t} className="meta-item work-chip" title={`Working on ${summary.branch} from ${summary.baseBranch??'detached'}@${(summary.fromCommit??summary.baseCommit).slice(0,7)}${summary.carried?' with your uncommitted changes':''} in ${summary.projectName}.`}>
+          <GitBranch size={12} aria-hidden />
+          <span className="truncate mono">{summary.branch}</span>
+        </button>
+      )}
+    />
   );
 }
 

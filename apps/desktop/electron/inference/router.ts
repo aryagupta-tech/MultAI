@@ -8,6 +8,7 @@ import {HostCoordinator} from './coordinator';
 import type {ApprovalBroker} from './approvals';
 import {ProjectError,type ProjectRegistry} from './projects';
 import type {TerminalHost} from './terminal';
+import {SkillError} from './skills';
 import type {AddConnectionInput} from '../../src/bridge/inference';
 
 const schemas={
@@ -19,9 +20,14 @@ const schemas={
   workRevert:z.tuple([z.uuid(),z.string().min(1).max(4096)]),workKeep:z.tuple([z.uuid(),z.string().max(2000)]),workApply:z.tuple([z.uuid()]),workDiscard:z.tuple([z.uuid()]),
   draftPullRequest:z.tuple([z.unknown()]),workPush:z.tuple([z.uuid(),z.object({title:z.string().trim().min(1).max(250),body:z.string().max(60_000)}).strict()]),
   terminalRun:z.tuple([z.uuid(),z.string().min(1).max(8000)]),terminalStop:z.tuple([z.uuid()]),run:z.tuple([z.unknown()]),stop:z.tuple([z.uuid()]),
+  listFiles:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),skills:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),
+  saveSkill:z.tuple([z.object({name:z.string().min(1).max(48),description:z.string().max(300),body:z.string().min(1).max(32_000)}).strict()]),deleteSkill:z.tuple([z.string().min(1).max(48)]),
+  compact:z.tuple([z.unknown()]),contextUsage:z.tuple([z.uuid()]),undoPreview:z.tuple([z.uuid()]),undo:z.tuple([z.uuid()]),
+  editors:z.tuple([]),openIn:z.tuple([z.uuid(),z.enum(['vscode','cursor','zed','finder'])]),
 };
 export type InferenceOp=keyof typeof schemas;
-export async function routeInference(manager:ConnectionManager,coordinator:HostCoordinator,approvals:ApprovalBroker,op:unknown,args:unknown,host:{projects:ProjectRegistry;terminal:TerminalHost}):Promise<Result<unknown>>{
+export type Editor='vscode'|'cursor'|'zed'|'finder';
+export async function routeInference(manager:ConnectionManager,coordinator:HostCoordinator,approvals:ApprovalBroker,op:unknown,args:unknown,host:{projects:ProjectRegistry;terminal:TerminalHost;editors:()=>Promise<Editor[]>;openIn:(folder:string,editor:Editor)=>Promise<void>}):Promise<Result<unknown>>{
   if(typeof op!=='string'||!Object.hasOwn(schemas,op))return {ok:false,error:{code:'invalid_request',message:'Unknown inference operation.'}};
   const key=op as InferenceOp;
   const parsed=schemas[key].safeParse(args);
@@ -58,10 +64,20 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'workPush':value=await coordinator.workPush(values[0] as string,values[1] as {title:string;body:string});break;
       case 'terminalRun':value=host.terminal.run(values[0] as string,await coordinator.terminalRoot(values[0] as string),values[1] as string);break;
       case 'terminalStop':value=host.terminal.stop(values[0] as string);break;
+      case 'listFiles':value=await coordinator.listFiles(values[0] as string|null,values[1] as string|null);break;
+      case 'skills':value=await coordinator.skills(values[0] as string|null,values[1] as string|null);break;
+      case 'saveSkill':value=await coordinator.saveSkill(values[0] as {name:string;description:string;body:string});break;
+      case 'deleteSkill':value=await coordinator.deleteSkill(values[0] as string);break;
+      case 'compact':value=await coordinator.compact(values[0]);break;
+      case 'contextUsage':value=await coordinator.contextUsage(values[0] as string);break;
+      case 'undoPreview':value=await coordinator.undoPreview(values[0] as string);break;
+      case 'undo':value=await coordinator.undo(values[0] as string);break;
+      case 'editors':value=await host.editors();break;
+      case 'openIn':await host.openIn(await coordinator.terminalRoot(values[0] as string),values[1] as Editor);value=null;break;
     }
     return {ok:true,value};
   }catch(error){
-    if(error instanceof ConnectionError||error instanceof ProviderError||error instanceof RuntimeError||error instanceof ProjectError)return {ok:false,error:{code:error.code,message:error.message}};
+    if(error instanceof ConnectionError||error instanceof ProviderError||error instanceof RuntimeError||error instanceof ProjectError||error instanceof SkillError)return {ok:false,error:{code:error.code,message:error.message}};
     return {ok:false,error:toError(error)};
   }
 }

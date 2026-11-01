@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Activity, Bookmark, Check, ChevronRight, CircleAlert, CircleCheck, CircleX, Crown, FileCode2, FileDiff, FolderTree, Laptop,
   Loader2, Plus, ShieldCheck, UserCheck, UserMinus, Users, WrapText, X, Clock, Undo2, SquareTerminal, GitBranch, RefreshCw,
-  GitCommitHorizontal, FolderInput, GitPullRequestArrow, MoreHorizontal, Trash2, Sparkles, Share2, Eraser, Square,
+  GitCommitHorizontal, FolderInput, GitPullRequestArrow, MoreHorizontal, Trash2, Sparkles, Share2, Eraser, Square, History,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import * as live from '../live/controller';
 import * as work from '../live/work';
 import { useWork } from '../live/work';
+import { askUndo } from '../live/assist';
+import { useEditorItems } from './AssistDialogs';
 import { hueFor, relativeTime } from '../model/format';
 import type { FileChange, InspectorTab, SessionDetail, ToolCall } from '../model/types';
 import { Avatar, Button, Dialog, EmptyState, IconButton, Menu, Segmented, Spinner, cx } from '../ui/primitives';
@@ -128,6 +130,13 @@ function WorkChanges({ d }: { d: SessionDetail }) {
   const busy = useWork((s) => s.busy[d.id]);
   const [dialog, setDialog] = useState<WorkDialog>(null);
   useEffect(() => { void work.refreshWork(d.id); }, [d.id]);
+  // /pr in the composer opens the same dialog.
+  useEffect(() => {
+    const open = (e: Event) => { if ((e as CustomEvent<string>).detail === d.id) setDialog('pr'); };
+    window.addEventListener('multai:open-pr', open);
+    return () => window.removeEventListener('multai:open-pr', open);
+  }, [d.id]);
+  const editorItems = useEditorItems({ sessionId: d.id });
 
   if (summary === undefined) return <div className="panel"><p className="panel-sub"><Spinner /> Loading this session’s worktree…</p></div>;
   if (summary === null) {
@@ -165,7 +174,12 @@ function WorkChanges({ d }: { d: SessionDetail }) {
         label="More actions"
         align="end"
         trigger={(p) => <IconButton {...p} size="sm" icon={MoreHorizontal} label="More actions" />}
-        items={[{ id: 'discard', label: 'Discard this work…', icon: Trash2, danger: true, onSelect: () => setDialog('discard') }]}
+        items={[
+          { id: 'undo', label: 'Undo the last run…', icon: History, disabled: busy || d.status === 'running' ? 'Wait for the agent to finish' : false, onSelect: () => void askUndo(d.id) },
+          ...editorItems,
+          { id: 'sep', separator: true },
+          { id: 'discard', label: 'Discard this work…', icon: Trash2, danger: true, onSelect: () => setDialog('discard') },
+        ]}
       />
     </div>
   );

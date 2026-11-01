@@ -31,6 +31,12 @@ function parts(path: string, rootAllowed = false): string[] {
   return components;
 }
 
+/** True for paths the agent may never see: private names, credentials, binaries, traversal or non-portable names. */
+export function isDeniedPath(path: string): boolean {
+  if (binaryExtension.test(path)) return true;
+  try {parts(path); return false;} catch {return true;}
+}
+
 function decode(bytes: Uint8Array): string {
   if (bytes.includes(0)) fail('BINARY_FILE', 'Only bounded UTF-8 text files are supported.');
   let value: string;

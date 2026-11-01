@@ -105,6 +105,17 @@ function TimelineRow({ item, d, people, decisions, grouped }: {
 
 /* ---------------------------------------------------------------- Human messages */
 
+/**
+ * Shows `@file` mentions and a leading `/command` as code, so they read as references rather than prose.
+ * Messages with their own code blocks are left alone.
+ */
+function withReferences(text: string): string {
+  if (text.includes('`')) return text;
+  return text
+    .replace(/^\/([a-z0-9][a-z0-9-]{0,47})(?=\s|$)/u, '`/$1`')
+    .replace(/(^|[\s([{"'])@((?:[\w.-]+\/)*[\w.-]+\/?)(?=$|[\s)\]},;:!?"'])/gu, '$1`@$2`');
+}
+
 function MessageRow({ item, author, grouped }: { item: Item<'message'>; author: Participant | undefined; grouped: boolean }) {
   const name = author?.name ?? 'Former participant';
   const instruction = item.kind === 'instruction';
@@ -125,7 +136,7 @@ function MessageRow({ item, author, grouped }: { item: Item<'message'>; author: 
             <time className="msg-time" dateTime={item.at}>{clockTime(item.at)}</time>
           </header>
         )}
-        <div className="msg-text"><Markdown text={item.text} /></div>
+        <div className="msg-text"><Markdown text={instruction ? withReferences(item.text) : item.text} /></div>
         {item.image && <img className="msg-image" src={item.image} alt={`Screenshot from ${name}`} loading="lazy" />}
       </div>
     </article>

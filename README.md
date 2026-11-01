@@ -30,6 +30,18 @@ Add a git repository as a project and start a chat in it. The agent never edits 
   - *Discard* removes the worktree.
 - **Push & open PR.** Pushes the branch with your own git sign-in and opens the pull request (with `gh` if installed, otherwise GitHub's compare page). Muse Wonder writes the title and description, and you edit them first.
 - **Terminal.** The host's own command line in the session's worktree, for tests and builds. Output stays on your computer until you share an excerpt to the chat.
+- **Undo a run.** MultAI snapshots the worktree before every run, so `/undo` (or *Undo the last run* in Changes) puts back exactly the files that run changed and leaves earlier work alone.
+- **Open in your editor.** The branch chip opens the worktree in VS Code, Cursor or Zed, or shows it in Finder.
+
+## In the composer
+
+- **`@` files.** Type `@` to pick a file or folder from the project. Its current contents go to the agent with your instruction, so it doesn't have to search for it.
+- **`/` commands.** `/plan` and `/build` switch modes, `/review`, `/test`, `/explain` and `/init` give the agent a ready-made task, and `/compact`, `/undo`, `/diff`, `/terminal`, `/pr`, `/brief`, `/skills`, `/new` and `/help` act in the app. Saved prompts show up here too.
+- **`!` commands.** `!npm test` runs in the chat's terminal instead of going to the agent.
+- **Skills.** Reusable instructions in a `SKILL.md` with a name and description: from the repository (`.multai/skills/<name>/`, or an existing `.claude/skills/`) or your own, made in *Manage skills*. The agent sees each skill's description and loads it when a request matches; `/<name>` uses one directly.
+- **Live plan.** For work with several steps the agent posts a checklist that everyone in the session sees and that updates as it goes.
+- **Context meter and compaction.** A ring shows how full the agent's input was on the last run. `/compact` (or a click on the ring) summarizes the conversation so later runs start from the summary, and it's posted as a brief so teammates see what the agent remembers. Long chats compact automatically before they run out of room.
+- **Run on send.** Your own instructions start the agent right away; teammates' still wait for you. Switch it off in Settings.
 
 ## What happens in a session
 

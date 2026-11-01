@@ -13,8 +13,8 @@ describe('reasoning levels',()=>{
       for(const level of levels){
         const limits=effortLimits(level,credentials);
         expect(limits.maxOutputTokens,level).toBeLessThanOrEqual(65_536);
-        expect(limits.maxIterations,level).toBeLessThanOrEqual(32);
-        expect(limits.maxToolCalls,level).toBeLessThanOrEqual(64);
+        expect(limits.maxIterations,level).toBeLessThanOrEqual(64);
+        expect(limits.maxToolCalls,level).toBeLessThanOrEqual(128);
         expect(limits.deadlineMs,level).toBeLessThanOrEqual(300_000);
         expect(limits.maxEvents,level).toBeLessThanOrEqual(50_000);
         expect(limits.maxOutputTokens,level).toBeGreaterThan(previous);

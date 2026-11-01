@@ -8,7 +8,9 @@ import { LiveHub } from './service/live';
 import { isServiceOp, route } from './service/router';
 import {ConnectionManager} from './inference/connections';
 import {HostCoordinator} from './inference/coordinator';
-import {routeInference} from './inference/router';
+import {routeInference,type Editor} from './inference/router';
+import {execFile} from 'node:child_process';
+import {stat} from 'node:fs/promises';
 import {ApprovalBroker} from './inference/approvals';
 import {INFERENCE_IPC} from '../src/bridge/execution';
 import {ProjectError,ProjectRegistry,git} from './inference/projects';
@@ -57,6 +59,27 @@ let coordinator:HostCoordinator|undefined;
 let approvals:ApprovalBroker|undefined;
 const projects=new ProjectRegistry(()=>path.join(app.getPath('userData'),'projects.json'));
 const terminal=new TerminalHost(event=>send(INFERENCE_IPC.terminal,event));
+
+// Editors the host can open a session's worktree in. Only well-known apps; the folder never reaches the renderer.
+const EDITOR_APPS:Record<Exclude<Editor,'finder'>,string>={vscode:'Visual Studio Code.app',cursor:'Cursor.app',zed:'Zed.app'};
+async function editorApp(editor:Exclude<Editor,'finder'>):Promise<string|null>{
+  for(const folder of ['/Applications',path.join(os.homedir(),'Applications')]){
+    const candidate=path.join(folder,EDITOR_APPS[editor]);
+    if(await stat(candidate).then(item=>item.isDirectory(),()=>false))return candidate;
+  }
+  return null;
+}
+async function editors():Promise<Editor[]>{
+  if(process.platform!=='darwin')return ['finder'];
+  const found=await Promise.all((Object.keys(EDITOR_APPS) as Exclude<Editor,'finder'>[]).map(async editor=>(await editorApp(editor))?editor:null));
+  return [...found.filter((editor):editor is Exclude<Editor,'finder'>=>editor!==null),'finder'];
+}
+async function openIn(folder:string,editor:Editor):Promise<void>{
+  if(editor==='finder'){const failed=await shell.openPath(folder);if(failed)throw new ProjectError('OPEN_FAILED',failed);return;}
+  const application=await editorApp(editor);
+  if(!application)throw new ProjectError('EDITOR_MISSING','That editor isn’t installed on this computer.');
+  await new Promise<void>((resolve,reject)=>execFile('/usr/bin/open',['-a',application,folder],error=>error?reject(new ProjectError('OPEN_FAILED','The editor couldn’t open the folder.')):resolve()));
+}
 const account = new Account(origin, (state) => {
   if(state.status!=='signed-in'){
     connections?.invalidate();
@@ -156,7 +179,7 @@ function registerIpc(): void {
   ipcMain.handle(INFERENCE_IPC.invoke,async(event,op:unknown,args:unknown)=>{
     assertTrustedSender(event);
     if(!connections||!coordinator||!approvals)return {ok:false,error:{code:'not_ready',message:'Desktop inference is starting.'}};
-    return routeInference(connections,coordinator,approvals,op,args,{projects,terminal});
+    return routeInference(connections,coordinator,approvals,op,args,{projects,terminal,editors,openIn});
   });
 }
 

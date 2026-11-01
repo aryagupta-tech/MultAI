@@ -23,6 +23,8 @@ export interface Preferences {
   motion: MotionPref;
   defaultKind: MessageKind;
   showToolDetails: boolean;
+  /** The host's own instructions start the agent right away instead of waiting for Run. */
+  autoRun: boolean;
 }
 
 export interface Draft {
@@ -121,7 +123,7 @@ export const draftStorageKey = (accountId: string | null): string =>
   `multai.drafts.v1:${accountId ?? 'signed-out'}`;
 
 const defaultPrefs: Preferences = {
-  theme: 'dark', density: 'comfortable', textSize: 'default', motion: 'system', defaultKind: 'instruction', showToolDetails: false,
+  theme: 'dark', density: 'comfortable', textSize: 'default', motion: 'system', defaultKind: 'instruction', showToolDetails: false, autoRun: true,
 };
 
 function readJson<T>(key: string, fallback: T): T {
@@ -216,7 +218,7 @@ export const useApp = create<State & Actions>()((set, get) => {
     settingsSection: 'general',
     showArchived: false,
     drafts: readJson<Record<string, Draft>>(draftStorageKey(null), {}),
-    prefs: readJson(PREFS_KEY, defaultPrefs),
+    prefs: { ...defaultPrefs, ...readJson(PREFS_KEY, defaultPrefs) },
     toasts: [],
     focusedApproval: null,
     auth: null,

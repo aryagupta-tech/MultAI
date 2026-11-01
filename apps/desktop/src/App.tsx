@@ -9,6 +9,7 @@ import { Composer } from './features/Composer';
 import { Inspector } from './features/Inspector';
 import { TeamPanel, useTeam } from './features/TeamPanel';
 import { SidebarResizer } from './features/SidebarResizer';
+import { AssistDialogs } from './features/AssistDialogs';
 import { NewChat } from './features/NewChat';
 import { Welcome } from './features/Welcome';
 import {
@@ -139,6 +140,7 @@ export function App() {
       </main>
       {d && inspectorOpen && <Inspector d={d} />}
       {d && teamOpen && !inspectorOpen && <TeamPanel d={d} />}
+      <AssistDialogs />
 
       <CommandPalette />
       <SettingsDialog />

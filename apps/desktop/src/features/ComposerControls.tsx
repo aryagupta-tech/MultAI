@@ -156,14 +156,14 @@ export function AccessPicker({ sessionId }: { sessionId: string | null }) {
 
 /* ---------------------------------------------------------------- Saved prompts */
 
-interface SavedPrompt { id: string; label: string; text: string }
+export interface SavedPrompt { id: string; label: string; text: string }
 const STARTER_PROMPTS: SavedPrompt[] = [
   { id: 'review', label: 'Review the current diff', text: 'Review the current changes for correctness and edge cases. List concrete problems with file and line, most severe first. Don’t change any files yet.' },
   { id: 'tests', label: 'Write tests first', text: 'Before changing behavior, add failing tests that describe the expected result, then make them pass with the smallest change.' },
   { id: 'explain', label: 'Explain for a teammate', text: 'Summarize what this session has done so far for a teammate who just joined: objective, decisions, current state and what’s next.' },
 ];
 const promptsKey = () => `multai.prompts.v1:${useApp.getState().account?.id ?? 'signed-out'}`;
-function readPrompts(): SavedPrompt[] {
+export function readPrompts(): SavedPrompt[] {
   try {
     const raw = localStorage.getItem(promptsKey());
     const value = raw ? JSON.parse(raw) as unknown : null;

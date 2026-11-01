@@ -184,6 +184,7 @@ export function SettingsDialog() {
                   <Segmented label="Default destination" size="sm" value={prefs.defaultKind} onChange={(v) => set({ defaultKind: v })} options={[{ value: 'instruction', label: 'Agent' }, { value: 'discussion', label: 'Team' }]} />
                 </Row>
                 <Switch label="Expand tool activity by default" description="Show each tool call instead of a one-line summary." checked={prefs.showToolDetails} onChange={(v) => set({ showToolDetails: v })} />
+                <Switch label="Start the agent when I send" description="Your own instructions run right away. Teammates’ instructions still wait for you to press Run." checked={prefs.autoRun} onChange={(v) => set({ autoRun: v })} />
               </SettingsGroup>
               <SettingsGroup title="Window">
                 <p className="settings-note">Closing the window keeps a running session alive in the menu bar. Quit stops the agent and any terminals safely.</p>

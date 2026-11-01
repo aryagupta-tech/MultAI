@@ -46,8 +46,8 @@ function withImages(protocol: ConversationState['protocol'], text: string, image
 
 /** An app-owned serial coding loop with no built-in tools, background work or automatic retry. */
 export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
-  const maxIterations = boundedInteger(options.limits?.maxIterations, 12, 32);
-  const maxToolCalls = boundedInteger(options.limits?.maxToolCalls, 32, 64);
+  const maxIterations = boundedInteger(options.limits?.maxIterations, 12, 64);
+  const maxToolCalls = boundedInteger(options.limits?.maxToolCalls, 32, 128);
   const maxOutputTokens = boundedInteger(options.limits?.maxOutputTokens, 8192, 65536);
   if (options.reasoningEffort !== undefined && !/^[a-z]{2,16}$/u.test(options.reasoningEffort)) throw new ProviderError('invalid_limits', 'The reasoning effort is invalid.');
   const maxInputBytes = boundedInteger(options.limits?.maxInputBytes, 524_288, 1_048_576);

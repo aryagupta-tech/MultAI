@@ -2,7 +2,7 @@
 
 import type { WireEvent, WireMe, WireParticipant, WireSession } from '../bridge/wire';
 import { hueFor } from '../model/format';
-import type {Decision, Participant, Person, SessionDetail, SessionSummary, TimelineItem, ToolCall} from '../model/types';
+import type {Decision, Participant, Person, PlanStep, SessionDetail, SessionSummary, TimelineItem, ToolCall} from '../model/types';
 
 export interface LocalSessionMeta {
   pinned: boolean;
@@ -127,6 +127,17 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
   }
 }
 
+/** Bounded checklist steps from an update_plan event, or null when the payload doesn't fit. */
+export function planSteps(value: unknown): PlanStep[] | null {
+  const steps = value && typeof value === 'object' ? (value as {steps?: unknown}).steps : undefined;
+  if (!Array.isArray(steps) || !steps.length) return null;
+  const valid = steps.slice(0,12).flatMap((step: unknown) => {
+    const s = step as {text?: unknown; state?: unknown} | null;
+    return s && typeof s.text === 'string' && s.text.trim() && (s.state === 'todo' || s.state === 'active' || s.state === 'done') ? [{text:s.text.trim().slice(0,200),state:s.state as PlanStep['state']}] : [];
+  });
+  return valid.length ? valid : null;
+}
+
 /** Replays state transitions without allowing old run events to undo recovery fencing. */
 export function projectSessionState(session: WireSession, events: readonly WireEvent[]): WireSession {
   let state = {...session};
@@ -189,6 +200,8 @@ export function projectSession(input: {
 
   const timeline: TimelineItem[] = [];
   const agents = new Map<string,Extract<TimelineItem,{type:'agent'}>>();
+  // One checklist per run; the agent's later update_plan calls replace its steps.
+  const plans = new Map<string,Extract<TimelineItem,{type:'plan'}>>();
   const models = new Map<string,string>();
   const decisions:Decision[]=[];
   let lastModel = '';
@@ -214,6 +227,18 @@ export function projectSession(input: {
         : text || item.text;
       item.text = boundedAgentText(e.type === 'agent.completed' ? completed : item.text + text);
       item.streaming = e.type !== 'agent.completed';
+      continue;
+    }
+    if (e.type === 'activity.completed' && payload.tool === 'update_plan' && typeof payload.runId === 'string') {
+      const steps = planSteps(payload.plan);
+      if (steps) {
+        const existing = plans.get(payload.runId);
+        if (existing) existing.steps = steps;
+        else {
+          const item:Extract<TimelineItem,{type:'plan'}> = {id:`plan:${payload.runId}`,sequence:e.sequence,at:e.createdAt,type:'plan',title:'The agent’s plan',steps};
+          plans.set(payload.runId,item); timeline.push(item);
+        }
+      }
       continue;
     }
     if ((e.type === 'run.completed' || e.type === 'run.failed') && typeof payload.runId === 'string') {

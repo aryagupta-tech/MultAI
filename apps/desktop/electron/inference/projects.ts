@@ -19,7 +19,11 @@ export interface WorkInfo {
   version:1;sessionId:string;projectId:string;projectName:string;
   /** baseCommit is where the review diff starts; fromCommit is the project's HEAD it branched from. */
   branch:string;baseBranch:string|null;baseCommit:string;fromCommit?:string;carried:boolean;createdAt:string;kept:string|null;pushedTo:string|null;
+  /** Snapshots taken before each run, oldest first, so the host can undo what a run changed. */
+  checkpoints?:Checkpoint[];
 }
+export interface Checkpoint {commit:string;at:string;instruction:string}
+const MAX_CHECKPOINTS=20;
 export interface WorkSummary {projectName:string;branch:string;baseBranch:string|null;baseCommit:string;fromCommit?:string;carried:boolean;kept:string|null;pushedTo:string|null;remote:string|null}
 
 const MAX_DIFF_LINES=2000;
@@ -55,15 +59,15 @@ export function toolPath():string {
   return [...directories].join(path.delimiter);
 }
 
-function gitEnvironment():NodeJS.ProcessEnv {
+function gitEnvironment(extra:Record<string,string>={}):NodeJS.ProcessEnv {
   // No inherited GIT_* overrides (GIT_DIR, GIT_WORK_TREE…) can redirect these commands elsewhere.
   return {PATH:hostPath(),HOME:os.homedir(),LANG:'C',LC_ALL:'C',GIT_TERMINAL_PROMPT:'0',GIT_OPTIONAL_LOCKS:'0',
-    ...(process.env.SSH_AUTH_SOCK?{SSH_AUTH_SOCK:process.env.SSH_AUTH_SOCK}:{})};
+    ...(process.env.SSH_AUTH_SOCK?{SSH_AUTH_SOCK:process.env.SSH_AUTH_SOCK}:{}),...extra};
 }
 interface GitResult {stdout:string;stderr:string;code:number}
-export function git(cwd:string,args:string[],options:{input?:string;allowFail?:boolean;timeout?:number;command?:string}={}):Promise<GitResult>{
+export function git(cwd:string,args:string[],options:{input?:string;allowFail?:boolean;timeout?:number;command?:string;env?:Record<string,string>}={}):Promise<GitResult>{
   return new Promise((resolve,reject)=>{
-    const child=execFile(options.command??'git',args,{cwd,env:gitEnvironment(),maxBuffer:32*1024*1024,timeout:options.timeout??60_000,windowsHide:true},(error,stdout,stderr)=>{
+    const child=execFile(options.command??'git',args,{cwd,env:gitEnvironment(options.env),maxBuffer:32*1024*1024,timeout:options.timeout??60_000,windowsHide:true},(error,stdout,stderr)=>{
       const code=error?(typeof (error as {code?:unknown}).code==='number'?(error as {code:number}).code:1):0;
       if(error&&(error as {code?:unknown}).code==='ENOENT')return reject(new ProjectError('GIT_MISSING',options.command==='gh'?'The GitHub CLI (gh) isn’t installed.':'Git isn’t installed on this computer. Install it and try again.'));
       if(code&&!options.allowFail)return reject(new ProjectError('GIT_FAILED',plainGitError(stderr||String(error?.message??''))));
@@ -294,12 +298,97 @@ export async function applyWork(root:string,info:WorkInfo,project:ProjectRecord)
   return {files:files.map(file=>file.path)};
 }
 
+/** Every file in the worktree that git tracks or would track, for the composer's @ picker. */
+export async function listWorkFiles(root:string,limit=20_000):Promise<{files:string[];truncated:boolean}>{
+  const out=(await git(root,['-c','core.quotePath=false','ls-files','-z','--cached','--others','--exclude-standard','--deduplicate'])).stdout.split('\0').filter(Boolean);
+  return {files:out.slice(0,limit),truncated:out.length>limit};
+}
+
+const checkpointRef=(info:WorkInfo,commit:string)=>`refs/multai/checkpoints/${info.sessionId}/${commit}`;
+/**
+ * The worktree as a commit, made through a temporary index so the worktree's own index and HEAD stay
+ * as they are. Ignored files are left out, like everywhere else in the review.
+ */
+async function snapshotTree(root:string):Promise<string>{
+  const index=`${root}.snapshot-${randomUUID()}.index`;
+  const env={GIT_INDEX_FILE:index};
+  try{
+    await git(root,['read-tree','HEAD'],{env});
+    await git(root,['add','-A'],{env});
+    return (await git(root,['write-tree'],{env})).stdout.trim();
+  }finally{await unlink(index).catch(()=>undefined);}
+}
+/** Saves the worktree before a run. Kept under refs/multai so git's cleanup doesn't remove it. */
+export function snapshotWork(root:string,instruction:string):Promise<Checkpoint|null>{
+  return serial(root,async()=>{
+    const info=await readWork(root);if(!info)return null;
+    const tree=await snapshotTree(root);
+    const commit=(await git(root,['-c','user.name=MultAI','-c','user.email=multai@localhost','commit-tree',tree,'-p','HEAD','-m','MultAI checkpoint'])).stdout.trim();
+    const list=info.checkpoints??[];
+    const last=list.at(-1);
+    const checkpoint={commit,at:new Date().toISOString(),instruction:instruction.replace(/\s+/gu,' ').trim().slice(0,120)};
+    // Nothing changed since the last snapshot: reuse its commit, but it now stands for this newer run.
+    if(last&&(await git(root,['rev-parse',`${last.commit}^{tree}`],{allowFail:true})).stdout.trim()===tree){
+      const reused={...checkpoint,commit:last.commit};
+      await writeWork(root,{...info,checkpoints:[...list.slice(0,-1),reused]});
+      return reused;
+    }
+    const next=[...list,checkpoint];
+    await git(root,['update-ref',checkpointRef(info,commit),commit]);
+    for(const dropped of next.splice(0,Math.max(0,next.length-MAX_CHECKPOINTS)))await git(root,['update-ref','-d',checkpointRef(info,dropped.commit)],{allowFail:true});
+    await writeWork(root,{...info,checkpoints:next});
+    return checkpoint;
+  });
+}
+/** What undoing the last run would change: files that differ between its checkpoint and now. */
+export function checkpointChanges(root:string):Promise<{checkpoint:Checkpoint;files:{path:string;status:'added'|'modified'|'deleted'}[]}|null>{
+  return serial(root,async()=>{
+    const info=await readWork(root);const checkpoint=info?.checkpoints?.at(-1);
+    if(!checkpoint)return null;
+    return {checkpoint,files:await changedSince(root,checkpoint.commit)};
+  });
+}
+async function changedSince(root:string,commit:string):Promise<{path:string;status:'added'|'modified'|'deleted'}[]>{
+  const now=await snapshotTree(root);
+  const raw=(await git(root,['-c','core.quotePath=false','diff-tree','-r','-z','--no-renames','--name-status',`${commit}^{tree}`,now])).stdout.split('\0').filter(Boolean);
+  const files:{path:string;status:'added'|'modified'|'deleted'}[]=[];
+  for(let index=0;index+1<raw.length;index+=2){
+    const code=raw[index]![0];const file=raw[index+1]!;
+    files.push({path:file,status:code==='A'?'added':code==='D'?'deleted':'modified'});
+  }
+  return files;
+}
+/**
+ * Puts the worktree back to its last checkpoint: files the run added are removed, the rest restored.
+ * Only the worktree's files change; its index, HEAD and the host's checkout are not touched.
+ */
+export function restoreCheckpoint(root:string):Promise<{checkpoint:Checkpoint;files:string[]}>{
+  return serial(root,async()=>{
+    const info=await readWork(root);const checkpoint=info?.checkpoints?.at(-1);
+    if(!info||!checkpoint)throw new ProjectError('NO_CHECKPOINT','There is no earlier run to undo in this session.');
+    const files=await changedSince(root,checkpoint.commit);
+    if(!files.length)throw new ProjectError('NOTHING_TO_UNDO','The files already match how they were before the last run.');
+    for(const file of files.filter(item=>item.status==='added')){
+      await unlink(path.join(root,safeRelative(file.path))).catch(error=>{if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;});
+    }
+    const restore=files.filter(item=>item.status!=='added').map(item=>safeRelative(item.path));
+    for(let start=0;start<restore.length;start+=200)await git(root,['restore',`--source=${checkpoint.commit}`,'--worktree','--',...restore.slice(start,start+200)]);
+    const list=info.checkpoints!.slice(0,-1);
+    await git(root,['update-ref','-d',checkpointRef(info,checkpoint.commit)],{allowFail:true});
+    await writeWork(root,{...info,checkpoints:list});
+    return {checkpoint,files:files.map(file=>file.path)};
+  });
+}
+
 /** Removes the worktree, and its branch unless the work was kept or pushed. */
 export async function discardWork(root:string,project:Pick<ProjectRecord,'root'>,options:{branch:string;deleteBranch:boolean}):Promise<void>{
   await git(project.root,['worktree','remove','--force',root],{allowFail:true});
   await rm(root,{recursive:true,force:true});
   await git(project.root,['worktree','prune'],{allowFail:true});
   if(options.deleteBranch)await git(project.root,['branch','-D',options.branch],{allowFail:true});
+  const sessionId=path.basename(root);
+  const refs=(await git(project.root,['for-each-ref','--format=%(refname)',`refs/multai/checkpoints/${sessionId}/`],{allowFail:true})).stdout.split('\n').filter(Boolean);
+  for(const ref of refs)await git(project.root,['update-ref','-d',ref],{allowFail:true});
   await unlink(infoFile(root)).catch(()=>undefined);
 }
 

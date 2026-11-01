@@ -10,6 +10,11 @@ export type HostApproval={id:string;sessionId:string;reason:string;expiresAt:str
   |{kind:'shell'|'external';command:string});
 /** Where a project session's worktree came from. Paths never reach the renderer. */
 export interface WorkSummary {projectName:string;branch:string;baseBranch:string|null;baseCommit:string;fromCommit?:string;carried:boolean;kept:string|null;pushedTo:string|null;remote:string|null}
+export interface SkillInfo {name:string;description:string;body:string;source:'project'|'personal'}
+export interface ContextUsage {used:number;limit:number;compactedAt:string|null}
+export interface Checkpoint {commit:string;at:string;instruction:string}
+export interface UndoPreview {checkpoint:Checkpoint;files:{path:string;status:'added'|'modified'|'deleted'}[]}
+export type Editor='vscode'|'cursor'|'zed'|'finder';
 export type TerminalEvent={sessionId:string;id:string}&({kind:'output';text:string}|{kind:'exit';code:number|null;stopped:boolean});
 export interface HostExecutionApi {
   select(input:InferenceSelection):Promise<Result<InferenceSelection>>;
@@ -36,6 +41,18 @@ export interface HostExecutionApi {
   terminalRun(sessionId:string,command:string):Promise<Result<{id:string}>>;
   terminalStop(sessionId:string):Promise<Result<null>>;
   onTerminal(listener:(event:TerminalEvent)=>void):()=>void;
+  /** Files for the composer's @ list: a session's worktree, or a project before its first chat. */
+  listFiles(sessionId:string|null,projectId:string|null):Promise<Result<{files:string[];truncated:boolean}>>;
+  skills(sessionId:string|null,projectId:string|null):Promise<Result<SkillInfo[]>>;
+  saveSkill(input:{name:string;description:string;body:string}):Promise<Result<SkillInfo>>;
+  deleteSkill(name:string):Promise<Result<null>>;
+  /** Summarizes the conversation so later runs start from the summary; it's posted as a brief too. */
+  compact(input:{sessionId:string;connectionId:string;model:string}):Promise<Result<{sequence:number;model:string}>>;
+  contextUsage(sessionId:string):Promise<Result<ContextUsage|null>>;
+  undoPreview(sessionId:string):Promise<Result<UndoPreview|null>>;
+  undo(sessionId:string):Promise<Result<{checkpoint:Checkpoint;files:string[]}>>;
+  editors():Promise<Result<Editor[]>>;
+  openIn(sessionId:string,editor:Editor):Promise<Result<null>>;
   onRunChange(listener:(change:HostRunChange)=>void):()=>void;
 }
 export const INFERENCE_IPC={invoke:'multai:inference',connections:'multai:inference-connections',run:'multai:inference-run',approvals:'multai:inference-approvals',terminal:'multai:inference-terminal'} as const;
