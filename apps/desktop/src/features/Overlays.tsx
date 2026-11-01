@@ -354,7 +354,7 @@ export function InviteDialog() {
     const seconds = expiry === '1h' ? 3600 : 86_400;
     const created = await live.createInvitation(d.id, seconds);
     setBusy(false);
-    if (created) setInvite({ code: created.token, link: `multai-dev://join?token=${created.token}`, expiresAt: created.expiresAt });
+    if (created) setInvite({ code: created.token, link: live.inviteLink(created.token), expiresAt: created.expiresAt });
   };
 
   const copy = (what: 'link' | 'code', value: string) => {
@@ -435,7 +435,7 @@ export function JoinDialog() {
 
   useEffect(() => {
     if (open) {
-      setInput(prompt ? `multai-dev://join?token=${prompt}` : '');
+      setInput(prompt ? live.inviteLink(prompt) : '');
       setResult(null);
       setError(null);
     }
@@ -477,7 +477,7 @@ export function JoinDialog() {
           <>
             <label className="field">
               <span className="field-label">Invitation</span>
-              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="multai-dev://join?token=…" autoFocus spellCheck={false} autoComplete="off" />
+              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={live.inviteLink('…')} autoFocus spellCheck={false} autoComplete="off" />
               {error && <span className="field-error" role="alert">{error}</span>}
             </label>
             <p className="field-help">Joining only sends a request. You’ll see the conversation after the owner admits you.</p>

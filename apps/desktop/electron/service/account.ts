@@ -327,6 +327,12 @@ export class Account {
       } catch (error) {
         throw new ApiFailure(neverSent(error) ? {code: 'offline_unsent', message: 'Can’t reach the collaboration service.'} : {code: 'network_uncertain', message: 'The connection dropped before the service answered.'});
       }
+      // A gateway error that isn't the service's own JSON comes from the HTTPS proxy: the service
+      // never received the request, so (like a refused connection) nothing was consumed.
+      if ([502, 503, 504].includes(response.status) && !/^application\/json\b/i.test(response.headers.get('content-type') ?? '')) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new ApiFailure({code: 'offline_unsent', message: 'The collaboration service is temporarily unavailable.'});
+      }
       if (response.status === 204) return null;
       const json = await responseJson(response);
       if (!response.ok) {

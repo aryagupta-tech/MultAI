@@ -186,6 +186,26 @@ describe('native collaboration identity fences', () => {
     }
   });
 
+  it('a proxy gateway error during refresh keeps the sign-in; a service error does not', async () => {
+    const cases: [string, () => Response, boolean][] = [
+      ['proxy 502, empty body', () => new Response('', {status: 502}), true],
+      ['proxy 503, html body', () => new Response('<html>down</html>', {status: 503, headers: {'content-type': 'text/html'}}), true],
+      ['proxy 504, empty body', () => new Response(null, {status: 504}), true],
+      ['service 503 with its own error body', () => json({error: {code: 'identity_unavailable', message: 'Synthetic'}}, 503), false],
+      ['service 500', () => json({error: {code: 'internal_error', message: 'Synthetic'}}, 500), false],
+    ];
+    for (const [name, reply, kept] of cases) {
+      const store = new MemoryStore(credentials());
+      const before = store.record.active?.refreshToken;
+      const ctx = account(async () => reply(), store);
+      ctx.instance.forceRefreshOnNextUse();
+      const failure = await ctx.instance.accessToken().catch((error: unknown) => error);
+      expect(failure, name).toBeInstanceOf(ApiFailure);
+      expect(store.record.active?.refreshToken ?? null, name).toBe(kept ? before : null);
+      if (kept) expect((failure as ApiFailure).error.code, name).toBe('offline_unsent');
+    }
+  });
+
   it('revoked proof cannot silently enroll a replacement; verified account mismatch can', async () => {
     for (const mismatch of [false, true]) {
       const flow = start();
