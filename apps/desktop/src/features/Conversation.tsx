@@ -20,7 +20,8 @@ export function Conversation({ d }: { d: SessionDetail }) {
   const people = useMemo(() => new Map(d.participants.map((p) => [p.id, p])), [d.participants]);
   const decisions = useMemo(() => new Map(d.decisions.map((x) => [x.id, x])), [d.decisions]);
   // Team chat lives in its own panel; this column is the work with the agent.
-  const timeline = useMemo(() => d.timeline.filter((item) => !(item.type === 'message' && item.kind === 'discussion')), [d.timeline]);
+  // Queued messages wait above the composer until the agent picks them up.
+  const timeline = useMemo(() => d.timeline.filter((item) => !(item.type === 'message' && (item.kind === 'discussion' || (d.source === 'live' && item.queue === 'pending')))), [d.timeline, d.source]);
   const last = d.timeline.at(-1);
   const signature = `${d.timeline.length}:${last?.type === 'agent' ? last.text.length : ''}`;
   const lastCount = useRef(d.timeline.length);

@@ -109,7 +109,7 @@ interface TimelineBase {
 }
 
 export type TimelineItem =
-  | (TimelineBase & { type: 'message'; kind: MessageKind; authorId: string; text: string; image?: string; queue?: 'pending' | 'applied' })
+  | (TimelineBase & { type: 'message'; kind: MessageKind; authorId: string; text: string; image?: string; queue?: 'pending' | 'applied'; steer?: boolean })
   | (TimelineBase & { type: 'agent'; text: string; streaming: boolean; model: string })
   | (TimelineBase & { type: 'tools'; calls: ToolCall[] })
   | (TimelineBase & { type: 'approval'; title: string; reason: string; descriptor: ApprovalDescriptor; state: ApprovalState; decidedBy?: string })

@@ -11,6 +11,7 @@ import { TeamPanel, useTeam } from './features/TeamPanel';
 import { SidebarResizer } from './features/SidebarResizer';
 import { AssistDialogs } from './features/AssistDialogs';
 import { LockedActions } from './features/LockedActions';
+import { QueuedMessages } from './features/QueuedMessages';
 import { NewChat } from './features/NewChat';
 import { Welcome } from './features/Welcome';
 import {
@@ -133,6 +134,7 @@ export function App() {
             <Conversation d={d} />
             <div className="composer-dock">
               {d.source === 'live' && d.capabilities.configure && <LockedActions sessionId={d.id} />}
+              {d.source === 'live' && <QueuedMessages d={d} />}
               <Composer d={d} draftKey={d.id} />
             </div>
           </>

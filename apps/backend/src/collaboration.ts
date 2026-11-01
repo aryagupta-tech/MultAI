@@ -214,6 +214,41 @@ export class CollaborationService {
     });
   }
 
+  /** A queued instruction the agent hasn't seen yet; its author or the owner can change it. */
+  private async queued(client: PoolClient, actor: Actor, sessionId: string, instructionId: string) {
+    const authorized = await this.authorize(client, actor, uuid.parse(sessionId));
+    const found = await client.query<{author_id: string; status: string; steer: boolean}>('SELECT author_id,status,steer FROM instruction_queue WHERE id=$1 AND session_id=$2 FOR UPDATE', [uuid.parse(instructionId), sessionId]);
+    const row = found.rows[0];
+    if (!row) throw new ApiError(404, 'instruction_not_found', 'That message isn’t in the queue.');
+    if (row.author_id !== actor.userId && authorized.role !== 'owner') throw new ApiError(403, 'queue_forbidden', 'Only its author or the session owner can change a queued message.');
+    if (row.status !== 'pending') throw new ApiError(409, 'instruction_unavailable', 'The agent already picked up this message.');
+    return {authorized, row};
+  }
+
+  /** Steer: the running agent picks the message up at its next step instead of after the run. */
+  async steerInstruction(actor: Actor, sessionId: string, instructionId: string) {
+    return transaction(this.db, async (client) => {
+      await assertActor(client, actor);
+      const {authorized, row} = await this.queued(client, actor, sessionId, instructionId);
+      if (authorized.session.status !== 'running') throw new ApiError(409, 'not_running', 'The agent isn’t working right now. Run the message instead.');
+      if (row.steer) return {steered: true};
+      await client.query('UPDATE instruction_queue SET steer=true,revision=revision+1 WHERE id=$1', [instructionId]);
+      await this.append(client, authorized.session, actor, 'instruction.steered', {instructionId});
+      return {steered: true};
+    });
+  }
+
+  /** Takes a message out of the queue before the agent sees it. */
+  async removeInstruction(actor: Actor, sessionId: string, instructionId: string) {
+    return transaction(this.db, async (client) => {
+      await assertActor(client, actor);
+      const {authorized} = await this.queued(client, actor, sessionId, instructionId);
+      await client.query("UPDATE instruction_queue SET status='removed',revision=revision+1 WHERE id=$1", [instructionId]);
+      await this.append(client, authorized.session, actor, 'instruction.removed', {instructionId});
+      return {removed: true};
+    });
+  }
+
   async readEvents(actor: Actor, sessionId: string, after: number, limit = 100): Promise<{events: SharedEvent[]; cursor: number}> {
     uuid.parse(sessionId);
     z.number().int().min(0).max(100000).parse(after);
@@ -417,6 +452,9 @@ export async function registerCollaborationRoutes(app: FastifyInstance, dependen
   app.get('/v1/sessions', async (request) => service.listSessions(await authenticate(request), request.query));
   app.get('/v1/sessions/:sessionId', async (request) => service.getSession(await authenticate(request), sessionParams(request)));
   app.post('/v1/sessions/:sessionId/messages', {bodyLimit: 196_608}, async (request, reply) => reply.code(201).send(await service.postMessage(await authenticate(request), sessionParams(request), request.body)));
+  const queueParams = (request: FastifyRequest) => z.object({ sessionId: uuid, instructionId: uuid }).parse(request.params);
+  app.post('/v1/sessions/:sessionId/instructions/:instructionId/steer', async (request) => {const p = queueParams(request); return service.steerInstruction(await authenticate(request), p.sessionId, p.instructionId);});
+  app.delete('/v1/sessions/:sessionId/instructions/:instructionId', async (request) => {const p = queueParams(request); return service.removeInstruction(await authenticate(request), p.sessionId, p.instructionId);});
   app.get('/v1/sessions/:sessionId/events', async (request) => {
     const query = z.object({ after: z.coerce.number().int().min(0).max(100000).default(0), limit: z.coerce.number().int().min(1).max(100).default(100) }).strict().parse(request.query);
     return service.readEvents(await authenticate(request), sessionParams(request), query.after, query.limit);

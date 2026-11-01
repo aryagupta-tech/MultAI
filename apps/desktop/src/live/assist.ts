@@ -8,7 +8,7 @@ import {useApp} from '../model/store';
 import {describe,open,setMode} from './controller';
 import {getSelection,runPending,writeBrief} from './execution';
 import {refreshWork,runInTerminal,useWork} from './work';
-import {lastPendingInstruction} from './projection';
+import {nextPendingInstruction} from './projection';
 
 export type AssistDialog={kind:'undo';sessionId:string;preview:UndoPreview}|{kind:'skills';sessionId:string|null;projectId:string|null}|{kind:'help'};
 interface AssistState {
@@ -72,11 +72,18 @@ export function subscribeAssist():void {
   inference.onRunChange(change=>{
     void loadUsage(change.sessionId);
     if(change.status!=='running')void loadLocked(change.sessionId);
-    // A direction sent after the agent's last check is still pending: run it next if it's the host's own.
-    if(change.status==='completed')setTimeout(()=>{
-      const app=useApp.getState();const detail=app.details[change.sessionId];const pending=detail?lastPendingInstruction(detail.timeline):null;
-      if(pending&&pending.authorId===app.account?.id)autoRun(change.sessionId);
-    },1500);
+    // The queue runs next, oldest first, once the run's last events have arrived. Only the host's own
+    // messages start on their own; the host runs a teammate's from the queue.
+    if(change.status==='completed'){
+      const started=Date.now();
+      const next=()=>{
+        const app=useApp.getState();const detail=app.details[change.sessionId];
+        if(detail?.status==='running'){if(Date.now()-started<5000)setTimeout(next,150);return;}
+        const pending=detail?nextPendingInstruction(detail.timeline):null;
+        if(pending&&pending.authorId===app.account?.id)autoRun(change.sessionId);
+      };
+      setTimeout(next,150);
+    }
     if(change.status!=='running')useAssist.setState(state=>({files:{...state.files,[change.sessionId]:undefined}}));
   });
 }

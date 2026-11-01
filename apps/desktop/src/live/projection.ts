@@ -170,12 +170,13 @@ export function projectSessionState(session: WireSession, events: readonly WireE
   return state;
 }
 
-export function lastPendingInstruction(timeline: readonly TimelineItem[]): Extract<TimelineItem,{type:'message'}> | null {
-  for (let index = timeline.length - 1; index >= 0; index--) {
-    const item = timeline[index];
-    if (item?.type === 'message' && item.kind === 'instruction' && item.queue === 'pending') return item;
-  }
-  return null;
+/** Messages the agent hasn't seen yet, oldest first: the queue above the composer. */
+export function queuedInstructions(timeline: readonly TimelineItem[]): Extract<TimelineItem,{type:'message'}>[] {
+  return timeline.filter((item): item is Extract<TimelineItem,{type:'message'}> => item.type === 'message' && item.kind === 'instruction' && item.queue === 'pending');
+}
+/** The queue runs in order: the oldest waiting message goes next. */
+export function nextPendingInstruction(timeline: readonly TimelineItem[]): Extract<TimelineItem,{type:'message'}> | null {
+  return queuedInstructions(timeline)[0] ?? null;
 }
 
 function boundedAgentText(value:string):string {
@@ -207,14 +208,27 @@ export function projectSession(input: {
   const models = new Map<string,string>();
   const decisions:Decision[]=[];
   let lastModel = '';
+  const queuedMessage = (id: string) => timeline.find((item): item is Extract<TimelineItem,{type:'message'}> => item.type === 'message' && item.kind === 'instruction' && item.id === id && item.queue === 'pending');
+  // A queued message joins the conversation where the agent picked it up, not where it was sent.
+  const pickUp = (id: string, e: WireEvent) => {
+    const queued = queuedMessage(id); if (!queued) return;
+    timeline.splice(timeline.indexOf(queued), 1);
+    queued.queue = 'applied'; delete queued.steer;
+    timeline.push({...queued, sequence: e.sequence, at: e.createdAt});
+  };
   for (const e of events) {
     const payload = (e.payload ?? {}) as Record<string,unknown>;
     if (e.type === 'run.started' && typeof payload.runId === 'string') {
       if (typeof payload.model === 'string') {models.set(payload.runId,payload.model.slice(0,200)); lastModel = payload.model.slice(0,200);}
-      if (typeof payload.instructionId === 'string') for (const previous of timeline) if (previous.type === 'message' && previous.id === payload.instructionId && previous.kind === 'instruction') previous.queue = 'applied';
+      if (typeof payload.instructionId === 'string') pickUp(payload.instructionId, e);
     }
-    if (e.type === 'instruction.claimed' && typeof payload.instructionId === 'string') {
-      for (const previous of timeline) if (previous.type === 'message' && previous.id === payload.instructionId && previous.kind === 'instruction') previous.queue = 'applied';
+    if (e.type === 'instruction.claimed' && typeof payload.instructionId === 'string') {pickUp(payload.instructionId, e); continue;}
+    if (e.type === 'instruction.steered' && typeof payload.instructionId === 'string') {
+      const queued = queuedMessage(payload.instructionId); if (queued) queued.steer = true;
+      continue;
+    }
+    if (e.type === 'instruction.removed' && typeof payload.instructionId === 'string') {
+      const queued = queuedMessage(payload.instructionId); if (queued) timeline.splice(timeline.indexOf(queued), 1);
       continue;
     }
     if ((e.type === 'agent.delta' || e.type === 'agent.completed') && typeof payload.runId === 'string') {

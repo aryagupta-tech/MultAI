@@ -33,6 +33,8 @@ const schemas = {
   createReplay: z.tuple([uuid, z.number().int().min(86400).max(30 * 86400)]),
   listReplays: z.tuple([uuid]),
   revokeReplay: z.tuple([uuid, uuid]),
+  steerInstruction: z.tuple([uuid, uuid]),
+  removeInstruction: z.tuple([uuid, uuid]),
   sendPresence: z.tuple([uuid, z.object({typing: z.boolean(), viewing: z.string().max(200).nullable()}).strict()]),
 } satisfies Record<ServiceOp, z.ZodType>;
 
@@ -109,6 +111,8 @@ export async function route(account: Account, live: LiveHub, op: ServiceOp, rawA
     });
     case 'listReplays': return wrap(() => req('GET', `/v1/sessions/${s(0)}/replays`));
     case 'revokeReplay': return wrap(() => req('DELETE', `/v1/sessions/${s(0)}/replays/${s(1)}`));
+    case 'steerInstruction': return wrap(() => req('POST', `/v1/sessions/${s(0)}/instructions/${s(1)}/steer`, {}));
+    case 'removeInstruction': return wrap(() => req('DELETE', `/v1/sessions/${s(0)}/instructions/${s(1)}`));
     case 'sendPresence':
       live.sendPresence(s(0), args[1] as {typing: boolean; viewing: string | null});
       return null;

@@ -16,6 +16,7 @@ const ops: ServiceOp[] = [
   'health', 'authState', 'signIn', 'cancelSignIn', 'signOut', 'listSessions', 'getSession', 'readEvents', 'createSession',
   'postMessage', 'setMode', 'createInvitation', 'joinInvitation', 'listJoinRequests', 'admit', 'revokeParticipant',
   'deleteSession', 'saveDecision', 'subscribe', 'unsubscribe', 'sendPresence', 'createReplay', 'listReplays', 'revokeReplay',
+  'steerInstruction', 'removeInstruction',
 ];
 
 const service = {

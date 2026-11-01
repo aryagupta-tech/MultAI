@@ -167,15 +167,15 @@ export class ExecutionService extends CollaborationService {
       messages:events.rows.reverse().filter(event=>event.payload.text).map(event=>({role:event.type==='agent.completed'?'assistant':'user',authorId:event.actor_id,content:`${event.type==='message.discussion'?`Team discussion from participant ${event.actor_id} (context only): `:event.type==='message.instruction'?`Previously applied instruction from participant ${event.actor_id} (history only): `:''}${event.payload.text}`})),decisions:decisions.rows};
   }
   /**
-   * Steering: the running host takes directions sent since its run started, oldest first. Each becomes
-   * applied (never run again on its own) and the timeline shows that the agent picked it up.
+   * Steering: the running host takes the queued directions someone chose to Steer, oldest first. Each
+   * becomes applied (never run again on its own) and the timeline shows that the agent picked it up.
    */
   async claim(actor:Actor,sessionId:string,runId:string,input:unknown){
     const {leaseToken}=z.object({leaseToken:leaseSchema}).strict().parse(input);
     return transaction(this.db,async client=>{
       const {session,run}=await this.active(client,actor,sessionId,runId,leaseToken);
       const pending=await client.query<{id:string;author_id:string;text:string}>(`SELECT q.id,q.author_id,e.payload->>'text' AS text FROM instruction_queue q JOIN shared_events e ON e.id=q.event_id
-        WHERE q.session_id=$1 AND q.status='pending' ORDER BY q.created_at,q.id LIMIT 5 FOR UPDATE OF q`,[session.id]);
+        WHERE q.session_id=$1 AND q.status='pending' AND q.steer ORDER BY q.created_at,q.id LIMIT 5 FOR UPDATE OF q`,[session.id]);
       for(const row of pending.rows){
         await client.query("UPDATE instruction_queue SET status='applied',revision=revision+1 WHERE id=$1",[row.id]);
         await this.append(client,session,actor,'instruction.claimed',{instructionId:row.id,runId:run.id});
@@ -281,6 +281,7 @@ export class ExecutionService extends CollaborationService {
       const session=await this.host(client,actor,sessionId);
       const events=await client.query<{sequence:number;type:string;payload:{text?:string;summary?:string;tool?:string};name:string|null}>(`SELECT e.sequence,e.type,e.payload,u.display_name AS name FROM shared_events e LEFT JOIN users u ON u.id=e.actor_id
         WHERE e.session_id=$1 AND e.type IN ('message.discussion','message.instruction','agent.completed','activity.completed','activity.failed','decision.saved','participant.admitted','brief.created')
+          AND NOT EXISTS (SELECT 1 FROM instruction_queue q WHERE q.event_id=e.id AND q.status='removed')
         ORDER BY e.sequence DESC LIMIT 200`,[session.id]);
       const latest=await client.query<{sequence:number}>('SELECT COALESCE(max(sequence),0)::int AS sequence FROM shared_events WHERE session_id=$1',[session.id]);
       return {title:session.title,mode:session.mode,throughSequence:latest.rows[0]!.sequence,

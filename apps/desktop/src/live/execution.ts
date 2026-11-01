@@ -3,7 +3,7 @@ import type {AccessLevel,InferenceSelection} from '../bridge/execution';
 import type {ConnectionSummary} from '../bridge/inference';
 import type {ServiceError} from '../bridge/contract';
 import {useApp} from '../model/store';
-import {lastPendingInstruction} from './projection';
+import {nextPendingInstruction} from './projection';
 import {describe,open} from './controller';
 
 let selected:InferenceSelection|null=null;
@@ -184,7 +184,7 @@ async function run(sessionId:string):Promise<void> {
   if(!detail.capabilities.configure){state.toast('Only the original owner on the original host can run this task.','error');return;}
   if(detail.status==='running'){state.toast('This session already has a running agent. Stop it before starting another run.','info');return;}
   if(!selection){state.toast('Connect an AI provider and choose a model first.','info');state.openOverlay('settings','models');return;}
-  const instruction=lastPendingInstruction(detail.timeline);
+  const instruction=nextPendingInstruction(detail.timeline);
   if(!instruction){state.toast('Send a new agent instruction before running. Previously applied instructions are never repeated automatically.','info');return;}
   const user=currentUser(),epoch=accountEpoch;
   const input={sessionId,instructionId:instruction.id,...selection,effort:getEffort(),...(getWebSearch(sessionId)&&webSearchSupported()?{webSearch:true}:{}),...(detail.status==='paused'?{resume:true}:{})};

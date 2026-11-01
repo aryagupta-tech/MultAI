@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { WireEvent, WireMe, WireSession } from '../bridge/wire';
-import {lastPendingInstruction, mergeEvents, personFor, projectSession, projectSessionState, sessionTitle, titleFromMessage} from './projection';
+import {mergeEvents, nextPendingInstruction, queuedInstructions, personFor, projectSession, projectSessionState, sessionTitle, titleFromMessage} from './projection';
 
 const me: WireMe = { id: '11111111-1111-4111-8111-111111111111', displayName: 'Ada Lovelace', workspaceId: '22222222-2222-4222-8222-222222222222', deviceId: '33333333-3333-4333-8333-333333333333' };
 const other = 'abcdef12-0000-4000-8000-000000000000';
@@ -73,10 +73,22 @@ describe('execution event projection',()=>{
   test('uses the actual queued instruction ID rather than its event ID for dispatch',()=>{
     const d=project([ev(1,'message.instruction',me.id,{messageId:'instruction-one',text:'First',queueStatus:'pending'}),ev(2,'message.instruction',me.id,{messageId:'instruction-two',text:'Refinement',queueStatus:'pending'})]);
     expect(d.timeline[0]?.id).toBe('instruction-one');
-    expect(lastPendingInstruction(d.timeline)?.id).toBe('instruction-two');
+    expect(nextPendingInstruction(d.timeline)?.id).toBe('instruction-one');
     const claimed=project([ev(1,'message.instruction',me.id,{messageId:'instruction-one',text:'First',queueStatus:'pending'}),ev(2,'run.started',me.id,{runId:'run-one',instructionId:'instruction-one',model:'provider-model',runtimeGeneration:4})]);
     expect(claimed.timeline[0]).toMatchObject({id:'instruction-one',queue:'applied'});
-    expect(lastPendingInstruction(claimed.timeline)).toBeNull();
+    expect(nextPendingInstruction(claimed.timeline)).toBeNull();
+  });
+  test('a queued message waits, can be steered or removed, and joins where the agent picked it up',()=>{
+    const queued=(seq:number,id:string,text:string)=>ev(seq,'message.instruction',me.id,{messageId:id,text,queueStatus:'pending'});
+    const events=[queued(1,'first','Start'),ev(2,'run.started',me.id,{runId:'run-one',instructionId:'first',model:'m',runtimeGeneration:4}),queued(3,'steered','Use cents'),queued(4,'later','Then add tests'),queued(5,'gone','Never mind'),
+      ev(6,'instruction.steered',me.id,{instructionId:'steered'}),ev(7,'instruction.removed',me.id,{instructionId:'gone'}),ev(8,'agent.delta',me.id,{runId:'run-one',text:'Working'})];
+    const before=project(events);
+    expect(queuedInstructions(before.timeline).map(item=>[item.id,item.steer??false])).toEqual([['steered',true],['later',false]]);
+    const after=project([...events,ev(9,'instruction.claimed',me.id,{instructionId:'steered',runId:'run-one'})]);
+    expect(queuedInstructions(after.timeline).map(item=>item.id)).toEqual(['later']);
+    expect(after.timeline.map(item=>item.id)).toEqual(['first','e2','later','agent:run-one','steered']);
+    expect(after.timeline.find(item=>item.id==='steered')).toMatchObject({queue:'applied',sequence:9});
+    expect(after.timeline.some(item=>item.id==='gone')).toBe(false);
   });
   test('groups streamed chunks by run and replaces them with its final completed text',()=>{
     const events=[ev(1,'run.started',me.id,{runId:'run-one',model:'provider-model',runtimeGeneration:4}),ev(2,'agent.delta',me.id,{runId:'run-one',text:'Hello '}),ev(3,'agent.delta',me.id,{runId:'run-one',delta:'team'})];

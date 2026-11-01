@@ -88,6 +88,9 @@ export interface ServiceApi {
   createReplay(sessionId: string, expiresInSeconds: number): Promise<Result<{ id: string; link: string; expiresAt: string }>>;
   listReplays(sessionId: string): Promise<Result<{ replays: { id: string; createdAt: string; expiresAt: string }[] }>>;
   revokeReplay(sessionId: string, replayId: string): Promise<Result<{ revoked: true }>>;
+  /** Queued messages: Steer hands one to the running agent now; remove takes it out before the agent sees it. */
+  steerInstruction(sessionId: string, instructionId: string): Promise<Result<{ steered: true }>>;
+  removeInstruction(sessionId: string, instructionId: string): Promise<Result<{ removed: true }>>;
   sendPresence(sessionId: string, update: { typing: boolean; viewing: string | null }): Promise<void>;
   onLivePresence(listener: (presence: LivePresence) => void): () => void;
   onAuthChange(listener: (state: AuthState) => void): () => void;
@@ -119,4 +122,4 @@ export type ServiceOp =
   | 'health' | 'authState' | 'signIn' | 'cancelSignIn' | 'signOut' | 'listSessions' | 'getSession' | 'readEvents'
   | 'createSession' | 'postMessage' | 'setMode' | 'createInvitation' | 'joinInvitation' | 'listJoinRequests' | 'admit'
   | 'revokeParticipant' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe' | 'sendPresence'
-  | 'createReplay' | 'listReplays' | 'revokeReplay';
+  | 'createReplay' | 'listReplays' | 'revokeReplay' | 'steerInstruction' | 'removeInstruction';

@@ -520,11 +520,24 @@ test('a running host claims directions sent during its run, once, and only with 
   const empty = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(owner), payload: {leaseToken: running.body.leaseToken}});
   assert.equal(empty.statusCode, 200, empty.body);
   assert.deepEqual(empty.json(), {instructions: []});
-  for (const [who, text] of [[owner, 'Use cents, not floats.'], [collaborator, 'Keep the API the same.']] as const) {
+  const queued: Record<string, string> = {};
+  for (const [who, text] of [[owner, 'Use cents, not floats.'], [collaborator, 'Keep the API the same.'], [collaborator, 'Wait for the run to finish.'], [collaborator, 'Never mind.']] as const) {
     const posted = await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/messages`, headers: headers(who), payload: {requestId: randomUUID(), kind: 'instruction', text}});
     assert.equal(posted.statusCode, 201, posted.body);
+    queued[text] = posted.json().event.payload.messageId;
   }
   await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/messages`, headers: headers(owner), payload: {requestId: randomUUID(), kind: 'discussion', text: 'Team chat is not a direction.'}});
+  // Queued messages wait for the run to end unless someone steers them in.
+  const unsteered = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(owner), payload: {leaseToken: running.body.leaseToken}});
+  assert.deepEqual(unsteered.json(), {instructions: []});
+  const steer = (who: typeof owner, text: string) => ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/instructions/${queued[text]}/steer`, headers: headers(who)});
+  const remove = (who: typeof owner, text: string) => ctx.app.inject({method: 'DELETE', url: `/v1/sessions/${target.id}/instructions/${queued[text]}`, headers: headers(who)});
+  assert.equal((await steer(collaborator, 'Use cents, not floats.')).statusCode, 403, 'only the author or the owner');
+  assert.equal((await steer(owner, 'Use cents, not floats.')).statusCode, 200);
+  assert.equal((await steer(owner, 'Keep the API the same.')).statusCode, 200, 'the owner may steer anyone’s message');
+  assert.equal((await remove(collaborator, 'Never mind.')).statusCode, 200);
+  assert.equal((await remove(collaborator, 'Never mind.')).statusCode, 409, 'already removed');
+  assert.equal((await steer(collaborator, 'Never mind.')).statusCode, 409);
   const denied = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(owner), payload: {leaseToken: secret()}});
   assert.equal(denied.statusCode, 403);
   const foreign = await ctx.app.inject({method: 'POST', url: `${running.path}/claim`, headers: headers(collaborator), payload: {leaseToken: running.body.leaseToken}});
@@ -538,4 +551,11 @@ test('a running host claims directions sent during its run, once, and only with 
   const claimedEvents = events.json().events.filter((event: {type: string}) => event.type === 'instruction.claimed');
   assert.equal(claimedEvents.length, 2);
   assert.equal(claimedEvents[0].payload.runId, running.context.run.id);
+  const types = events.json().events.map((event: {type: string}) => event.type);
+  assert.equal(types.filter((type: string) => type === 'instruction.steered').length, 2);
+  assert.equal(types.filter((type: string) => type === 'instruction.removed').length, 1);
+  // Picked up messages can't be removed; the unsteered one is still waiting for the next run.
+  assert.equal((await remove(owner, 'Use cents, not floats.')).statusCode, 409);
+  const waiting = await ctx.db.query("SELECT status FROM instruction_queue WHERE id=$1", [queued['Wait for the run to finish.']]);
+  assert.equal(waiting.rows[0].status, 'pending');
 });

@@ -100,9 +100,11 @@ export class ReplayService extends CollaborationService {
       let teammate = 0;
       for (const row of people.rows) labels.set(row.user_id, row.user_id === link.owner_id ? 'Host' : `Teammate ${++teammate}`);
       const label = (userId: string | null) => userId ? labels.get(userId) ?? 'Former teammate' : null;
-      const rows = await client.query<{sequence: number; type: string; actor_id: string | null; payload: unknown; created_at: Date}>(
-        'SELECT sequence,type,actor_id,payload,created_at FROM shared_events WHERE session_id=$1 AND sequence>$2 ORDER BY sequence LIMIT $3', [link.session_id, after, PAGE]);
-      const events = rows.rows.map(row => replayEvent(row, label)).filter((event): event is ReplayEvent => event !== null);
+      const rows = await client.query<{sequence: number; type: string; actor_id: string | null; payload: unknown; created_at: Date; removed: boolean | null}>(
+        `SELECT e.sequence,e.type,e.actor_id,e.payload,e.created_at,q.status='removed' AS removed FROM shared_events e LEFT JOIN instruction_queue q ON q.event_id=e.id
+         WHERE e.session_id=$1 AND e.sequence>$2 ORDER BY e.sequence LIMIT $3`, [link.session_id, after, PAGE]);
+      // A message taken out of the queue before the agent saw it isn't part of the story.
+      const events = rows.rows.filter(row => !row.removed).map(row => replayEvent(row, label)).filter((event): event is ReplayEvent => event !== null);
       const last = rows.rows.at(-1)?.sequence ?? after;
       return {
         replay: {title: link.title ?? 'Untitled session', mode: link.mode, createdAt: link.created_at.toISOString(), expiresAt: link.expires_at.toISOString()},
