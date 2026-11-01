@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import Fastify, {LogController} from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
@@ -58,7 +59,10 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
     return reply.code(500).send({error: {code: 'internal_error', message: 'The service could not complete this request.'}, requestId: request.id});
   });
   const identityConfigured = Boolean(config.googleClientId && config.googleClientSecret);
-  app.get('/health/live', async () => ({service: 'multai-backend', version: '0.0.0-dev.1', developmentBuild: true, inferenceEnabled: true,executionLocation:'original_host'}));
+  // package.json sits one level above both src/ (development) and dist/ (the production image).
+  const {version} = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {version: string};
+  const live = {service: 'multai-backend', version, developmentBuild: config.environment !== 'production', inferenceEnabled: true, executionLocation: 'original_host'};
+  app.get('/health/live', async () => live);
   app.get('/health/ready', async (_request, reply) => {
     try {
       const result = await db.query("SELECT to_regclass('schema_migrations') IS NOT NULL AS migrated");

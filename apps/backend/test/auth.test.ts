@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { FastifyRequest } from 'fastify';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
@@ -280,4 +281,14 @@ test('hitting the rate limit says so with a stable code', async (t) => {
   for (let i = 0; i < 120; i++) last = await context.app.inject({ method: 'GET', url: '/health/live' });
   assert.equal(last.statusCode, 429);
   assert.equal(last.json().error.code, 'rate_limited');
+});
+
+test('the liveness check reports the real version and whether this is a development build', async (t) => {
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
+  const production = await createTestContext({ config: { ...syntheticConfig, environment: 'production' } }); t.after(production.close);
+  const development = await createTestContext({ config: { ...syntheticConfig, environment: 'development' } }); t.after(development.close);
+  const prod = (await production.app.inject({ method: 'GET', url: '/health/live' })).json();
+  assert.equal(prod.version, version);
+  assert.equal(prod.developmentBuild, false);
+  assert.equal((await development.app.inject({ method: 'GET', url: '/health/live' })).json().developmentBuild, true);
 });

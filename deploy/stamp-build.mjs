@@ -13,4 +13,4 @@ for(const directory of ['apps/backend/dist/','apps/backend/migrations/']){
   }
 }
 const lock=await readFile(new URL('package-lock.json',root));
-await writeFile(new URL('apps/backend/dist/build-manifest.json',root),JSON.stringify({product:'MultAI',component:'collaboration-service',version:'0.0.0-dev.1',developmentBuild:true,sourceCommit:process.env.SOURCE_COMMIT,sourceDirty:process.env.SOURCE_DIRTY==='true',builtAt:new Date().toISOString(),node:process.version,lockSha256:createHash('sha256').update(lock).digest('hex'),files},null,2)+'\n');
+await writeFile(new URL('apps/backend/dist/build-manifest.json',root),JSON.stringify({product:'MultAI',component:'collaboration-service',version:JSON.parse(await readFile(new URL('apps/backend/package.json',root),'utf8')).version,developmentBuild:false,sourceCommit:process.env.SOURCE_COMMIT,sourceDirty:process.env.SOURCE_DIRTY==='true',builtAt:new Date().toISOString(),node:process.version,lockSha256:createHash('sha256').update(lock).digest('hex'),files},null,2)+'\n');
