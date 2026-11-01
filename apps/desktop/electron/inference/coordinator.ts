@@ -90,8 +90,7 @@ export function effortLimits(effort:Effort,credentials:{baseUrl?:string}){
  */
 export function nativeEffort(effort:Effort,credentials:{kind:string;baseUrl?:string}):string|undefined {
   if(effort==='medium')return undefined;
-  // xhigh isn't verified on the ChatGPT plan backend yet; the larger budgets still apply.
-  if(credentials.kind==='chatgpt')return {low:'low',high:'high',xhigh:'high',max:'high'}[effort];
+  if(credentials.kind==='chatgpt')return {low:'low',high:'high',xhigh:'xhigh',max:'xhigh'}[effort];
   if(credentials.baseUrl==='https://api.meta.ai/v1')return {low:'low',high:'high',xhigh:'high',max:'high'}[effort];
   return undefined;
 }

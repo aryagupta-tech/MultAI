@@ -196,11 +196,15 @@ export async function complete(input: CompleteInput): Promise<Completion> {
   }
   const response = await send(credentials, path, body, input);
   const mime = response.headers.get('content-type')?.split(';')[0]?.trim();
-  if (mime !== 'text/event-stream') {await response.body?.cancel().catch(() => undefined); throw new ProviderError('invalid_stream', 'The provider did not return an event stream.');}
+  // Some endpoints (the ChatGPT plan's Responses stream) send SSE without a Content-Type. A missing type is
+  // left to the SSE parser, which rejects anything that isn't an event stream; a different type is refused here.
+  if (mime !== undefined && mime !== 'text/event-stream') {await response.body?.cancel().catch(() => undefined); throw new ProviderError('invalid_stream', 'The provider did not return an event stream.');}
   const bounds = streamLimits(input.limits);
   let text = '';
   let textBytes = 0;
   let output: Record<string, unknown>[] = [];
+  // The ChatGPT plan backend delivers finished items only as they stream and sends an empty final output list.
+  const finishedItems: Record<string, unknown>[] = [];
   let calls: ToolCall[] = [];
   let usage: Usage | undefined;
   let terminal = false;
@@ -235,13 +239,18 @@ export async function complete(input: CompleteInput): Promise<Completion> {
     }
     if (state.protocol === 'responses') {
       if (event.type === 'response.output_text.delta') await emitText(event.delta);
+      else if (event.type === 'response.output_item.done') {
+        if (finishedItems.length >= 256) throw new ProviderError('output_limit', 'The provider returned too many output items.');
+        finishedItems.push(record(event.item));
+      }
       else if (event.type === 'response.failed' || event.type === 'response.incomplete') {
         const code = knownErrorCode(event);
         throw new ProviderError(code ?? 'provider_incomplete', safeFailureMessage(code, 'The inference provider did not complete this response.'));
       } else if (event.type === 'response.completed') {
         const completed = record(event.response);
         if (completed.status !== undefined && completed.status !== 'completed') throw new ProviderError('provider_incomplete', 'The inference provider did not complete this response.');
-        output = array(completed.output).map(record);
+        const listed = array(completed.output).map(record);
+        output = listed.length ? listed : finishedItems;
         calls = output.filter(item => item.type === 'function_call').map(item => parseCall(item.call_id, item.name, item.arguments, item.namespace));
         if (output.some(item => item.type !== 'message' && item.type !== 'function_call' && item.type !== 'reasoning')) throw new ProviderError('unsupported_tool', 'The provider returned an unsupported hosted tool or output type.');
         usage = usageFrom(completed.usage, 'responses');

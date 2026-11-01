@@ -23,7 +23,7 @@ describe('reasoning levels',()=>{
     }
   });
   it('sends the provider\'s own setting only where it is accepted, and never at medium',()=>{
-    expect(levels.map(level=>nativeEffort(level,{kind:'chatgpt'}))).toEqual(['low',undefined,'high','high','high']);
+    expect(levels.map(level=>nativeEffort(level,{kind:'chatgpt'}))).toEqual(['low',undefined,'high','xhigh','xhigh']);
     expect(levels.map(level=>nativeEffort(level,meta))).toEqual(['low',undefined,'high','high','high']);
     expect(levels.map(level=>nativeEffort(level,{kind:'anthropic'}))).toEqual(levels.map(()=>undefined));
   });

@@ -111,6 +111,49 @@ test('Stop during a live provider stream cancels the reader before any tool disp
   assert.equal(effects, 0);
 });
 
+test('a stream without a Content-Type is read; an explicit non-stream type or a non-SSE body is refused', async () => {
+  // The ChatGPT plan's Responses endpoint streams SSE with no Content-Type header.
+  const bare = (text: string) => {const response = new Response(text); response.headers.delete('content-type'); return response;};
+  const untyped = async () => bare(frames([done('ok')]));
+  const result = await runAgent({credentials: {kind: 'chatgpt', apiKey: 'synthetic-oauth-access'}, model: 'synthetic-account-model', messages: [{role: 'user', content: 'Hi'}], signal: signal(), fetch: untyped});
+  assert.equal(result.text, 'ok');
+  const json = async () => new Response('{"ok":true}', {headers: {'content-type': 'application/json'}});
+  await assert.rejects(runAgent({credentials, model: 'synthetic-model', messages: [{role: 'user', content: 'Hi'}], signal: signal(), fetch: json}), (error: unknown) => error instanceof ProviderError && error.code === 'invalid_stream');
+  const plain = async () => bare('not an event stream');
+  await assert.rejects(runAgent({credentials, model: 'synthetic-model', messages: [{role: 'user', content: 'Hi'}], signal: signal(), fetch: plain}), (error: unknown) => error instanceof ProviderError);
+});
+
+test('ChatGPT items that arrive only while streaming are kept when the final output list is empty', async () => {
+  // Observed from the ChatGPT plan backend: response.completed carries output: [] and the items come earlier.
+  const call = {type: 'function_call', call_id: 'c1', name: 'read_file', namespace: 'multai', arguments: '{"path":"a.txt"}'};
+  const message = {type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'It says hi.'}]};
+  const turns = [
+    [{type: 'response.output_item.done', item: {type: 'reasoning', id: 'r1', encrypted_content: 'opaque', summary: []}}, {type: 'response.output_item.done', item: call}, {type: 'response.completed', response: {status: 'completed', output: [], usage: {input_tokens: 5, output_tokens: 2}}}],
+    [{type: 'response.output_item.done', item: message}, {type: 'response.completed', response: {status: 'completed', output: []}}],
+  ];
+  const sent: Record<string, unknown>[] = [];
+  let turn = 0;
+  const fakeFetch: typeof fetch = async (_url, init) => {sent.push(JSON.parse(String(init?.body))); return stream(turns[turn++]!);};
+  const seen: unknown[] = [];
+  const result = await runAgent({credentials: {kind: 'chatgpt', apiKey: 'synthetic-oauth-access'}, model: 'm', messages: [{role: 'user', content: 'Read a.txt'}], tools: [...tools], executeTool: async (toolCall) => {seen.push(toolCall.arguments); return 'hi';}, signal: signal(), fetch: fakeFetch});
+  assert.deepEqual(seen, [{path: 'a.txt'}]);
+  assert.equal(result.text, 'It says hi.');
+  const secondInput = sent[1]?.input as Record<string, unknown>[];
+  assert.ok(secondInput.some(item => item.type === 'reasoning' && item.encrypted_content === 'opaque'));
+  assert.ok(secondInput.some(item => item.type === 'function_call_output' && item.call_id === 'c1'));
+});
+
+test('reasoning effort is sent in each protocol\'s own field, and never to Messages', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const capture: typeof fetch = async (_url, init) => {bodies.push(JSON.parse(String(init?.body))); return stream([done('ok')]);};
+  await runAgent({credentials, model: 'm', messages: [{role: 'user', content: 'Hi'}], signal: signal(), fetch: capture, reasoningEffort: 'high'});
+  assert.deepEqual(bodies.at(-1)?.reasoning, {effort: 'high'});
+  const chat: typeof fetch = async (_url, init) => {bodies.push(JSON.parse(String(init?.body))); return stream([{choices: [{index: 0, delta: {content: 'ok'}, finish_reason: 'stop'}]}, '[DONE]']);};
+  await runAgent({credentials: {kind: 'compatible', apiKey: 'k', baseUrl: 'https://api.meta.ai/v1'}, model: 'm', messages: [{role: 'user', content: 'Hi'}], signal: signal(), fetch: chat, reasoningEffort: 'low'});
+  assert.equal(bodies.at(-1)?.reasoning_effort, 'low');
+  await assert.rejects(runAgent({credentials, model: 'm', messages: [{role: 'user', content: 'Hi'}], signal: signal(), fetch: capture, reasoningEffort: 'HIGH; drop'}), ProviderError);
+});
+
 test('Anthropic loop retains signed thinking and serial tool results', async () => {
   const bodies: Record<string, unknown>[] = [];
   const fakeFetch: typeof fetch = async (url, init) => {
