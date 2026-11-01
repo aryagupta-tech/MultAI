@@ -46,10 +46,28 @@ export function Markdown({ text, streaming }: { text: string; streaming?: boolea
       );
     } else if (/^\s*([-*]|\d+\.)\s/.test(line)) {
       const ordered = /^\s*\d+\./.test(line);
-      const items: string[] = [];
-      while (i < lines.length && /^\s*([-*]|\d+\.)\s/.test(lines[i] ?? '')) items.push((lines[i++] ?? '').replace(/^\s*([-*]|\d+\.)\s/, ''));
+      // Indented items nest under the previous item; a top-level change of marker starts a new list.
+      const items: { text: string; sub: string[] }[] = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.)\s/.test(lines[i] ?? '')) {
+        const current = lines[i] ?? '';
+        const nested = /^\s{2,}/.test(current) && items.length > 0;
+        if (!nested && /^\s*\d+\./.test(current) !== ordered) break;
+        const text = current.replace(/^\s*([-*]|\d+\.)\s/, '');
+        if (nested) items[items.length - 1]!.sub.push(text); else items.push({ text, sub: [] });
+        i++;
+      }
+      const start = ordered ? Number(/^\s*(\d+)\./.exec(line)?.[1] ?? 1) : 1;
       const Tag = ordered ? 'ol' : 'ul';
-      blocks.push(<Tag key={b++} className="md-list">{items.map((it, j) => <li key={j}>{inline(it, `${b}-${j}`)}</li>)}</Tag>);
+      blocks.push(
+        <Tag key={b++} className="md-list" {...(ordered && start !== 1 ? { start } : {})}>
+          {items.map((it, j) => (
+            <li key={j}>
+              {inline(it.text, `${b}-${j}`)}
+              {it.sub.length > 0 && <ul className="md-list">{it.sub.map((t, k) => <li key={k}>{inline(t, `${b}-${j}-${k}`)}</li>)}</ul>}
+            </li>
+          ))}
+        </Tag>,
+      );
     } else if (/^>\s?/.test(line)) {
       const quote: string[] = [];
       while (i < lines.length && /^>\s?/.test(lines[i] ?? '')) quote.push((lines[i++] ?? '').replace(/^>\s?/, ''));
