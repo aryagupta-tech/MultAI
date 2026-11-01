@@ -490,3 +490,22 @@ test('only the original host writes catch-up briefs, from a bounded transcript, 
   assert.equal(briefs[0].payload.model, 'muse-wonder-1.0');
   assert.doesNotMatch(briefs[0].payload.text, /sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX0123/);
 });
+
+test('a screenshot travels with its instruction to teammates and to the host run, and bad images are refused', async t => {
+  const ctx = await createTestContext(); t.after(() => ctx.close());
+  const owner = await seedActor(ctx.db, 'Synthetic host');
+  const image = `data:image/jpeg;base64,${Buffer.alloc(30_000, 7).toString('base64')}`;
+  const create = await ctx.app.inject({method: 'POST', url: '/v1/sessions', headers: headers(owner), payload: {requestId: randomUUID(), message: {kind: 'instruction', text: 'This button overlaps the header, see screenshot.', image}}});
+  assert.equal(create.statusCode, 201, create.body);
+  const id = create.json().session.id as string;
+  assert.equal(create.json().event.payload.image, image);
+  const changed = await ctx.app.inject({method: 'PATCH', url: `/v1/sessions/${id}/mode`, headers: headers(owner), payload: {mode: 'build', expectedGeneration: create.json().session.runtimeGeneration}});
+  const target = {id, generation: changed.json().session.runtimeGeneration as number, instructionId: create.json().event.payload.messageId as string};
+  const started = await run(ctx, owner, target);
+  assert.equal(started.context.selectedInstruction.image, image);
+
+  for (const bad of ['data:image/svg+xml;base64,PHN2Zz4=', 'https://example.com/a.png', `data:image/png;base64,${'A'.repeat(120_000)}`]) {
+    const refused = await ctx.app.inject({method: 'POST', url: `/v1/sessions/${id}/messages`, headers: headers(owner), payload: {requestId: randomUUID(), kind: 'discussion', text: 'x', image: bad}});
+    assert.equal(refused.statusCode, 400, bad.slice(0, 30));
+  }
+});

@@ -39,9 +39,12 @@ interface EventRow {
 const uuid = z.uuid();
 const cleanText = (maximum: number) => z.string().trim().min(1).max(maximum)
   .refine((value) => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(value), 'Unsupported control character.');
-const messageSchema = z.object({ kind: z.enum(['discussion', 'instruction']), text: cleanText(16000) }).strict();
+// One screenshot per message, already downscaled by the app; it travels inside the shared event.
+const IMAGE_LIMIT = 110_000;
+const imageSchema = z.string().max(IMAGE_LIMIT).regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/);
+const messageSchema = z.object({ kind: z.enum(['discussion', 'instruction']), text: cleanText(16000), image: imageSchema.optional() }).strict();
 const createSchema = z.object({ requestId: uuid, title: cleanText(120).optional(), message: messageSchema }).strict();
-const postMessageSchema = z.object({ requestId: uuid, kind: z.enum(['discussion', 'instruction']), text: cleanText(16000) }).strict();
+const postMessageSchema = z.object({ requestId: uuid, kind: z.enum(['discussion', 'instruction']), text: cleanText(16000), image: imageSchema.optional() }).strict();
 const secretSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
 const sessionParams = (request: FastifyRequest) => z.object({ sessionId: uuid }).parse(request.params).sessionId;
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -182,9 +185,10 @@ export class CollaborationService {
       const count = await client.query<{count: number}>("SELECT count(*)::integer AS count FROM instruction_queue WHERE session_id=$1 AND status='pending'", [session.id]);
       if (count.rows[0]!.count >= 512) throw new ApiError(409, 'queue_capacity', 'The pending instruction queue is full.');
     }
+    if (message.image && Buffer.byteLength(message.text) + message.image.length > 124_000) throw new ApiError(413, 'message_too_large', 'Shorten the message or use a smaller screenshot.');
     const messageId = randomUUID();
     const event = await this.append(client, session, actor, `message.${message.kind}`, {
-      messageId, text: message.text, ...(message.kind === 'instruction' ? { queueStatus: 'pending' } : {}),
+      messageId, text: message.text, ...(message.image ? { image: message.image } : {}), ...(message.kind === 'instruction' ? { queueStatus: 'pending' } : {}),
     });
     if (message.kind === 'instruction') {
       await client.query('INSERT INTO instruction_queue(id,session_id,event_id,author_id) VALUES($1,$2,$3,$4)', [messageId, session.id, event.id, actor.userId]);
@@ -408,10 +412,11 @@ export async function registerCollaborationRoutes(app: FastifyInstance, dependen
   service: CollaborationService; authenticate: (request: FastifyRequest) => Promise<Actor>;
 }): Promise<void> {
   const { service, authenticate } = dependencies;
-  app.post('/v1/sessions', async (request, reply) => reply.code(201).send(await service.createSession(await authenticate(request), request.body)));
+  // Messages may carry one screenshot, so these two routes accept larger bodies than the 64 KB default.
+  app.post('/v1/sessions', {bodyLimit: 196_608}, async (request, reply) => reply.code(201).send(await service.createSession(await authenticate(request), request.body)));
   app.get('/v1/sessions', async (request) => service.listSessions(await authenticate(request), request.query));
   app.get('/v1/sessions/:sessionId', async (request) => service.getSession(await authenticate(request), sessionParams(request)));
-  app.post('/v1/sessions/:sessionId/messages', async (request, reply) => reply.code(201).send(await service.postMessage(await authenticate(request), sessionParams(request), request.body)));
+  app.post('/v1/sessions/:sessionId/messages', {bodyLimit: 196_608}, async (request, reply) => reply.code(201).send(await service.postMessage(await authenticate(request), sessionParams(request), request.body)));
   app.get('/v1/sessions/:sessionId/events', async (request) => {
     const query = z.object({ after: z.coerce.number().int().min(0).max(100000).default(0), limit: z.coerce.number().int().min(1).max(100).default(100) }).strict().parse(request.query);
     return service.readEvents(await authenticate(request), sessionParams(request), query.after, query.limit);

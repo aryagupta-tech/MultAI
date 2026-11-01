@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import {
-  ArrowUp, Sparkles, Bold, BookMarked, Code, Eye, EyeOff, Italic, List, ListChecks, Lock, MessageCircle, Quote, SquareCode, TerminalSquare, Type,
+  ArrowUp, Sparkles, Bold, ImagePlus, X, BookMarked, Code, Eye, EyeOff, Italic, List, ListChecks, Lock, MessageCircle, Quote, SquareCode, TerminalSquare, Type,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { DRAFT_LIMIT, applyFormat, draftMeter, resolveEnter, type FormatKind } from '../model/composer';
 import type { MessageKind, SessionDetail } from '../model/types';
 import { IconButton, Kbd, Menu, Segmented, cx, shortcutText } from '../ui/primitives';
 import { Markdown } from '../ui/Markdown';
+import { isImage, toScreenshot } from './screenshot';
 
 const SAVED_PROMPTS = [
   { id: 'review', label: 'Review the current diff', text: 'Review the current changes for correctness and edge cases. List concrete problems with file and line, most severe first. Don’t change any files yet.' },
@@ -25,6 +26,13 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
   const [preview, setPreview] = useState(false);
   const [formatBar, setFormatBar] = useState(false);
   const ta = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const image = draft?.image;
+  const attach = async (file: Blob) => {
+    try { app.setDraft(draftKey, { image: await toScreenshot(file) }); }
+    catch (error) { app.toast(error instanceof Error ? error.message : 'That image couldn’t be attached.', 'error'); }
+  };
+  const fromTransfer = (items: DataTransferItemList | undefined) => [...(items ?? [])].map((item) => item.kind === 'file' ? item.getAsFile() : null).find((file): file is File => Boolean(file && isImage(file)));
   const composing = useRef(false);
   const pendingSelection = useRef<[number, number] | null>(null);
 
@@ -122,7 +130,11 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
   const sendLabel = instruction ? (running ? 'Queue for agent' : 'Send to agent') : 'Send to team';
 
   return (
-    <div className={cx('composer', instruction ? 'is-instruction' : 'is-discussion')}>
+    <div
+      className={cx('composer', instruction ? 'is-instruction' : 'is-discussion')}
+      onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault(); }}
+      onDrop={(e) => { const file = fromTransfer(e.dataTransfer.items); if (file) { e.preventDefault(); void attach(file); } }}
+    >
       {formatBar && !preview && (
         <div className="format-bar" role="toolbar" aria-label="Formatting">
           <IconButton size="sm" icon={Bold} label="Bold" onClick={() => format('bold')} tipSide="top" />
@@ -134,6 +146,12 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
         </div>
       )}
 
+      {image && (
+        <div className="composer-attachment">
+          <img src={image} alt="Attached screenshot" />
+          <button type="button" aria-label="Remove screenshot" onClick={() => app.setDraft(draftKey, { image: undefined })}><X size={12} aria-hidden /></button>
+        </div>
+      )}
       <div className="composer-field">
       <Sparkles className="composer-spark" size={16} strokeWidth={1.8} aria-hidden />
       {preview ? (
@@ -151,6 +169,7 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
           spellCheck
           onChange={(e) => app.setDraft(draftKey, { text: e.target.value })}
           onKeyDown={onKeyDown}
+          onPaste={(e) => { const file = fromTransfer(e.clipboardData.items); if (file) { e.preventDefault(); void attach(file); } }}
           onCompositionStart={() => { composing.current = true; }}
           onCompositionEnd={() => { composing.current = false; }}
         />
@@ -174,6 +193,10 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
           }))}
           trigger={(t) => <button type="button" {...t} className="composer-action"><BookMarked size={14} strokeWidth={1.8} aria-hidden />Prompts</button>}
         />
+        <button type="button" className="composer-action" onClick={() => picker.current?.click()} disabled={!canSubmit}>
+          <ImagePlus size={14} strokeWidth={1.8} aria-hidden />Screenshot
+        </button>
+        <input ref={picker} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/heic" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void attach(file); }} />
         <button type="button" className={cx('composer-action', formatBar && 'is-on')} aria-pressed={formatBar} onClick={() => setFormatBar(!formatBar)}>
           <Type size={14} strokeWidth={1.8} aria-hidden />Format
         </button>

@@ -124,6 +124,7 @@ function MessageRow({ item, author, grouped }: { item: Item<'message'>; author: 
           </header>
         )}
         <div className="msg-text"><Markdown text={item.text} /></div>
+        {item.image && <img className="msg-image" src={item.image} alt={`Screenshot from ${name}`} loading="lazy" />}
       </div>
     </article>
   );

@@ -363,34 +363,36 @@ function onLiveStatus(change: LiveStatusChange): void {
  * uncertain failure retried later reuses it and the service returns the original result
  * instead of creating a duplicate session or message.
  */
-export async function send(key: string, kind: MessageKind, text: string): Promise<void> {
+export async function send(key: string, kind: MessageKind, text: string, image?: string): Promise<void> {
   const app = useApp.getState();
   const draft = app.drafts[key];
-  const requestId = draft?.requestId && draft.requestFor === text ? draft.requestId : crypto.randomUUID();
-  app.setDraft(key, { requestId, requestFor: text });
+  // A different screenshot is a different message, so it gets its own retry identity.
+  const requestFor = image ? `${text}\u0000${image.length}:${image.slice(-48)}` : text;
+  const requestId = draft?.requestId && draft.requestFor === requestFor ? draft.requestId : crypto.randomUUID();
+  app.setDraft(key, { requestId, requestFor });
   useApp.setState((s) => ({ sending: { ...s.sending, [key]: true } }));
   try {
     if (key === 'new') {
       const title = titleFromMessage(text);
-      const r = await api().createSession({ requestId, ...(title ? { title: title.slice(0, 120) } : {}), message: { kind, text } });
+      const r = await api().createSession({ requestId, ...(title ? { title: title.slice(0, 120) } : {}), message: { kind, text, ...(image ? { image } : {}) } });
       if (!r.ok) return fail(r.error);
       const { session, event } = r.value;
       const projectId = useApp.getState().draftTarget.projectId;
       local.meta[session.id] = { ...local.meta[session.id], projectId };
       cache.set(session.id, { session, participants: [], events: [event], loaded: false });
-      useApp.getState().setDraft('new', { text: '' });
+      useApp.getState().setDraft('new', { text: '', image: undefined });
       useApp.setState((s) => ({ sessions: [projectSummary(session, metaFor(session.id), [event]), ...s.sessions.filter((x) => x.id !== session.id)], activeId: session.id }));
       persistLocal();
       await open(session.id);
     } else {
-      const r = await api().postMessage(key, { requestId, kind, text });
+      const r = await api().postMessage(key, { requestId, kind, text, ...(image ? { image } : {}) });
       if (!r.ok) return fail(r.error);
       const c = cache.get(key);
       if (c) {
         c.events = mergeEvents(c.events, [r.value.event]);
         publish(key);
       }
-      useApp.getState().setDraft(key, { text: '' });
+      useApp.getState().setDraft(key, { text: '', image: undefined });
     }
   } finally {
     useApp.setState((s) => ({ sending: { ...s.sending, [key]: false } }));

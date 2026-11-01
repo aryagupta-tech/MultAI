@@ -8,7 +8,8 @@ export interface ProviderCredentials {
 }
 
 export interface ModelInfo {id: string; name: string}
-export interface AgentMessage {role: 'user' | 'assistant'; content: string}
+/** images: base64 data URLs (png, jpeg or webp), user messages only. */
+export interface AgentMessage {role: 'user' | 'assistant'; content: string; images?: string[]}
 export interface ToolDefinition {name: string; description: string; parameters: JsonValue}
 export interface ToolCall {id: string; name: string; arguments: JsonValue}
 export interface Usage {inputTokens?: number; outputTokens?: number; totalTokens?: number}

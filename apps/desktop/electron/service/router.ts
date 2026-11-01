@@ -6,6 +6,7 @@ import type { LiveHub } from './live';
 const uuid = z.uuid();
 const kind = z.enum(['discussion', 'instruction']);
 const text = z.string().min(1).max(16_000);
+const image = z.string().max(110_000).regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/);
 
 // Every renderer-supplied argument is validated here before any request is built.
 const schemas = {
@@ -17,8 +18,8 @@ const schemas = {
   listSessions: z.tuple([]),
   getSession: z.tuple([uuid]),
   readEvents: z.tuple([uuid, z.number().int().min(0)]),
-  createSession: z.tuple([z.object({ requestId: uuid, title: z.string().min(1).max(120).optional(), message: z.object({ kind, text }).strict() }).strict()]),
-  postMessage: z.tuple([uuid, z.object({ requestId: uuid, kind, text }).strict()]),
+  createSession: z.tuple([z.object({ requestId: uuid, title: z.string().min(1).max(120).optional(), message: z.object({ kind, text, image: image.optional() }).strict() }).strict()]),
+  postMessage: z.tuple([uuid, z.object({ requestId: uuid, kind, text, image: image.optional() }).strict()]),
   setMode: z.tuple([uuid, z.object({ mode: z.enum(['plan', 'build']), expectedGeneration: z.number().int().positive() }).strict()]),
   createInvitation: z.tuple([uuid, z.number().int().min(60).max(86_400)]),
   joinInvitation: z.tuple([z.string().regex(/^[A-Za-z0-9_-]{43}$/)]),

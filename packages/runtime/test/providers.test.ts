@@ -162,6 +162,20 @@ test('compatible Chat Completions accumulates split tool arguments and keeps rea
   assert.equal(history[3]?.tool_call_id, 'call_1');
 });
 
+test('a screenshot reaches the model as an image part, and malformed images are refused', async () => {
+  const image = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+  let body: Record<string, unknown> | undefined;
+  const fakeFetch: typeof fetch = async (_url, init) => {body = JSON.parse(String(init?.body)); return stream([{choices: [{delta: {content: 'I see the overlap.'}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'stop'}]}, '[DONE]']);};
+  const meta = {kind: 'compatible' as const, apiKey: 'synthetic-meta', baseUrl: 'https://api.meta.ai/v1'};
+  const result = await runAgent({credentials: meta, model: 'muse-spark-1.3', messages: [{role: 'user', content: 'What is wrong here?', images: [image]}], signal: signal(), fetch: fakeFetch});
+  assert.equal(result.text, 'I see the overlap.');
+  const messages = body?.messages as {content: unknown}[];
+  assert.deepEqual(messages.at(-1)?.content, [{type: 'text', text: 'What is wrong here?'}, {type: 'image_url', image_url: {url: image}}]);
+  for (const bad of ['data:image/svg+xml;base64,PHN2Zz4=', 'https://example.com/a.png']) {
+    await assert.rejects(runAgent({credentials: meta, model: 'muse-spark-1.3', messages: [{role: 'user', content: 'x', images: [bad]}], signal: signal(), fetch: fakeFetch}), /context is invalid/);
+  }
+});
+
 test('text from separate agent turns keeps a paragraph break, in the stream and the result', async () => {
   let calls = 0;
   const fakeFetch: typeof fetch = async () => ++calls === 1 ? stream([

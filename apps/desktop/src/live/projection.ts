@@ -46,12 +46,13 @@ export function titleFromMessage(text: string): string {
   return line.length > 80 ? `${line.slice(0, 78).trimEnd()}…` : line;
 }
 
-function messagePayload(e: WireEvent): { messageId?: string; text: string; queueStatus?: string } | null {
-  const p = e.payload as { messageId?: unknown; text?: unknown; queueStatus?: unknown } | null;
+function messagePayload(e: WireEvent): { messageId?: string; text: string; image?: string; queueStatus?: string } | null {
+  const p = e.payload as { messageId?: unknown; text?: unknown; image?: unknown; queueStatus?: unknown } | null;
   if (!p || typeof p.text !== 'string') return null;
   return {
     text: p.text,
     ...(typeof p.messageId === 'string' ? { messageId: p.messageId } : {}),
+    ...(typeof p.image === 'string' && /^data:image\/(png|jpeg|webp);base64,/u.test(p.image) ? { image: p.image } : {}),
     ...(typeof p.queueStatus === 'string' ? { queueStatus: p.queueStatus } : {}),
   };
 }
@@ -66,7 +67,7 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
       const m = messagePayload(e);
       if (!m || !e.actorId) return null;
       const kind = e.type === 'message.instruction' ? 'instruction' : 'discussion';
-      return { ...base, ...(kind === 'instruction' && m.messageId ? {id: m.messageId} : {}), type: 'message', kind, authorId: e.actorId, text: m.text, ...(kind === 'instruction' && m.queueStatus === 'pending' ? { queue: 'pending' as const } : {}) };
+      return { ...base, ...(kind === 'instruction' && m.messageId ? {id: m.messageId} : {}), type: 'message', kind, authorId: e.actorId, text: m.text, ...(m.image ? { image: m.image } : {}), ...(kind === 'instruction' && m.queueStatus === 'pending' ? { queue: 'pending' as const } : {}) };
     }
     case 'session.created':
       return { ...base, type: 'system', tone: 'info', text: `${actor} started this session in Plan mode.` };

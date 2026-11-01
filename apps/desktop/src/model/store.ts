@@ -32,6 +32,8 @@ export interface Draft {
   requestId?: string;
   /** The exact text the requestId was issued for; edits after a failure get a new identity. */
   requestFor?: string;
+  /** One screenshot as a JPEG data URL, sent with the message. undefined removes it. */
+  image?: string | undefined;
 }
 
 export type Overlay = null | 'palette' | 'settings' | 'invite' | 'new-project' | 'shortcuts' | 'delete-session' | 'join';
@@ -276,7 +278,7 @@ export const useApp = create<State & Actions>()((set, get) => {
           return false;
         }
         if (s.sending[key]) return false;
-        void live.send(key, kind, text);
+        void live.send(key, kind, text, draft?.image);
         return true;
       }
       let id = key;

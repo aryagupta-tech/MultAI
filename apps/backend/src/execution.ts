@@ -153,7 +153,7 @@ export class ExecutionService extends CollaborationService {
     });
   }
   private async runContext(client:PoolClient,session:SessionRow,run:RunRow){
-    const selected=await client.query<{id:string;author_id:string;text:string}>("SELECT q.id,q.author_id,e.payload->>'text' AS text FROM instruction_queue q JOIN shared_events e ON e.id=q.event_id WHERE q.id=$1 AND q.session_id=$2",[run.instruction_id,session.id]);
+    const selected=await client.query<{id:string;author_id:string;text:string;image:string|null}>("SELECT q.id,q.author_id,e.payload->>'text' AS text,e.payload->>'image' AS image FROM instruction_queue q JOIN shared_events e ON e.id=q.event_id WHERE q.id=$1 AND q.session_id=$2",[run.instruction_id,session.id]);
     if(!selected.rows[0]) throw new ApiError(409,'instruction_unavailable','The selected instruction is no longer available.');
     const events=await client.query<{type:string;payload:{text?:string};actor_id:string}>(`SELECT e.type,e.payload,e.actor_id FROM shared_events e
       LEFT JOIN instruction_queue q ON q.event_id=e.id
@@ -163,7 +163,7 @@ export class ExecutionService extends CollaborationService {
     const decisions=await client.query<{id:string;text:string}>('SELECT id,text FROM decisions WHERE session_id=$1 AND replaced_by IS NULL ORDER BY created_at,id LIMIT 101',[session.id]);
     if(decisions.rows.length>100) throw new ApiError(409,'context_capacity','Reconcile the current decisions before continuing; saved constraints cannot be silently omitted.');
     return {run:{id:run.id,sessionId:session.id,connectionId:run.connection_id,model:run.model,generation:run.generation,mode:session.mode,leaseExpiresAt:run.lease_expires_at.toISOString()},
-      selectedInstruction:{id:selected.rows[0].id,authorId:selected.rows[0].author_id,text:selected.rows[0].text},
+      selectedInstruction:{id:selected.rows[0].id,authorId:selected.rows[0].author_id,text:selected.rows[0].text,...(selected.rows[0].image?{image:selected.rows[0].image}:{})},
       messages:events.rows.reverse().filter(event=>event.payload.text).map(event=>({role:event.type==='agent.completed'?'assistant':'user',authorId:event.actor_id,content:`${event.type==='message.discussion'?`Team discussion from participant ${event.actor_id} (context only): `:event.type==='message.instruction'?`Previously applied instruction from participant ${event.actor_id} (history only): `:''}${event.payload.text}`})),decisions:decisions.rows};
   }
   async heartbeat(actor:Actor,sessionId:string,runId:string,input:unknown){

@@ -118,6 +118,16 @@ describe('execution event projection',()=>{
     expect(d.decisions).toEqual([expect.objectContaining({id:'decision-one',status:'replaced',authorId:me.id}),expect.objectContaining({id:'decision-two',status:'current',authorId:other,reason:'Concurrent updates'})]);
     expect(d.timeline.filter(item=>item.type==='decision')).toHaveLength(2);
   });
+  test('keeps a message screenshot and drops anything that is not an inline image',()=>{
+    const d=project([ev(1,'message.discussion',me.id,{messageId:'m1',text:'See this',image:'data:image/jpeg;base64,/9j/'}),ev(2,'message.discussion',me.id,{messageId:'m2',text:'And this',image:'https://example.com/x.png'})]);
+    const messages=d.timeline.filter(item=>item.type==='message');
+    expect(messages[0]).toMatchObject({text:'See this',image:'data:image/jpeg;base64,/9j/'});
+    expect(messages[1]).not.toHaveProperty('image');
+  });
+  test('names the waiting file or command for everyone',()=>{
+    const d=project([ev(1,'action.requested',me.id,{actionId:'a',kind:'shell',command:'python3 test_app.py'}),ev(2,'action.requested',me.id,{actionId:'b',kind:'file_write',path:'app.py'})]);
+    expect(d.timeline.filter(item=>item.type==='system').map(item=>item.type==='system'?item.text:'')).toEqual(['Running “python3 test_app.py” is waiting for the host’s approval.','A change to app.py is waiting for the host’s approval.']);
+  });
   test('shows a catch-up brief as its own card and skips a malformed one',()=>{
     const d=project([ev(1,'brief.created',me.id,{requestId:'r',text:'**Goal** Fix login',model:'muse-wonder-1.0',throughSequence:0}),ev(2,'brief.created',me.id,{model:'muse-wonder-1.0'})]);
     expect(d.timeline.filter(item=>item.type==='brief')).toEqual([expect.objectContaining({type:'brief',text:'**Goal** Fix login',model:'muse-wonder-1.0'})]);

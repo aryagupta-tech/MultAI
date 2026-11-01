@@ -65,8 +65,8 @@ export interface ServiceApi {
   listSessions(): Promise<Result<{ sessions: WireSession[] }>>;
   getSession(sessionId: string): Promise<Result<{ session: WireSession; participants: WireParticipant[] }>>;
   readEvents(sessionId: string, after: number): Promise<Result<{ events: WireEvent[]; cursor: number }>>;
-  createSession(input: { requestId: string; title?: string; message: { kind: WireMessageKind; text: string } }): Promise<Result<{ session: WireSession; event: WireEvent }>>;
-  postMessage(sessionId: string, input: { requestId: string; kind: WireMessageKind; text: string }): Promise<Result<{ event: WireEvent }>>;
+  createSession(input: { requestId: string; title?: string; message: { kind: WireMessageKind; text: string; image?: string } }): Promise<Result<{ session: WireSession; event: WireEvent }>>;
+  postMessage(sessionId: string, input: { requestId: string; kind: WireMessageKind; text: string; image?: string }): Promise<Result<{ event: WireEvent }>>;
   setMode(sessionId: string, input: { mode: WireMode; expectedGeneration: number }): Promise<Result<{ session: WireSession }>>;
   createInvitation(sessionId: string, expiresInSeconds: number): Promise<Result<{ invitation: WireInvitation }>>;
   joinInvitation(token: string): Promise<Result<WireJoinResult>>;
