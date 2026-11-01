@@ -32,6 +32,8 @@ services:
       PORT: "4310"
       PUBLIC_ORIGIN: https://${COLLABORATION_DOMAIN:?Set the collaboration domain}
       NODE_OPTIONS: --max-old-space-size=256
+      # The proxy reaches the backend over either network; only it can set the client address.
+      TRUST_PROXY: 172.30.0.0/24,172.31.0.0/24
     secrets: [database-url, database-ca, google-client-id, google-client-secret]
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
@@ -90,4 +92,8 @@ volumes:
 networks:
   application:
     internal: true
+    ipam:
+      config: [{subnet: 172.30.0.0/24}]
   egress:
+    ipam:
+      config: [{subnet: 172.31.0.0/24}]

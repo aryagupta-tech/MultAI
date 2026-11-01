@@ -24,7 +24,7 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
     logController: new LogController({disableRequestLogging: true}),
     genReqId: () => randomUUID(),
     requestIdHeader: false,
-    trustProxy: false,
+    trustProxy: config.trustedProxies.length ? config.trustedProxies : false,
     bodyLimit: 65_536,
     requestTimeout: 15_000,
     connectionTimeout: 15_000,

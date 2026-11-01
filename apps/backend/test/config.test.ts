@@ -28,3 +28,8 @@ test('each environment serves only its own desktop identity', () => {
   assert.throws(() => readConfig({...base, DESKTOP_CALLBACK_URI: 'multai://auth/callback'}));
   assert.throws(() => readConfig({...production, DESKTOP_CALLBACK_URI: 'multai://auth/callback?x=1'}));
 });
+test('only private proxy addresses can be trusted for client IPs', () => {
+  assert.deepEqual(readConfig(base).trustedProxies, []);
+  assert.deepEqual(readConfig({...base, TRUST_PROXY: '172.30.0.0/24, 10.0.0.1'}).trustedProxies, ['172.30.0.0/24', '10.0.0.1']);
+  for (const bad of ['0.0.0.0/0', '8.8.8.8', '172.30.0.0/8', 'true', '*', '::1']) assert.throws(() => readConfig({...base, TRUST_PROXY: bad}), bad);
+});
