@@ -32,6 +32,32 @@ export function getSelectedConnection():ConnectionSummary|null {
   return connection?{...connection}:null;
 }
 
+/** Ready connections, for the composer's model picker. */
+export function getConnections():ConnectionSummary[]{return connections.filter(connection=>connection.status==='ready').map(connection=>({...connection}));}
+
+/** How much time and output the agent may spend per run; remembered per account on this device. */
+export type Effort='low'|'medium'|'high';
+const effortKey=(user:string|null)=>`multai.effort.v1:${user??'signed-out'}`;
+export function getEffort():Effort {
+  try{const value=localStorage.getItem(effortKey(currentUser()));return value==='low'||value==='high'?value:'medium';}catch{return 'medium';}
+}
+export function setEffort(effort:Effort):void {
+  try{localStorage.setItem(effortKey(currentUser()),effort);}catch{/* per-device convenience only */}
+  changed();
+}
+
+/** Access chosen on New chat, applied once the session exists. Full access is confirmed when chosen. */
+let newChatAccess:AccessLevel='ask';
+export function getNewChatAccess():AccessLevel {return newChatAccess;}
+export async function chooseNewChatAccess(level:AccessLevel):Promise<void>{
+  if(level==='full'&&!await confirmFullAccess())return;
+  newChatAccess=level;changed();
+}
+export async function applyNewChatAccess(sessionId:string):Promise<void>{
+  const level=newChatAccess;newChatAccess='ask';changed();
+  if(level!=='ask')await setAccessLevel(sessionId,level,{confirmed:true});
+}
+
 export function getRunIssue(sessionId:string):ServiceError|null {
   const issue=runIssues.get(sessionId),selection=getSelection();
   return issue&&selection?.connectionId===issue.connectionId?{...issue.error}:null;
@@ -83,7 +109,7 @@ export async function loadConnections():Promise<ConnectionSummary[]> {
   }catch{return [];}
 }
 
-export async function selectConnection(connectionId:string,model:string,modelName?:string):Promise<void> {
+export async function selectConnection(connectionId:string,model:string,modelName?:string,quiet=false):Promise<void> {
   const inference=api(),user=currentUser();
   if(!inference||!user)return;
   const epoch=accountEpoch;
@@ -92,7 +118,7 @@ export async function selectConnection(connectionId:string,model:string,modelNam
     if(epoch!==accountEpoch||user!==currentUser())return;
     if(!result.ok){showError(result.error);return;}
     ownerId=user;selected=result.value;runIssues.clear();changed();
-    useApp.getState().toast(`Selected ${modelName??model}. Choose Run instruction to start.`,'success');
+    if(!quiet)useApp.getState().toast(`Selected ${modelName??model}. Choose Run instruction to start.`,'success');
   }catch{useApp.getState().toast('The app could not select this AI connection. Try again.','error');}
 }
 
@@ -138,7 +164,7 @@ async function run(sessionId:string):Promise<void> {
   const instruction=lastPendingInstruction(detail.timeline);
   if(!instruction){state.toast('Send a new agent instruction before running. Previously applied instructions are never repeated automatically.','info');return;}
   const user=currentUser(),epoch=accountEpoch;
-  const input={sessionId,instructionId:instruction.id,...selection,...(detail.status==='paused'?{resume:true}:{})};
+  const input={sessionId,instructionId:instruction.id,...selection,effort:getEffort(),...(detail.status==='paused'?{resume:true}:{})};
   try{
     let result=await inference.run(input);
     if(epoch!==accountEpoch||user!==currentUser())return;
@@ -182,9 +208,9 @@ async function restoreAccess(userId:string):Promise<void>{
 }
 
 /** Host-only. Full access asks for explicit confirmation first. */
-export async function setAccessLevel(sessionId:string,level:AccessLevel):Promise<void>{
+export async function setAccessLevel(sessionId:string,level:AccessLevel,options:{confirmed?:boolean}={}):Promise<void>{
   const inference=api(),user=currentUser();if(!inference||!user)return;
-  if(level==='full'&&!await confirmFullAccess())return;
+  if(level==='full'&&!options.confirmed&&!await confirmFullAccess())return;
   const result=await inference.setAccess(sessionId,level);
   if(!result.ok){useApp.getState().toast(describe(result.error),'error');return;}
   const levels={...storedAccess(user)};if(result.value==='ask')delete levels[sessionId];else levels[sessionId]=result.value;

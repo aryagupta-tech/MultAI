@@ -382,6 +382,7 @@ export async function send(key: string, kind: MessageKind, text: string, image?:
       local.meta[session.id] = { ...local.meta[session.id], projectId };
       // Projects added before worktree support have no registered folder; their chats stay private.
       if (projectId && !projectId.startsWith('p-')) await work.startWork(session.id, projectId, session.title ?? title ?? 'session');
+      await execution.applyNewChatAccess(session.id);
       cache.set(session.id, { session, participants: [], events: [event], loaded: false });
       useApp.getState().setDraft('new', { text: '', image: undefined });
       useApp.setState((s) => ({ sessions: [projectSummary(session, metaFor(session.id), [event]), ...s.sessions.filter((x) => x.id !== session.id)], activeId: session.id }));

@@ -1,19 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import {
-  ArrowUp, Sparkles, Bold, ImagePlus, X, BookMarked, Code, Eye, EyeOff, Italic, List, ListChecks, Lock, MessageCircle, Quote, SquareCode, TerminalSquare, Type,
-} from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
+import { ArrowUp, ImagePlus, ListChecks, Lock, MessageCircle, X } from 'lucide-react';
 import { useApp } from '../model/store';
 import { DRAFT_LIMIT, applyFormat, draftMeter, resolveEnter, type FormatKind } from '../model/composer';
 import type { MessageKind, SessionDetail } from '../model/types';
-import { IconButton, Kbd, Menu, Segmented, cx, shortcutText } from '../ui/primitives';
-import { Markdown } from '../ui/Markdown';
+import { IconButton, cx } from '../ui/primitives';
+import { AccessPicker, EffortPicker, ModelPicker, SavedPrompts } from './ComposerControls';
 import { isImage, toScreenshot } from './screenshot';
 
-const SAVED_PROMPTS = [
-  { id: 'review', label: 'Review the current diff', text: 'Review the current changes for correctness and edge cases. List concrete problems with file and line, most severe first. Don’t change any files yet.' },
-  { id: 'tests', label: 'Write tests first', text: 'Before changing behavior, add failing tests that describe the expected result, then make them pass with the smallest change.' },
-  { id: 'explain', label: 'Explain for a teammate', text: 'Summarize what this session has done so far for a teammate who just joined: objective, decisions, current state and what’s next.' },
-];
 
 export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; draftKey: string; autoFocus?: boolean }) {
   const draft = useApp((s) => s.drafts[draftKey]);
@@ -23,8 +16,7 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
   const app = useApp.getState();
   const text = draft?.text ?? '';
   const kind: MessageKind = draft?.kind ?? defaultKind;
-  const [preview, setPreview] = useState(false);
-  const [formatBar, setFormatBar] = useState(false);
+  const live = useApp((s) => s.dataMode === 'live');
   const ta = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const image = draft?.image;
@@ -52,7 +44,7 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
       el.setSelectionRange(...pendingSelection.current);
       pendingSelection.current = null;
     }
-  }, [text, preview]);
+  }, [text]);
 
   useEffect(() => {
     if (autoFocus) ta.current?.focus();
@@ -73,11 +65,18 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
     );
   }
 
-  const setKind = (k: MessageKind) => app.setDraft(draftKey, { kind: k });
   const submit = (as: MessageKind) => {
     if (empty || tooLong) return;
-    if (app.send(draftKey, as)) setPreview(false);
+    app.send(draftKey, as);
   };
+  const insert = (prompt: string) => {
+    const next = text ? `${text}\n\n${prompt}` : prompt;
+    if (next.length > DRAFT_LIMIT) app.toast('That would make the draft longer than the limit.', 'error');
+    else app.setDraft(draftKey, { text: next });
+    requestAnimationFrame(() => ta.current?.focus());
+  };
+  // Model, effort and access are the host's run settings; teammates don't choose them.
+  const hostControls = live && (!d || (d.source === 'live' && d.capabilities.configure));
 
   const format = (k: FormatKind) => {
     const el = ta.current;
@@ -122,11 +121,10 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
   };
 
   const instruction = kind === 'instruction';
-  const placeholder = !d
-    ? 'Describe what you want to build or fix…'
-    : instruction
-      ? running ? 'Add a direction. It’s queued for the next safe point…' : 'Tell the agent what to do next…'
-      : 'Talk with the team. The agent won’t act on this…';
+  const placeholder = !instruction
+    ? 'Message your team. The agent won’t act on this…'
+    : !d ? 'Describe what you want to build or fix…'
+      : running ? 'Add a direction. It’s queued for the next safe point…' : 'Tell the agent what to do next…';
   const sendLabel = instruction ? (running ? 'Queue for agent' : 'Send to agent') : 'Send to team';
 
   return (
@@ -135,17 +133,6 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
       onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault(); }}
       onDrop={(e) => { const file = fromTransfer(e.dataTransfer.items); if (file) { e.preventDefault(); void attach(file); } }}
     >
-      {formatBar && !preview && (
-        <div className="format-bar" role="toolbar" aria-label="Formatting">
-          <IconButton size="sm" icon={Bold} label="Bold" onClick={() => format('bold')} tipSide="top" />
-          <IconButton size="sm" icon={Italic} label="Italic" shortcut={shortcutText('Mod+I')} onClick={() => format('italic')} tipSide="top" />
-          <IconButton size="sm" icon={Code} label="Inline code" shortcut={shortcutText('Mod+E')} onClick={() => format('code')} tipSide="top" />
-          <IconButton size="sm" icon={SquareCode} label="Code block" onClick={() => format('codeblock')} tipSide="top" />
-          <IconButton size="sm" icon={List} label="List" onClick={() => format('list')} tipSide="top" />
-          <IconButton size="sm" icon={Quote} label="Quote" onClick={() => format('quote')} tipSide="top" />
-        </div>
-      )}
-
       {image && (
         <div className="composer-attachment">
           <img src={image} alt="Attached screenshot" />
@@ -153,12 +140,7 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
         </div>
       )}
       <div className="composer-field">
-      <Sparkles className="composer-spark" size={16} strokeWidth={1.8} aria-hidden />
-      {preview ? (
-        <div className="composer-preview" aria-label="Preview">
-          {empty ? <p className="tone-muted">Nothing to preview</p> : <Markdown text={text} />}
-        </div>
-      ) : (
+        {!instruction && <span className="composer-team-tag"><MessageCircle size={12} aria-hidden /> Team</span>}
         <textarea
           ref={ta}
           className="composer-input"
@@ -173,58 +155,28 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
           onCompositionStart={() => { composing.current = true; }}
           onCompositionEnd={() => { composing.current = false; }}
         />
-      )}
       </div>
 
       <div className="composer-bar">
-        <Menu
-          label="Saved prompts"
-          side="top"
-          align="start"
-          width={280}
-          items={SAVED_PROMPTS.map((p) => ({
-            id: p.id, label: p.label, description: 'Inserts into your draft. Doesn’t send.',
-            onSelect: () => {
-              const next = text ? `${text}\n\n${p.text}` : p.text;
-              if (next.length > DRAFT_LIMIT) app.toast('That would make the draft longer than the limit.', 'error');
-              else app.setDraft(draftKey, { text: next });
-              requestAnimationFrame(() => ta.current?.focus());
-            },
-          }))}
-          trigger={(t) => <button type="button" {...t} className="composer-action"><BookMarked size={14} strokeWidth={1.8} aria-hidden />Prompts</button>}
-        />
-        <button type="button" className="composer-action" onClick={() => picker.current?.click()} disabled={!canSubmit}>
-          <ImagePlus size={14} strokeWidth={1.8} aria-hidden />Screenshot
-        </button>
+        <IconButton size="sm" icon={ImagePlus} label="Attach a screenshot" tipSide="top" onClick={() => picker.current?.click()} disabled={!canSubmit} />
         <input ref={picker} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/heic" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void attach(file); }} />
-        <button type="button" className={cx('composer-action', formatBar && 'is-on')} aria-pressed={formatBar} onClick={() => setFormatBar(!formatBar)}>
-          <Type size={14} strokeWidth={1.8} aria-hidden />Format
-        </button>
-        <button type="button" className={cx('composer-action', preview && 'is-on')} aria-pressed={preview} onClick={() => setPreview(!preview)}>
-          {preview ? <EyeOff size={14} strokeWidth={1.8} aria-hidden /> : <Eye size={14} strokeWidth={1.8} aria-hidden />}{preview ? 'Edit' : 'Preview'}
-        </button>
+        <SavedPrompts text={text} onInsert={insert} />
+        {d?.mode === 'plan' && instruction && (
+          <span className="mode-hint" title="Plan mode blocks file writes, shell commands and external actions">
+            <ListChecks size={12} aria-hidden /> Plan
+          </span>
+        )}
         <span className="spacer" />
         {meter.show && (
           <span className={cx('meter', `tone-${meter.tone}`)} aria-live="polite">
             {text.length.toLocaleString()} / {DRAFT_LIMIT.toLocaleString()}
           </span>
         )}
-
-        <Segmented
-          label="Who is this for"
-          size="sm"
-          value={kind}
-          onChange={setKind}
-          options={[
-            { value: 'instruction', label: 'Agent', icon: TerminalSquare, hint: 'An instruction the agent will act on' },
-            { value: 'discussion', label: 'Team', icon: MessageCircle, hint: 'Human discussion. The agent won’t act on it' },
-          ]}
-        />
-        {d?.mode === 'plan' && instruction && (
-          <span className="mode-hint" title="Plan mode blocks file writes, shell commands and external actions">
-            <ListChecks size={12} aria-hidden /> Plan mode
-          </span>
-        )}
+        {hostControls && instruction && <>
+          <ModelPicker />
+          <EffortPicker />
+          <AccessPicker sessionId={d?.id ?? null} />
+        </>}
 
         <button
           type="button"
@@ -240,11 +192,6 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
         </button>
       </div>
 
-      <div className="composer-hints" aria-hidden>
-        <span><Kbd keys="Enter" /> {instruction ? (running ? 'queue' : 'send') : 'send to team'}</span>
-        <span><Kbd keys="Shift+Enter" /> new line</span>
-        <span><Kbd keys="Mod+Enter" /> send to {instruction ? 'team' : 'agent'} instead</span>
-      </div>
     </div>
   );
 }

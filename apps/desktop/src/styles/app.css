@@ -1023,3 +1023,27 @@ ol.md-list { list-style: decimal; }
 .terminal-form:focus-within { border-color: var(--accent); }
 .terminal-prompt { font-family: var(--font-mono); color: var(--text-3); }
 .terminal-input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--text); font-size: 12.5px; }
+
+/* ---------------------------------------------------------------- Composer run settings */
+.composer-field { flex-wrap: wrap; }
+.composer-team-tag {
+  display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; margin-top: 1px; flex: none;
+  border-radius: var(--r-pill); font-size: var(--fs-xs); font-weight: 600; color: var(--discuss); background: var(--discuss-soft);
+}
+.composer-pick {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px; min-width: 0; max-width: 200px;
+  border-radius: var(--r-pill); color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.composer-pick:hover, .composer-pick[aria-expanded='true'] { background: var(--chip-hover); color: var(--text); }
+.composer-pick > svg:last-child { color: var(--text-3); flex: none; }
+.composer-pick.is-empty { color: var(--accent); }
+.composer-pick.is-full { color: var(--warn, #f59e0b); }
+.composer-pick .meta-mark { color: #0a7cff; flex: none; }
+.prompt-list { display: grid; gap: 6px; max-height: 50vh; overflow: auto; }
+.prompt-list li { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.prompt-item { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.prompt-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 900px) { .composer-pick span { display: none; } }
+
+.session-header .icon-btn[aria-label^='Team chat on'] { color: var(--discuss); background: var(--discuss-soft); }

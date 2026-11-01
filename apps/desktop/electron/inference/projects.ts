@@ -203,12 +203,23 @@ export async function createWork(input:{root:string;sessionId:string;projectId:s
   return info;
 }
 
+// One git operation at a time per worktree: two at once collide on the worktree's index.lock.
+const queues=new Map<string,Promise<unknown>>();
+function serial<T>(root:string,task:()=>Promise<T>):Promise<T>{
+  const next=(queues.get(root)??Promise.resolve()).catch(()=>undefined).then(task);
+  queues.set(root,next);
+  void next.finally(()=>{if(queues.get(root)===next)queues.delete(root);}).catch(()=>undefined);
+  return next;
+}
+
 /** Everything the agent changed since the session started, committed or not, as review-ready files. */
-export async function diffWork(root:string,info:WorkInfo):Promise<FileChange[]>{
-  // Intent-to-add lets untracked files show up in one diff; it only touches this worktree's own index.
-  await git(root,['add','--intent-to-add','--all']);
-  const raw=(await git(root,['-c','core.quotePath=false','diff','--no-color','--no-ext-diff','-M',info.baseCommit])).stdout;
-  return parseDiff(raw);
+export function diffWork(root:string,info:WorkInfo):Promise<FileChange[]>{
+  return serial(root,async()=>{
+    // Intent-to-add lets untracked files show up in one diff; it only touches this worktree's own index.
+    await git(root,['add','--intent-to-add','--all']);
+    const raw=(await git(root,['-c','core.quotePath=false','diff','--no-color','--no-ext-diff','-M',info.baseCommit])).stdout;
+    return parseDiff(raw);
+  });
 }
 
 export function parseDiff(raw:string):FileChange[]{
@@ -241,7 +252,8 @@ export function parseDiff(raw:string):FileChange[]{
 }
 
 /** Puts one file back the way it was when the session started. */
-export async function revertFile(root:string,info:WorkInfo,file:string):Promise<void>{
+export function revertFile(root:string,info:WorkInfo,file:string):Promise<void>{return serial(root,()=>revertFileNow(root,info,file));}
+async function revertFileNow(root:string,info:WorkInfo,file:string):Promise<void>{
   const relative=safeRelative(file);
   const inBase=(await git(root,['cat-file','-e',`${info.baseCommit}:${relative}`],{allowFail:true})).code===0;
   if(inBase){await git(root,['checkout',info.baseCommit,'--',relative]);return;}
@@ -250,7 +262,8 @@ export async function revertFile(root:string,info:WorkInfo,file:string):Promise<
 }
 
 /** Commits the agent's work on the session branch. The host's own checkout is not touched. */
-export async function keepWork(root:string,info:WorkInfo,message:string):Promise<{commit:string;branch:string}>{
+export function keepWork(root:string,info:WorkInfo,message:string):Promise<{commit:string;branch:string}>{return serial(root,()=>keepWorkNow(root,info,message));}
+async function keepWorkNow(root:string,info:WorkInfo,message:string):Promise<{commit:string;branch:string}>{
   const text=message.trim().slice(0,2000)||'Changes from a MultAI session';
   await git(root,['add','-A']);
   if((await git(root,['diff','--cached','--quiet'],{allowFail:true})).code===0){

@@ -43,8 +43,10 @@ describe('project worktrees',()=>{
     await writeFile(join(root,'src','cart.js'),'export const total = items => items.reduce((a, b) => a + b.price, 0);\n');
     await writeFile(join(root,'src','tax.js'),'export const tax = n => n * 0.2;\n');
     await rm(join(root,'old.txt'));
-    const files=await diffWork(root,info);
-    expect(files.map(file=>[file.path,file.status,file.additions,file.deletions])).toEqual([['old.txt','deleted',0,1],['src/cart.js','modified',1,1],['src/tax.js','added',1,0]]);
+    // Opening a session refreshes the review from two places at once; git must not collide on index.lock.
+    const [files,...again]=await Promise.all([diffWork(root,info),diffWork(root,info),diffWork(root,info),diffWork(root,info)]);
+    expect(files!.map(file=>[file.path,file.status,file.additions,file.deletions])).toEqual([['old.txt','deleted',0,1],['src/cart.js','modified',1,1],['src/tax.js','added',1,0]]);
+    for(const other of again)expect(other).toEqual(files);
     // The host's checkout is untouched until the host applies.
     expect(sh(x.repo,'status','--porcelain')).toBe('');
     await revertFile(root,info,'old.txt');

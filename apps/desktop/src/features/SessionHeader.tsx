@@ -1,7 +1,7 @@
 import {useEffect, useState} from 'react';
 import {
-  Archive, ChevronDown, Cpu, Hammer, Laptop, ListChecks, MoreHorizontal, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Brain, Radio, Sparkles, Hand, ShieldCheck, ShieldAlert,
+  Archive, Hammer, Laptop, ListChecks, MoreHorizontal, PanelLeftOpen, PanelRightClose, PanelRightOpen,
+  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Radio, Sparkles, MessageCircle,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import type { SessionDetail } from '../model/types';
@@ -45,6 +45,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
         {leading}
         <span className="header-title-muted">New chat</span>
         <span className="spacer" />
+        <div className="header-controls no-drag"><TeamChatToggle draftKey="new" /></div>
       </header>
     );
   }
@@ -101,39 +102,6 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           ]}
         />
 
-        {d.source === 'live' ? (
-          <button type="button" className="model-btn" onClick={() => app.openOverlay('settings','models')} title="Choose an AI connection and model. This does not start inference.">
-            <Brain size={14} strokeWidth={1.8} aria-hidden />
-            <span className="model-name">{selection ? selection.modelName ?? selection.model : 'Connect AI'}</span>
-            <ChevronDown size={13} aria-hidden />
-          </button>
-        ) : (
-        <Menu
-          label="Model and reasoning"
-          align="end"
-          width={260}
-          items={[
-            { id: 'h-model', separator: true, label: d.model.engine },
-            { id: d.model.id, label: d.model.label, icon: Cpu, checked: true, description: 'Connected on this host' },
-            { id: 'h-reason', separator: true, label: 'Reasoning' },
-            ...d.model.reasoning.map((r) => ({
-              id: `r-${r}`, label: r, checked: d.reasoning === r,
-              disabled: (!d.capabilities.configure ? 'Only the host can change this' : running ? 'Stop the agent first' : false) as string | false,
-              onSelect: () => app.setReasoning(d.id, r),
-            })),
-          ]}
-          trigger={(t) => (
-            <button type="button" className="model-btn" {...t}>
-              <Brain size={14} strokeWidth={1.8} aria-hidden />
-              <span className="model-name">{d.model.label}</span>
-              <span className="model-reason">{d.reasoning}</span>
-              <ChevronDown size={13} aria-hidden />
-            </button>
-          )}
-        />
-        )}
-
-        {d.source === 'live' && d.capabilities.configure && <AccessPicker sessionId={d.id} />}
 
         {d.source==='live'&&connection?.provider==='chatgpt'&&inference&&(
           <ChatGPTPlanUsage api={inference} limited={Boolean(runIssue&&isChatGPTUsageLimit(runIssue.code))}/>
@@ -169,6 +137,8 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
         ) : d.status === 'paused' && owner ? (
           <Button size="sm" variant="secondary" icon={Play} onClick={() => app.resume(d.id)}>Resume</Button>
         ) : null}
+
+        {d.capabilities.submit && <TeamChatToggle draftKey={d.id} />}
 
         <Menu
           label="Session options"
@@ -218,36 +188,6 @@ function LiveIndicator({ status }: { status: string | undefined }) {
   );
 }
 
-const ACCESS = {
-  ask: { icon: Hand, label: 'Ask for approval', short: 'Ask', description: 'Every file change and command waits for you' },
-  auto: { icon: ShieldCheck, label: 'Approve for me', short: 'Auto', description: 'Only ask for actions that look unsafe' },
-  full: { icon: ShieldAlert, label: 'Full access', short: 'Full access', description: 'Everything runs without asking, including teammates’ requests' },
-} as const;
-
-/** Host-only: how much the shared agent may do on this computer without asking. */
-function AccessPicker({ sessionId }: { sessionId: string }) {
-  const level = useApp((s) => s.access[sessionId] ?? 'ask');
-  const current = ACCESS[level];
-  return (
-    <Menu
-      label="Agent access"
-      align="end"
-      width={300}
-      items={(['ask', 'auto', 'full'] as const).map((id) => ({
-        id, label: ACCESS[id].label, icon: ACCESS[id].icon, description: ACCESS[id].description, checked: id === level, danger: id === 'full',
-        onSelect: () => void execution.setAccessLevel(sessionId, id),
-      }))}
-      trigger={(t) => (
-        <button type="button" className={cx('access-btn', level === 'full' && 'is-full')} {...t} data-tip="Agent access">
-          <current.icon size={14} strokeWidth={1.8} aria-hidden />
-          <span>{current.short}</span>
-          <ChevronDown size={13} aria-hidden />
-        </button>
-      )}
-    />
-  );
-}
-
 /** The session's branch in the host's project, when the chat works in one. */
 function WorkChip({sessionId}:{sessionId:string}) {
   const summary=useWork(s=>s.summary[sessionId]);
@@ -259,5 +199,19 @@ function WorkChip({sessionId}:{sessionId:string}) {
       <GitBranch size={12} aria-hidden />
       <span className="truncate mono">{summary.branch}</span>
     </button>
+  );
+}
+
+/** Team chat: the next message goes to people, not the agent. One icon, top right. */
+function TeamChatToggle({draftKey}:{draftKey:string}) {
+  const kind=useApp(s=>s.drafts[draftKey]?.kind??s.prefs.defaultKind);
+  const team=kind==='discussion';
+  return (
+    <IconButton
+      icon={MessageCircle}
+      label={team?'Team chat on: messages go to your team. Click to talk to the agent':'Team chat: message your team instead of the agent'}
+      active={team}
+      onClick={()=>{useApp.getState().setDraft(draftKey,{kind:team?'instruction':'discussion'});window.dispatchEvent(new Event('multai:focus-composer'));}}
+    />
   );
 }

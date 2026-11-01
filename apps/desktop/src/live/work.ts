@@ -50,7 +50,14 @@ export async function startWork(sessionId:string,projectId:string,title:string):
   }finally{patch('busy',sessionId,null);}
 }
 
-export async function refreshWork(sessionId:string):Promise<void>{
+const refreshing=new Map<string,Promise<void>>();
+/** Callers asking at the same moment share one refresh. */
+export function refreshWork(sessionId:string):Promise<void>{
+  const existing=refreshing.get(sessionId);if(existing)return existing;
+  const request=loadWork(sessionId).finally(()=>refreshing.delete(sessionId));
+  refreshing.set(sessionId,request);return request;
+}
+async function loadWork(sessionId:string):Promise<void>{
   const inference=api();if(!inference)return;subscribe();
   const summary=await inference.workSummary(sessionId);
   if(!summary.ok){patch('summary',sessionId,null);return;}
