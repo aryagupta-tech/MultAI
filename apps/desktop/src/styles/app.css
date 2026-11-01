@@ -1139,3 +1139,14 @@ body.is-resizing .app { transition: none; }
 .locked-text code { display: inline-block; max-width: 100%; vertical-align: bottom; }
 .composer-dock .locked-actions { max-width: var(--content-w); margin: 0 auto 10px; }
 .mcp-list li { align-items: center; }
+
+/* ---------------------------------------------------------------- Presence */
+.typing-indicator { position: absolute; left: 14px; top: -22px; display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-3); pointer-events: none; }
+.typing-dots { display: inline-flex; gap: 2px; }
+.typing-dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: typing-dot 1.2s infinite ease-in-out; }
+.typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing-dot { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .typing-dots i { animation: none; } }
+.file-viewers { display: inline-flex; margin-left: auto; padding-right: 6px; }
+.file-viewers .avatar + .avatar { margin-left: -5px; }

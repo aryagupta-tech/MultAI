@@ -9,6 +9,7 @@ import * as live from '../live/controller';
 import * as work from '../live/work';
 import { useWork } from '../live/work';
 import { askUndo } from '../live/assist';
+import { reportViewing } from '../live/presence';
 import { useEditorItems } from './AssistDialogs';
 import { hueFor, relativeTime } from '../model/format';
 import type { FileChange, InspectorTab, SessionDetail, ToolCall } from '../model/types';
@@ -27,6 +28,11 @@ const TABS: { id: InspectorTab; label: string; icon: typeof FileDiff }[] = [
 export function Inspector({ d }: { d: SessionDetail }) {
   const tab = useApp((s) => s.inspectorTab);
   const app = useApp.getState();
+  // Teammates see which panel this device has open; Changes reports the file instead (below).
+  useEffect(() => {
+    if (tab !== 'changes') reportViewing(d.id, TABS.find((t) => t.id === tab)?.label ?? null);
+    return () => reportViewing(d.id, null);
+  }, [d.id, tab]);
   const pending = d.timeline.filter((t) => t.type === 'approval' && t.state === 'pending').length;
   const liveRequests = useApp((s) => s.joinRequests[d.id]?.length ?? 0);
   const counts: Partial<Record<InspectorTab, number>> = d.source === 'live' ? { people: d.participants.length } : {
@@ -340,13 +346,14 @@ function ChangesPanel({ d, changes = d.changes, intro, actions, onRevert, empty 
         {changes.map((c) => (
           <div key={c.path} className={cx('file', viewed[c.path] && 'is-viewed')}>
             <div className="file-head">
-              <button type="button" className="file-toggle" aria-expanded={Boolean(open[c.path])} onClick={() => setOpen({ ...open, [c.path]: !open[c.path] })}>
+              <button type="button" className="file-toggle" aria-expanded={Boolean(open[c.path])} onClick={() => { setOpen({ ...open, [c.path]: !open[c.path] }); if (!open[c.path]) reportViewing(d.id, c.path); }}>
                 <ChevronRight size={13} className={cx('chev', open[c.path] && 'is-open')} aria-hidden />
                 <FileCode2 size={14} aria-hidden className="tone-muted" />
                 <span className="file-path">
                   {c.path.includes('/') && <span className="file-dir">{c.path.split('/').slice(0, -1).join('/')}/</span>}
                   <span className="file-name">{c.path.split('/').at(-1)}</span>
                 </span>
+                <FileViewers d={d} path={c.path} />
                 <span className={cx('file-status', `is-${c.status}`)}>{c.status === 'added' ? 'A' : c.status === 'deleted' ? 'D' : 'M'}</span>
                 <span className="file-stat"><span className="tone-ok">+{c.additions}</span> <span className="tone-danger">−{c.deletions}</span></span>
               </button>
@@ -364,6 +371,18 @@ function ChangesPanel({ d, changes = d.changes, intro, actions, onRevert, empty 
         ))}
       </div>
     </div>
+  );
+}
+
+/** Small avatars of teammates looking at this file right now. */
+function FileViewers({ d, path }: { d: SessionDetail; path: string }) {
+  const me = useApp((s) => s.account?.id);
+  const viewers = d.participants.filter((p) => p.id !== me && p.viewing === path);
+  if (!viewers.length) return null;
+  return (
+    <span className="file-viewers" title={`${viewers.map((p) => p.name).join(', ')} ${viewers.length === 1 ? 'is' : 'are'} looking at this file`}>
+      {viewers.slice(0, 3).map((p) => <Avatar key={p.id} name={p.name} initials={p.initials} hue={p.hue} size={16} />)}
+    </span>
   );
 }
 
@@ -657,7 +676,7 @@ function PeoplePanel({ d }: { d: SessionDetail }) {
                 {p.isHost && <span className="tag" title="Runs the agent and holds approval authority"><Laptop size={10} aria-hidden /> Host</span>}
                 {p.isLeader && <span className="tag" title="Currently leading the task"><Crown size={10} aria-hidden /> Lead</span>}
               </span>
-              <span className="person-sub">{roleLabel[p.role]}{p.presence === 'unknown' ? '' : ` · ${p.presence === 'online' ? 'Online' : p.presence === 'idle' ? 'Idle' : 'Offline'}`}</span>
+              <span className="person-sub">{roleLabel[p.role]}{p.presence === 'unknown' ? '' : ` · ${p.typing ? 'Typing…' : p.presence === 'online' ? 'Online' : p.presence === 'idle' ? 'Idle' : 'Offline'}`}{p.viewing ? <> · Viewing <span className="mono">{p.viewing.split('/').at(-1)}</span></> : null}</span>
             </div>
             {isLive && owner && p.role !== 'owner' && (
               <Menu

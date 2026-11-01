@@ -21,6 +21,9 @@ export interface Participant extends Person {
   presence: Presence;
   isHost: boolean;
   isLeader: boolean;
+  /** From live presence: typing right now, and the file or panel they're looking at. */
+  typing?: boolean;
+  viewing?: string | null;
 }
 
 export interface ModelChoice {

@@ -15,7 +15,7 @@ function listen<T>(channel: string) {
 const ops: ServiceOp[] = [
   'health', 'authState', 'signIn', 'cancelSignIn', 'signOut', 'listSessions', 'getSession', 'readEvents', 'createSession',
   'postMessage', 'setMode', 'createInvitation', 'joinInvitation', 'listJoinRequests', 'admit', 'revokeParticipant',
-  'deleteSession', 'saveDecision', 'subscribe', 'unsubscribe',
+  'deleteSession', 'saveDecision', 'subscribe', 'unsubscribe', 'sendPresence',
 ];
 
 const service = {
@@ -23,6 +23,7 @@ const service = {
   onAuthChange: listen(IPC.authChanged),
   onLiveEvents: listen(IPC.liveEvents),
   onLiveStatus: listen(IPC.liveStatus),
+  onLivePresence: listen(IPC.livePresence),
   onJoinLink: listen(IPC.joinLink),
 } as unknown as ServiceApi;
 

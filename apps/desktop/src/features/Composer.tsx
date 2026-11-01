@@ -15,6 +15,16 @@ import { ContextMeter } from './ContextMeter';
 import { isImage, toScreenshot } from './screenshot';
 import { filesFor, loadFiles, loadSkills, runAppCommand, runShortcutCommand, skillsFor, subscribeAssist, useAssist } from '../live/assist';
 import { useWork } from '../live/work';
+import { reportTyping, stopTyping } from '../live/presence';
+
+/** “Ana is typing…” for teammates typing in this session right now. */
+function TypingIndicator({ d }: { d: SessionDetail }) {
+  const me = useApp((s) => s.account?.id);
+  const names = d.participants.filter((p) => p.typing && p.id !== me).map((p) => p.name);
+  if (!names.length) return null;
+  const who = names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]} and ${names.length - 1} others`;
+  return <div className="typing-indicator" aria-live="polite"><span className="typing-dots" aria-hidden><i /><i /><i /></span>{who} {names.length === 1 ? 'is' : 'are'} typing…</div>;
+}
 
 const COMMAND_ICONS: Record<string, LucideIcon> = {
   plan: ListChecks, build: Hammer, review: SearchCheck, test: FlaskConical, explain: BookOpen, init: FileCode2, compact: Minimize2, undo: Undo2,
@@ -153,6 +163,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
       const slash = parseSlash(text);
       if (slash && commandNamed(slash.name)?.kind === 'app') { void runAppCommand(slash.name, slash.args, context); return; }
     }
+    if (d) stopTyping(d.id);
     app.send(draftKey, as, d?.id ?? draftKey);
   };
   const replaceWith = (insert: string) => {
@@ -263,6 +274,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
           <button type="button" aria-label="Remove screenshot" onClick={() => app.setDraft(draftKey, { image: undefined })}><X size={12} aria-hidden /></button>
         </div>
       )}
+      {d && <TypingIndicator d={d} />}
       {suggesting && (
         <ComposerSuggest
           items={suggestions}
@@ -284,7 +296,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
           value={text}
           rows={1}
           spellCheck
-          onChange={(e) => { app.setDraft(draftKey, { text: e.target.value }); setCaret(e.target.selectionEnd); }}
+          onChange={(e) => { app.setDraft(draftKey, { text: e.target.value }); setCaret(e.target.selectionEnd); if (d) reportTyping(d.id); }}
           onKeyDown={onKeyDown}
           onKeyUp={(e) => { if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') syncCaret(); }}
           onClick={syncCaret}

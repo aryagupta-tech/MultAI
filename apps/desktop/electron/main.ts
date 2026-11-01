@@ -109,7 +109,7 @@ const account = new Account(origin, (state) => {
   }
   send(IPC.authChanged,state);
 }, {callbackScheme: PROTOCOL});
-const live = new LiveHub(account, (batch) => send(IPC.liveEvents, batch), (change) => send(IPC.liveStatus, change));
+const live = new LiveHub(account, (batch) => send(IPC.liveEvents, batch), (change) => send(IPC.liveStatus, change), {emitPresence: (presence) => send(IPC.livePresence, presence)});
 
 /** Only our own top-level renderer document may call the bridge. */
 function assertTrustedSender(event: IpcMainInvokeEvent): void {

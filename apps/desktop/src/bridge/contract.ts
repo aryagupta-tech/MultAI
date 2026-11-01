@@ -52,6 +52,10 @@ export interface LiveBatch {
   events: WireEvent[];
 }
 
+/** Who is online in a session right now, typing, and which file they're looking at. */
+export interface PresenceEntry { userId: string; typing: boolean; viewing: string | null }
+export interface LivePresence { sessionId: string; participants: PresenceEntry[] }
+
 export interface LiveStatusChange {
   sessionId: string;
   status: LiveStatus;
@@ -79,6 +83,9 @@ export interface ServiceApi {
   saveDecision(sessionId:string,input:{text:string;reason?:string;replacesId?:string}):Promise<Result<{id:string}>>;
   subscribe(sessionId: string, after: number): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;
+  /** Your own presence in a session you're subscribed to; sent over its live connection. */
+  sendPresence(sessionId: string, update: { typing: boolean; viewing: string | null }): Promise<void>;
+  onLivePresence(listener: (presence: LivePresence) => void): () => void;
   onAuthChange(listener: (state: AuthState) => void): () => void;
   onLiveEvents(listener: (batch: LiveBatch) => void): () => void;
   onLiveStatus(listener: (change: LiveStatusChange) => void): () => void;
@@ -99,6 +106,7 @@ export const IPC = {
   authChanged: 'multai:auth-changed',
   liveEvents: 'multai:live-events',
   liveStatus: 'multai:live-status',
+  livePresence: 'multai:live-presence',
   joinLink: 'multai:join-link',
 } as const;
 
@@ -106,4 +114,4 @@ export const IPC = {
 export type ServiceOp =
   | 'health' | 'authState' | 'signIn' | 'cancelSignIn' | 'signOut' | 'listSessions' | 'getSession' | 'readEvents'
   | 'createSession' | 'postMessage' | 'setMode' | 'createInvitation' | 'joinInvitation' | 'listJoinRequests' | 'admit'
-  | 'revokeParticipant' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe';
+  | 'revokeParticipant' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe' | 'sendPresence';

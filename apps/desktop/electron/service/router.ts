@@ -30,6 +30,7 @@ const schemas = {
   saveDecision:z.tuple([uuid,z.object({text:z.string().trim().min(1).max(8000),reason:z.string().trim().min(1).max(2000).optional(),replacesId:uuid.optional()}).strict()]),
   subscribe: z.tuple([uuid, z.number().int().min(0)]),
   unsubscribe: z.tuple([uuid]),
+  sendPresence: z.tuple([uuid, z.object({typing: z.boolean(), viewing: z.string().max(200).nullable()}).strict()]),
 } satisfies Record<ServiceOp, z.ZodType>;
 
 export function isServiceOp(op: unknown): op is ServiceOp {
@@ -97,6 +98,9 @@ export async function route(account: Account, live: LiveHub, op: ServiceOp, rawA
       return null;
     case 'unsubscribe':
       live.unsubscribe(s(0));
+      return null;
+    case 'sendPresence':
+      live.sendPresence(s(0), args[1] as {typing: boolean; viewing: string | null});
       return null;
   }
 }

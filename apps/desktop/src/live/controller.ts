@@ -12,6 +12,7 @@ import type { MessageKind, Project, SessionMode } from '../model/types';
 import { mergeEvents, projectSession, projectSummary, projectSessionState, titleFromMessage, type LocalSessionMeta } from './projection';
 import * as execution from './execution';
 import * as assist from './assist';
+import * as presence from './presence';
 
 interface Cached {
   session: WireSession;
@@ -118,9 +119,10 @@ function metaFor(id: string): LocalSessionMeta {
 function publish(id: string): void {
   const c = cache.get(id);
   if (!c || !me) return;
-  const detail = projectSession({ session: c.session, participants: c.participants, events: c.events, me });
+  const projected = projectSession({ session: c.session, participants: c.participants, events: c.events, me });
   const title = local.meta[id]?.title;
-  if (title) detail.title = title;
+  if (title) projected.title = title;
+  const detail = presence.withPresence(projected);
   useApp.setState((s) => ({ details: { ...s.details, [id]: detail } }));
 }
 
@@ -199,6 +201,7 @@ export async function start(): Promise<void> {
   svc.onAuthChange((state) => void applyAuth(state));
   svc.onLiveEvents(onLiveEvents);
   svc.onLiveStatus(onLiveStatus);
+  svc.onLivePresence(presence.onLivePresence);
   svc.onJoinLink((token) => useApp.setState({ joinPrompt: token, overlay: 'join' }));
   void checkHealth();
   // The launch screen waits for this answer, so a failed check must still end in a state.

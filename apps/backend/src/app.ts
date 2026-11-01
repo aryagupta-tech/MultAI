@@ -10,6 +10,7 @@ import { CollaborationService, registerCollaborationRoutes } from './collaborati
 import type { Config } from './config.js';
 import type { Database } from './db.js';
 import { ApiError } from './errors.js';
+import { PresenceHub } from './presence.js';
 import {ExecutionService,registerExecutionRoutes} from './execution.js';
 
 export interface AppOptions {
@@ -82,6 +83,8 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
   await registerExecutionRoutes(app,execution,request=>auth.authenticateRequest(request));
 
   const connectionCounts = new Map<string, number>();
+  const presence = new PresenceHub();
+  const presenceSchema = z.object({type: z.literal('presence'), typing: z.boolean(), viewing: z.string().max(200).nullable()}).strict();
   app.get('/v1/sessions/:sessionId/live', {
     websocket: true,
     preValidation: async request => {
@@ -98,9 +101,11 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
     let timer: NodeJS.Timeout | undefined;
     let authSessionId: string | undefined;
     let stopped = false;
+    let leave: (() => void) | undefined;
     const stop = () => {
       stopped = true;
       if (timer) clearTimeout(timer);
+      leave?.(); leave = undefined;
       if (authSessionId) {
         const count = (connectionCounts.get(authSessionId) ?? 1) - 1;
         if (count > 0) connectionCounts.set(authSessionId, count);
@@ -110,7 +115,14 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
     };
     socket.on('close', stop);
     socket.on('error', stop);
-    socket.on('message', () => socket.close(1008, 'This stream only sends events.'));
+    // The only thing a client may send is its own presence. Anything else ends the stream.
+    socket.on('message', (data: Buffer) => {
+      if (stopped || !leave) return;
+      let update: z.infer<typeof presenceSchema>;
+      try {update = presenceSchema.parse(JSON.parse(data.toString('utf8')));}
+      catch {socket.close(1008, 'Only presence updates are accepted.'); return;}
+      presence.update(sessionId, socket, {typing: update.typing, viewing: update.viewing?.trim() || null});
+    });
     const tick = async () => {
       if (stopped || socket.readyState !== 1) return;
       try {
@@ -122,6 +134,10 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
           if (count >= 8) { socket.close(1008, 'Connection limit.'); return; }
           authSessionId = actor.authSessionId;
           connectionCounts.set(authSessionId, count + 1);
+          leave = presence.join(sessionId, socket, actor.userId, message => {
+            const text = JSON.stringify(message);
+            if (socket.readyState === 1 && socket.bufferedAmount + Buffer.byteLength(text) <= 1_048_576) socket.send(text);
+          });
         }
         const page = await service.readEvents(actor, sessionId, cursor, 100);
         if (stopped || socket.readyState !== 1) return;

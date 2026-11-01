@@ -1,11 +1,12 @@
 import WebSocket, {type ClientOptions} from 'ws';
 import {z} from 'zod';
-import type {LiveBatch, LiveStatusChange, ServiceError} from '../../src/bridge/contract';
+import type {LiveBatch, LivePresence, LiveStatusChange, ServiceError} from '../../src/bridge/contract';
 import type {WireEvent} from '../../src/bridge/wire';
 import type {Account} from './account';
 
 const eventSchema = z.object({id: z.uuid(), sessionId: z.uuid(), sequence: z.number().int().min(1).max(100000), type: z.string().max(100), actorId: z.uuid().nullable(), payload: z.unknown(), createdAt: z.string()});
 const frameSchema = z.object({type: z.literal('event'), event: eventSchema});
+const presenceSchema = z.object({type: z.literal('presence'), participants: z.array(z.object({userId: z.uuid(), typing: z.boolean(), viewing: z.string().max(200).nullable()})).max(200)});
 const TERMINAL = new Set(['membership_required', 'membership_revoked', 'session_not_found', 'session_deleted', 'not_found', 'forbidden']);
 const MAX_BUFFER_BYTES = 1_048_576;
 const MAX_BACKOFF_MS = 30_000;
@@ -24,10 +25,14 @@ interface Subscription {
   buffer: WireEvent[];
   bufferBytes: number;
   flush: NodeJS.Timeout | null;
+  /** The service sent presence on this connection, so it accepts ours. */
+  presence?: boolean;
 }
 export interface LiveHubOptions {
   socketFactory?: (url: URL, options: ClientOptions) => WebSocket;
   random?: () => number;
+  /** Who else is here. Ephemeral: never part of the replayed event stream. */
+  emitPresence?: (presence: LivePresence) => void;
 }
 
 /** Native read-only replay. Missing sequences force replay from the last delivered cursor. */
@@ -35,6 +40,7 @@ export class LiveHub {
   private readonly subs = new Map<string, Subscription>();
   private readonly socketFactory: (url: URL, options: ClientOptions) => WebSocket;
   private readonly random: () => number;
+  private readonly emitPresence: (presence: LivePresence) => void;
 
   constructor(
     private readonly account: Pick<Account, 'origin' | 'accountGeneration' | 'authorizationHeader' | 'forceRefreshOnNextUse'>,
@@ -44,6 +50,17 @@ export class LiveHub {
   ) {
     this.socketFactory = options.socketFactory ?? ((url, socketOptions) => new WebSocket(url, socketOptions));
     this.random = options.random ?? Math.random;
+    this.emitPresence = options.emitPresence ?? (() => undefined);
+  }
+
+  /**
+   * Sends this device's presence on the session's open connection; dropped while reconnecting, and until
+   * the service has shown it accepts presence (an older one would close the stream on any message).
+   */
+  sendPresence(sessionId: string, update: {typing: boolean; viewing: string | null}): void {
+    const sub = this.subs.get(sessionId);
+    const socket = sub?.presence ? sub.socket : null;
+    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({type: 'presence', typing: update.typing, viewing: update.viewing}));
   }
 
   subscribe(sessionId: string, after: number): void {
@@ -132,7 +149,14 @@ export class LiveHub {
       let frame: z.infer<typeof frameSchema>;
       try {
         const bytes = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
-        frame = frameSchema.parse(JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes)));
+        const parsed: unknown = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes));
+        const presence = presenceSchema.safeParse(parsed);
+        if (presence.success) {
+          sub.presence = true;
+          try {this.emitPresence({sessionId: sub.sessionId, participants: presence.data.participants});} catch {/* A gone renderer misses presence only. */}
+          return;
+        }
+        frame = frameSchema.parse(parsed);
       }
       catch { this.end(sub, 'invalid_stream'); return; }
       if (frame.event.sessionId !== sub.sessionId) { this.end(sub, 'invalid_stream'); return; }
