@@ -8,14 +8,14 @@ import { AccessPicker, EffortPicker, ModelPicker, SavedPrompts } from './Compose
 import { isImage, toScreenshot } from './screenshot';
 
 
-export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; draftKey: string; autoFocus?: boolean }) {
+/** The main composer talks to the agent; the team panel's composer (team) talks to people. */
+export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionDetail | null; draftKey: string; autoFocus?: boolean; team?: boolean }) {
   const draft = useApp((s) => s.drafts[draftKey]);
-  const defaultKind = useApp((s) => s.prefs.defaultKind);
   const account = useApp((s) => s.account);
   const sending = useApp((s) => Boolean(s.sending[draftKey]));
   const app = useApp.getState();
   const text = draft?.text ?? '';
-  const kind: MessageKind = draft?.kind ?? defaultKind;
+  const kind: MessageKind = team ? 'discussion' : 'instruction';
   const live = useApp((s) => s.dataMode === 'live');
   const ta = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -52,9 +52,10 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
 
   useEffect(() => {
     const focus = () => ta.current?.focus();
-    window.addEventListener('multai:focus-composer', focus);
-    return () => window.removeEventListener('multai:focus-composer', focus);
-  }, []);
+    const name = team ? 'multai:focus-team' : 'multai:focus-composer';
+    window.addEventListener(name, focus);
+    return () => window.removeEventListener(name, focus);
+  }, [team]);
 
   if (d && !canSubmit) {
     return (
@@ -67,7 +68,7 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
 
   const submit = (as: MessageKind) => {
     if (empty || tooLong) return;
-    app.send(draftKey, as);
+    app.send(draftKey, as, d?.id ?? draftKey);
   };
   const insert = (prompt: string) => {
     const next = text ? `${text}\n\n${prompt}` : prompt;
@@ -140,7 +141,6 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
         </div>
       )}
       <div className="composer-field">
-        {!instruction && <span className="composer-team-tag"><MessageCircle size={12} aria-hidden /> Team</span>}
         <textarea
           ref={ta}
           className="composer-input"
@@ -160,7 +160,7 @@ export function Composer({ d, draftKey, autoFocus }: { d: SessionDetail | null; 
       <div className="composer-bar">
         <IconButton size="sm" icon={ImagePlus} label="Attach a screenshot" tipSide="top" onClick={() => picker.current?.click()} disabled={!canSubmit} />
         <input ref={picker} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/heic" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void attach(file); }} />
-        <SavedPrompts text={text} onInsert={insert} />
+        {!team && <SavedPrompts text={text} onInsert={insert} />}
         {d?.mode === 'plan' && instruction && (
           <span className="mode-hint" title="Plan mode blocks file writes, shell commands and external actions">
             <ListChecks size={12} aria-hidden /> Plan

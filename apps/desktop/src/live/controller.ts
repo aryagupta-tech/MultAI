@@ -364,7 +364,8 @@ function onLiveStatus(change: LiveStatusChange): void {
  * uncertain failure retried later reuses it and the service returns the original result
  * instead of creating a duplicate session or message.
  */
-export async function send(key: string, kind: MessageKind, text: string, image?: string): Promise<void> {
+/** key is the draft; target the session it posts to (the team panel keeps its own draft for the same session). */
+export async function send(key: string, kind: MessageKind, text: string, image?: string, target = key): Promise<void> {
   const app = useApp.getState();
   const draft = app.drafts[key];
   // A different screenshot is a different message, so it gets its own retry identity.
@@ -389,12 +390,12 @@ export async function send(key: string, kind: MessageKind, text: string, image?:
       persistLocal();
       await open(session.id);
     } else {
-      const r = await api().postMessage(key, { requestId, kind, text, ...(image ? { image } : {}) });
+      const r = await api().postMessage(target, { requestId, kind, text, ...(image ? { image } : {}) });
       if (!r.ok) return fail(r.error);
-      const c = cache.get(key);
+      const c = cache.get(target);
       if (c) {
         c.events = mergeEvents(c.events, [r.value.event]);
-        publish(key);
+        publish(target);
       }
       useApp.getState().setDraft(key, { text: '', image: undefined });
     }

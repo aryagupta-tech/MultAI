@@ -7,6 +7,8 @@ import { SessionHeader } from './features/SessionHeader';
 import { Conversation } from './features/Conversation';
 import { Composer } from './features/Composer';
 import { Inspector } from './features/Inspector';
+import { TeamPanel, useTeam } from './features/TeamPanel';
+import { SidebarResizer } from './features/SidebarResizer';
 import { NewChat } from './features/NewChat';
 import { Welcome } from './features/Welcome';
 import {
@@ -82,6 +84,7 @@ function useGlobalShortcuts() {
 
 export function App() {
   const { account, activeId, details, sidebarOpen, inspectorOpen, dataMode, build, onboarding, loading, auth } = useApp();
+  const teamOpen = useTeam((s) => s.open);
   const d = activeId ? details[activeId] ?? null : null;
 
   usePreferencesOnRoot();
@@ -115,9 +118,10 @@ export function App() {
 
   return (
     <div
-      className={cx('app', !sidebarOpen && 'sidebar-closed', !(inspectorOpen && d) && 'inspector-closed', build?.platform && `platform-${build.platform}`)}
+      className={cx('app', !sidebarOpen && 'sidebar-closed', !((inspectorOpen || teamOpen) && d) && 'inspector-closed', build?.platform && `platform-${build.platform}`)}
     >
       {sidebarOpen && <Sidebar />}
+      {sidebarOpen && <SidebarResizer />}
       <main className="main" aria-label={d ? d.title : 'New chat'}>
         <SessionHeader d={d} />
         {activeId && !d ? (
@@ -134,6 +138,7 @@ export function App() {
         )}
       </main>
       {d && inspectorOpen && <Inspector d={d} />}
+      {d && teamOpen && !inspectorOpen && <TeamPanel d={d} />}
 
       <CommandPalette />
       <SettingsDialog />

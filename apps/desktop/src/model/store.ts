@@ -93,7 +93,8 @@ interface Actions {
   openOverlay(o: Overlay, section?: string): void;
   closeOverlay(): void;
   setDraft(key: string, draft: Partial<Draft>): void;
-  send(key: string, kind: MessageKind): boolean;
+  /** target defaults to key: the session the draft belongs to. */
+  send(key: string, kind: MessageKind, target?: string): boolean;
   decideApproval(sessionId: string, itemId: string, approve: boolean): void;
   answerQuestion(sessionId: string, itemId: string, answer: string): void;
   setMode(sessionId: string, mode: SessionMode): void;
@@ -267,7 +268,7 @@ export const useApp = create<State & Actions>()((set, get) => {
       });
     },
 
-    send: (key, kind) => {
+    send: (key, kind, target = key) => {
       const s = get();
       const draft = s.drafts[key];
       const text = draft?.text.trim() ?? '';
@@ -278,10 +279,10 @@ export const useApp = create<State & Actions>()((set, get) => {
           return false;
         }
         if (s.sending[key]) return false;
-        void live.send(key, kind, text, draft?.image);
+        void live.send(key, kind, text, draft?.image, target);
         return true;
       }
-      let id = key;
+      let id = target;
       if (key === 'new') {
         id = nextId('s');
         const title = text.length > 48 ? text.slice(0, 46).trimEnd() + '…' : text;

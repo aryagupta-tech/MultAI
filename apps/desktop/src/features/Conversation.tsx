@@ -19,6 +19,8 @@ export function Conversation({ d }: { d: SessionDetail }) {
   const [unseen, setUnseen] = useState(0);
   const people = useMemo(() => new Map(d.participants.map((p) => [p.id, p])), [d.participants]);
   const decisions = useMemo(() => new Map(d.decisions.map((x) => [x.id, x])), [d.decisions]);
+  // Team chat lives in its own panel; this column is the work with the agent.
+  const timeline = useMemo(() => d.timeline.filter((item) => !(item.type === 'message' && item.kind === 'discussion')), [d.timeline]);
   const last = d.timeline.at(-1);
   const signature = `${d.timeline.length}:${last?.type === 'agent' ? last.text.length : ''}`;
   const lastCount = useRef(d.timeline.length);
@@ -64,9 +66,9 @@ export function Conversation({ d }: { d: SessionDetail }) {
               <p>{d.objective}</p>
             </div>
           )}
-          {d.timeline.length === 0 && <p className="timeline-empty">No activity yet.</p>}
-          {d.timeline.map((item, i) => {
-            const prev = d.timeline[i - 1];
+          {timeline.length === 0 && <p className="timeline-empty">No activity yet.</p>}
+          {timeline.map((item, i) => {
+            const prev = timeline[i - 1];
             const grouped = item.type === 'message' && prev?.type === 'message' && prev.authorId === item.authorId && prev.kind === item.kind
               && new Date(item.at).getTime() - new Date(prev.at).getTime() < 5 * 60_000;
             return <TimelineRow key={item.id} item={item} d={d} people={people} decisions={decisions} grouped={grouped} />;

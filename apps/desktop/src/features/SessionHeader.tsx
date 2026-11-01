@@ -8,6 +8,7 @@ import type { SessionDetail } from '../model/types';
 import { Avatar, Button, IconButton, Menu, Segmented, cx, shortcutText } from '../ui/primitives';
 import * as execution from '../live/execution';
 import {refreshWork,useWork} from '../live/work';
+import {setTeamOpen,useTeam,useUnreadTeam} from './TeamPanel';
 import {getBridge} from '../bridge/client';
 import {ChatGPTPlanUsage,isChatGPTUsageLimit} from './ChatGPTPlanUsage';
 
@@ -45,7 +46,6 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
         {leading}
         <span className="header-title-muted">New chat</span>
         <span className="spacer" />
-        <div className="header-controls no-drag"><TeamChatToggle draftKey="new" /></div>
       </header>
     );
   }
@@ -138,7 +138,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           <Button size="sm" variant="secondary" icon={Play} onClick={() => app.resume(d.id)}>Resume</Button>
         ) : null}
 
-        {d.capabilities.submit && <TeamChatToggle draftKey={d.id} />}
+        <TeamChatToggle d={d} />
 
         <Menu
           label="Session options"
@@ -202,16 +202,16 @@ function WorkChip({sessionId}:{sessionId:string}) {
   );
 }
 
-/** Team chat: the next message goes to people, not the agent. One icon, top right. */
-function TeamChatToggle({draftKey}:{draftKey:string}) {
-  const kind=useApp(s=>s.drafts[draftKey]?.kind??s.prefs.defaultKind);
-  const team=kind==='discussion';
+/** Team chat opens in a side panel. One icon, top right, with a dot for unread messages. */
+function TeamChatToggle({d}:{d:SessionDetail}) {
+  const teamOpen=useTeam(s=>s.open);
+  const inspectorOpen=useApp(s=>s.inspectorOpen);
+  const open=teamOpen&&!inspectorOpen;
+  const unread=useUnreadTeam(d);
   return (
-    <IconButton
-      icon={MessageCircle}
-      label={team?'Team chat on: messages go to your team. Click to talk to the agent':'Team chat: message your team instead of the agent'}
-      active={team}
-      onClick={()=>{useApp.getState().setDraft(draftKey,{kind:team?'instruction':'discussion'});window.dispatchEvent(new Event('multai:focus-composer'));}}
-    />
+    <span className="team-toggle">
+      <IconButton icon={MessageCircle} label={open?'Close team chat':unread?`Team chat, ${unread} new`:'Team chat'} active={open} onClick={()=>setTeamOpen(!open)} />
+      {unread>0&&!open&&<span className="team-dot" aria-hidden>{unread>9?'9+':unread}</span>}
+    </span>
   );
 }
