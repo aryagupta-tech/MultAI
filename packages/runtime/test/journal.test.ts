@@ -152,6 +152,24 @@ test('a real SQLite reopen makes interrupted effects uncertain and cancels store
   throwsCode(() => f.journal.reserve(next, authority()), 'SESSION_UNAVAILABLE');
 });
 
+test('the host\'s review of an uncertain action frees the session without allowing a replay', t => {
+  const f = fixture(t);
+  const first = approved(f.journal);
+  reserve(f.journal, first);
+  f.reopen();
+  assert.deepEqual(f.journal.uncertain('session-a').map(effect => effect.requestId), [first.requestId]);
+  assert.deepEqual(f.journal.uncertain('session-b'), []);
+  throwsCode(() => f.journal.resolveUncertain('unknown', 'did_not_happen'), 'UNKNOWN_REQUEST');
+  f.journal.resolveUncertain(first.requestId, 'did_not_happen');
+  assert.equal(f.journal.get(first.requestId).state, 'completed');
+  assert.deepEqual(f.journal.uncertain('session-a'), []);
+  throwsCode(() => f.journal.resolveUncertain(first.requestId, 'happened'), 'NOT_UNCERTAIN');
+  // The reviewed action replays only its verdict; a new action in the session can run.
+  assert.deepEqual(f.journal.reserve(first, authority()), {kind: 'completed', result: {outcome: 'did_not_happen', reviewedAt: baseTime, reviewedByHost: true}});
+  const next = approved(f.journal, descriptor({requestId: 'next'}));
+  assert.equal(f.journal.reserve(next, authority()).kind, 'execute');
+});
+
 test('session invalidation fences late completions and leaves unrelated sessions intact', t => {
   const f = fixture(t);
   const first = approved(f.journal);

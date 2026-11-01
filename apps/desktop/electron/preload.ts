@@ -70,6 +70,8 @@ const bridge: DesktopBridge = {
     undoPreview:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'undoPreview',[sessionId]),
     undo:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'undo',[sessionId]),
     editors:()=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'editors',[]),
+    lockedActions:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'lockedActions',[sessionId]),
+    resolveLocked:(sessionId,actionId,outcome)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'resolveLocked',[sessionId,actionId,outcome]),
     openIn:(sessionId,editor)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'openIn',[sessionId,editor]),
     onConnectionsChange:listen(INFERENCE_IPC.connections),
     onRunChange:listen(INFERENCE_IPC.run),

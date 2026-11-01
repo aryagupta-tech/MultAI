@@ -15,6 +15,8 @@ export interface ContextUsage {used:number;limit:number;compactedAt:string|null}
 export interface Checkpoint {commit:string;at:string;instruction:string}
 export interface UndoPreview {checkpoint:Checkpoint;files:{path:string;status:'added'|'modified'|'deleted'}[]}
 export type Editor='vscode'|'cursor'|'zed'|'finder';
+/** An action whose outcome is unknown; it blocks the chat's next actions until the host says what happened. */
+export interface LockedAction {id:string;kind:'file_write'|'shell'|'external';label:string;hint:'happened'|'did_not_happen'|'unknown';at:string}
 export type TerminalEvent={sessionId:string;id:string}&({kind:'output';text:string}|{kind:'exit';code:number|null;stopped:boolean});
 export interface HostExecutionApi {
   select(input:InferenceSelection):Promise<Result<InferenceSelection>>;
@@ -52,6 +54,8 @@ export interface HostExecutionApi {
   undoPreview(sessionId:string):Promise<Result<UndoPreview|null>>;
   undo(sessionId:string):Promise<Result<{checkpoint:Checkpoint;files:string[]}>>;
   editors():Promise<Result<Editor[]>>;
+  lockedActions(sessionId:string):Promise<Result<LockedAction[]>>;
+  resolveLocked(sessionId:string,actionId:string,outcome:'happened'|'did_not_happen'):Promise<Result<null>>;
   openIn(sessionId:string,editor:Editor):Promise<Result<null>>;
   onRunChange(listener:(change:HostRunChange)=>void):()=>void;
 }

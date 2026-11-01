@@ -3,7 +3,7 @@
 // cached briefly; paths never leave this computer.
 import {create} from 'zustand';
 import {getBridge} from '../bridge/client';
-import type {ContextUsage,Editor,SkillInfo,UndoPreview} from '../bridge/execution';
+import type {ContextUsage,Editor,LockedAction,SkillInfo,UndoPreview} from '../bridge/execution';
 import {useApp} from '../model/store';
 import {describe,open,setMode} from './controller';
 import {getSelection,runPending,writeBrief} from './execution';
@@ -16,9 +16,10 @@ interface AssistState {
   usage:Record<string,ContextUsage|null|undefined>;
   editors:Editor[]|null;
   compacting:Record<string,boolean|undefined>;
+  locked:Record<string,LockedAction[]|undefined>;
   dialog:AssistDialog|null;
 }
-export const useAssist=create<AssistState>()(()=>({files:{},skills:{},usage:{},editors:null,compacting:{},dialog:null}));
+export const useAssist=create<AssistState>()(()=>({files:{},skills:{},usage:{},editors:null,compacting:{},locked:{},dialog:null}));
 
 const api=()=>getBridge()?.inference??null;
 const toast=(text:string,tone:'info'|'success'|'error'='info')=>useApp.getState().toast(text,tone);
@@ -69,8 +70,22 @@ export function subscribeAssist():void {
   const inference=api();if(subscribed||!inference)return;subscribed=true;
   inference.onRunChange(change=>{
     void loadUsage(change.sessionId);
+    if(change.status!=='running')void loadLocked(change.sessionId);
     if(change.status!=='running')useAssist.setState(state=>({files:{...state.files,[change.sessionId]:undefined}}));
   });
+}
+
+/** Actions with an unknown outcome that block the chat's next actions. Host only. */
+export async function loadLocked(sessionId:string):Promise<void>{
+  const result=await api()?.lockedActions(sessionId);
+  if(result?.ok)useAssist.setState(state=>({locked:{...state.locked,[sessionId]:result.value}}));
+}
+export async function resolveLocked(sessionId:string,actionId:string,outcome:'happened'|'did_not_happen'):Promise<void>{
+  const result=await api()?.resolveLocked(sessionId,actionId,outcome);
+  if(!result)return;
+  if(!result.ok){toast(describe(result.error),'error');return;}
+  await loadLocked(sessionId);
+  if(!useAssist.getState().locked[sessionId]?.length)toast('Reviewed. The agent can act in this chat again.','success');
 }
 
 export async function compact(sessionId:string):Promise<void>{

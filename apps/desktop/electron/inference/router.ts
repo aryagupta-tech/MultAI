@@ -23,7 +23,7 @@ const schemas={
   listFiles:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),skills:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),
   saveSkill:z.tuple([z.object({name:z.string().min(1).max(48),description:z.string().max(300),body:z.string().min(1).max(32_000)}).strict()]),deleteSkill:z.tuple([z.string().min(1).max(48)]),
   compact:z.tuple([z.unknown()]),contextUsage:z.tuple([z.uuid()]),undoPreview:z.tuple([z.uuid()]),undo:z.tuple([z.uuid()]),
-  editors:z.tuple([]),openIn:z.tuple([z.uuid(),z.enum(['vscode','cursor','zed','finder'])]),
+  editors:z.tuple([]),lockedActions:z.tuple([z.uuid()]),resolveLocked:z.tuple([z.uuid(),z.uuid(),z.enum(['happened','did_not_happen'])]),openIn:z.tuple([z.uuid(),z.enum(['vscode','cursor','zed','finder'])]),
 };
 export type InferenceOp=keyof typeof schemas;
 export type Editor='vscode'|'cursor'|'zed'|'finder';
@@ -73,6 +73,8 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'undoPreview':value=await coordinator.undoPreview(values[0] as string);break;
       case 'undo':value=await coordinator.undo(values[0] as string);break;
       case 'editors':value=await host.editors();break;
+      case 'lockedActions':value=await coordinator.lockedActions(values[0] as string);break;
+      case 'resolveLocked':value=await coordinator.resolveLocked(values[0] as string,values[1] as string,values[2] as 'happened'|'did_not_happen');break;
       case 'openIn':await host.openIn(await coordinator.terminalRoot(values[0] as string),values[1] as Editor);value=null;break;
     }
     return {ok:true,value};

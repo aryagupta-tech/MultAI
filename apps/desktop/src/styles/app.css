@@ -1127,3 +1127,14 @@ body.is-resizing .app { transition: none; }
 .skill-group { margin-bottom: 14px; }
 .skill-group-title { font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-3); margin: 0 0 8px; }
 .skill-group .prompt-list li { align-items: center; }
+
+/* ---------------------------------------------------------------- Actions to review */
+.locked-actions { margin: 0 0 10px; padding: 12px 14px; border-radius: var(--r-lg); border: 1px solid var(--warn-line); background: var(--warn-soft); }
+.locked-head { display: flex; gap: 10px; align-items: flex-start; color: var(--warn); }
+.locked-head strong { color: var(--text); font-size: var(--fs-sm); }
+.locked-head p { margin: 2px 0 0; }
+.locked-actions ul { display: grid; gap: 6px; margin: 10px 0 0; }
+.locked-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); background: var(--surface-1); border: 1px solid var(--border); }
+.locked-text { display: grid; gap: 2px; min-width: 0; flex: 1; font-size: var(--fs-sm); }
+.locked-text code { display: inline-block; max-width: 100%; vertical-align: bottom; }
+.composer-dock .locked-actions { max-width: var(--content-w); margin: 0 auto 10px; }

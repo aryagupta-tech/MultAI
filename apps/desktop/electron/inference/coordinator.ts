@@ -3,7 +3,7 @@ import {mkdir,readFile,writeFile,rename,lstat,unlink,realpath} from 'node:fs/pro
 import path from 'node:path';
 import {z} from 'zod';
 import {ControlledWorkspace,ExecutionJournal,isDeniedPath,RuntimeError,ProviderError,fingerprint,runAgent,executeApprovedShell,hostShell,redactSecrets,type ActionDescriptor,type Authority,type JsonValue,type ToolCall,type ToolDefinition} from '@multai/runtime';
-import type {HostRunChange,InferenceSelection,StartInferenceInput} from '../../src/bridge/execution';
+import type {HostRunChange,InferenceSelection,LockedAction,StartInferenceInput} from '../../src/bridge/execution';
 import {ApiFailure,type Account} from '../service/account';
 import type {ConnectionManager} from './connections';
 import {publicProviderFetch} from './network';
@@ -217,6 +217,42 @@ export class HostCoordinator {
     await mkdir(root,{recursive:true,mode:0o700});
     return root;
   }
+  private journalFor(key:string,directory:string,identity:{userId:string;deviceId:string}):ExecutionJournal{
+    let journal=this.journals.get(key);
+    if(!journal){journal=new ExecutionJournal(path.join(directory,'effects.sqlite'),{serviceOrigin:this.options.account.origin,accountId:identity.userId,deviceId:identity.deviceId});this.journals.set(key,journal);}
+    return journal;
+  }
+  /**
+   * Actions in a session whose outcome is unknown (interrupted, or failed after they were reserved). Each
+   * blocks new actions until the host says what happened. For file saves the file itself usually tells.
+   */
+  async lockedActions(sessionId:string):Promise<LockedAction[]>{
+    z.uuid().parse(sessionId);
+    const {identity,key,directory}=await this.scope();
+    const effects=this.journalFor(key,directory,identity).uncertain(sessionId);
+    if(!effects.length)return [];
+    const workspace=await ControlledWorkspace.open(path.join(directory,'workspaces',sessionId)).catch(()=>null);
+    return Promise.all(effects.map(async(effect):Promise<LockedAction>=>{
+      const operation=effect.descriptor.operation;const at=new Date(effect.updatedAt).toISOString();
+      if(operation.kind==='file_write'){
+        const current=workspace?await workspace.read(operation.relativePath).then(file=>file.hash,(error:unknown)=>['ENOENT','ENOTDIR'].includes(String((error as {code?:unknown}).code))?null:undefined):undefined;
+        // Without the new content in place the save had no effect, whatever the file holds instead.
+        const hint=current===undefined?'unknown':current===operation.contentHash?'happened':'did_not_happen';
+        return {id:effect.requestId,kind:'file_write',label:operation.relativePath,hint,at};
+      }
+      if(operation.kind==='shell')return {id:effect.requestId,kind:'shell',label:redactText(operation.commandText??operation.argv.join(' '),[]).slice(0,500),hint:'unknown',at};
+      return {id:effect.requestId,kind:'external',label:operation.tool.slice(0,200),hint:'unknown',at};
+    }));
+  }
+  async resolveLocked(sessionId:string,requestId:string,outcome:'happened'|'did_not_happen'):Promise<null>{
+    z.uuid().parse(sessionId);
+    if(this.active?.sessionId===sessionId||this.starting?.sessionId===sessionId)throw new RuntimeError('SESSION_ACTIVE','Stop the agent before reviewing its actions.');
+    const {identity,key,directory}=await this.scope();
+    const journal=this.journalFor(key,directory,identity);
+    if(journal.get(requestId).descriptor.sessionId!==sessionId)throw new RuntimeError('UNKNOWN_REQUEST','That action doesn’t belong to this chat.');
+    journal.resolveUncertain(requestId,outcome);
+    return null;
+  }
   /** Files the composer's @ list offers: the session's worktree, its private folder, or a project before its first chat. */
   async listFiles(sessionId:string|null,projectId:string|null):Promise<{files:string[];truncated:boolean}>{
     const visible=(result:{files:string[];truncated:boolean})=>({files:result.files.filter(file=>!isDeniedPath(file)),truncated:result.truncated});
@@ -355,8 +391,7 @@ export class HostCoordinator {
       const workspace=await ControlledWorkspace.open(root);this.freshStart(operation,identity);
       const work=await readWork(root);const notes=work?await projectNotes(root):'';
       const skills=await this.sessionSkills(root).catch(()=>[] as Skill[]);
-      let journal=this.journals.get(key);
-      if(!journal){journal=new ExecutionJournal(path.join(directory,'effects.sqlite'),{serviceOrigin:this.options.account.origin,accountId:identity.userId,deviceId:identity.deviceId});this.journals.set(key,journal);}
+      const journal=this.journalFor(key,directory,identity);
       this.freshStart(operation,identity);
       const lease=randomBytes(32).toString('base64url');
       const raw=await this.options.account.request('POST',`/v1/sessions/${body.sessionId}/runs`,{requestId:randomUUID(),connectionId:body.connectionId,model:body.model,instructionId:body.instructionId,leaseToken:lease,expectedGeneration:snapshot.session.runtimeGeneration,resume:body.resume??false,...(body.resolution?{resolution:body.resolution}:{})});
@@ -431,6 +466,7 @@ export class HostCoordinator {
   }
   private error(error:unknown):{code:string;message:string}{
     if(error instanceof ApiFailure)return error.error;
+    if(error instanceof RuntimeError&&error.code==='SESSION_UNAVAILABLE')return {code:error.code,message:'An earlier action in this chat has an unknown outcome, so the agent can’t act until you review it. Say what happened in the card above the message box, then run again.'};
     if(error instanceof RuntimeError||error instanceof ProviderError)return {code:error.code,message:error.message};
     // Names only: messages can quote provider or workspace content.
     console.error('[inference] run failed:',error instanceof Error?`${error.name}${'code' in error?` ${String((error as {code:unknown}).code)}`:''}`:typeof error);

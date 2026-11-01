@@ -179,6 +179,26 @@ export class ExecutionJournal {
     });
   }
 
+  /** Actions in a session whose outcome is unknown. Each one blocks the session until the host reviews it. */
+  uncertain(sessionId: string): (Effect & {requestId: string; updatedAt: number})[] {
+    if (this.closed) fail('JOURNAL_CLOSED', 'Journal is closed');
+    const rows = this.db.prepare("SELECT request_id,updated_at FROM effects WHERE session_id=? AND state='uncertain' ORDER BY updated_at LIMIT 20").all(sessionId) as {request_id: string; updated_at: number}[];
+    return rows.map(row => ({...this.get(row.request_id), requestId: row.request_id, updatedAt: row.updated_at}));
+  }
+
+  /**
+   * Records the host's review of an uncertain action. It becomes completed with that verdict as its result,
+   * so it can never be dispatched again, and the session is free for new actions.
+   */
+  resolveUncertain(requestId: string, outcome: 'happened' | 'did_not_happen'): void {
+    this.atomic(() => {
+      const effect = this.stored(requestId);
+      if (effect.state !== 'uncertain') fail('NOT_UNCERTAIN', 'Only an action with an uncertain outcome can be reviewed');
+      const result = canonicalJson({reviewedByHost: true, outcome, reviewedAt: this.clock()});
+      this.db.prepare("UPDATE effects SET state='completed',result=?,updated_at=? WHERE request_id=?").run(result, this.clock(), requestId);
+    });
+  }
+
   /** Run at Stop, sign-out, disconnect, runtime/connection change, sleep and Quit. */
   invalidateSession(sessionId: string): void {
     this.atomic(() => {
