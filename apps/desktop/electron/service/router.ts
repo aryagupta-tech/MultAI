@@ -21,7 +21,7 @@ const schemas = {
   postMessage: z.tuple([uuid, z.object({ requestId: uuid, kind, text }).strict()]),
   setMode: z.tuple([uuid, z.object({ mode: z.enum(['plan', 'build']), expectedGeneration: z.number().int().positive() }).strict()]),
   createInvitation: z.tuple([uuid, z.number().int().min(60).max(86_400)]),
-  joinInvitation: z.tuple([z.string().min(16).max(200).regex(/^[A-Za-z0-9_-]+$/)]),
+  joinInvitation: z.tuple([z.string().regex(/^[A-Za-z0-9_-]{43}$/)]),
   listJoinRequests: z.tuple([uuid]),
   admit: z.tuple([uuid, uuid, z.enum(['collaborator', 'viewer'])]),
   revokeParticipant: z.tuple([uuid, uuid]),

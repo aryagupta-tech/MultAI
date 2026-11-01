@@ -23,10 +23,10 @@ describe('invitation links', () => {
 
   test('either link form, or a bare code, yields the same token; junk yields nothing', async () => {
     const { parseInvite } = await import('./controller');
-    const token = 'AbC_-123456789012345';
+    const token = 'AbC_-12345678901234567890123456789012345678';
     expect(parseInvite(`multai://join?token=${token}`)).toBe(token);
     expect(parseInvite(`  multai-dev://join?token=${token}  `)).toBe(token);
     expect(parseInvite(token)).toBe(token);
-    for (const junk of ['', 'short', 'multai://join?token=<script>', 'multai://join', `${token} extra`]) expect(parseInvite(junk)).toBeNull();
+    for (const junk of ['', 'short', 'AbC_-123456789012345', `${token}x`, 'multai://join?token=<script>', 'multai://join', `${token} extra`]) expect(parseInvite(junk)).toBeNull();
   });
 });

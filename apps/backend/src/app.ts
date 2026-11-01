@@ -47,6 +47,9 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
     if (error instanceof ApiError) return reply.code(error.statusCode).send({error: {code: error.code, message: error.message}, requestId: request.id});
     if (error instanceof ZodError) return reply.code(400).send({error: {code: 'invalid_request', message: 'Request fields are invalid.'}, requestId: request.id});
     const framework = error as {statusCode?: number; code?: string};
+    if (framework.statusCode === 429) {
+      return reply.code(429).send({error: {code: 'rate_limited', message: 'Too many requests. Wait a moment and try again.'}, requestId: request.id});
+    }
     if (framework.statusCode && framework.statusCode >= 400 && framework.statusCode < 500) {
       return reply.code(framework.statusCode).send({error: {code: 'invalid_request', message: 'Request could not be accepted.'}, requestId: request.id});
     }

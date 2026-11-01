@@ -90,7 +90,7 @@ function handleDeepLink(raw: string): void {
     void account.completeSignIn(url).catch(()=>send(IPC.authChanged,{status:'signed-out',error:{code:'sign_in_failed',message:'Sign-in could not be completed. Start again.'}}));
   } else if (url.hostname === 'join') {
     const token = url.searchParams.get('token') ?? '';
-    if (!/^[A-Za-z0-9_-]{16,200}$/.test(token)) return;
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return;
     // The renderer asks for confirmation; nothing is sent until the person agrees.
     if (mainWindow) send(IPC.joinLink, token);
     else pendingJoinToken = token;

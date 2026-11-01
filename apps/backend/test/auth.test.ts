@@ -273,3 +273,11 @@ test('rate limits key on the client behind a trusted proxy, and only behind it',
   const spoofedAgain = await from(behindProxy.app, '198.51.100.9', '203.0.113.9');
   assert.equal(Number(spoofedAgain.headers['x-ratelimit-remaining']), Number(spoofed.headers['x-ratelimit-remaining']) - 1);
 });
+
+test('hitting the rate limit says so with a stable code', async (t) => {
+  const context = await createTestContext({ config: { ...syntheticConfig, environment: 'production' } }); t.after(context.close);
+  let last = await context.app.inject({ method: 'GET', url: '/health/live' });
+  for (let i = 0; i < 120; i++) last = await context.app.inject({ method: 'GET', url: '/health/live' });
+  assert.equal(last.statusCode, 429);
+  assert.equal(last.json().error.code, 'rate_limited');
+});
