@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive, Bell, Bookmark, Check, CircleCheck, CircleX, Copy, Cpu, FileDiff, Folder, FolderOpen, FolderPlus, Info, Keyboard, Link2,
-  ListChecks, Hammer, LogIn, Plug, MessageSquare, Monitor, Moon, PanelLeft, PanelRight, Palette, Search, Settings, Shield, SquarePen, Sun, Trash2, Users, X, Stethoscope,
+  ListChecks, Hammer, LogIn, Plug, MessageSquare, Monitor, Moon, PanelLeft, PanelRight, Palette, Search, Settings, Shield, Smartphone, SquarePen, Sun, Trash2, Users, X, Stethoscope,
 } from 'lucide-react';
 import { useApp, type Preferences } from '../model/store';
 import { fuzzyFilter } from '../model/fuzzy';
@@ -11,6 +11,7 @@ import * as live from '../live/controller';
 import * as execution from '../live/execution';
 import {AiConnections} from './AiConnections';
 import {McpSettings} from './McpSettings';
+import {PairedPhones} from './PairedPhones';
 import { Button, Dialog, Kbd, Segmented, Switch, cx, isMac, shortcutText } from '../ui/primitives';
 
 /* ---------------------------------------------------------------- Command palette */
@@ -151,6 +152,7 @@ const SECTIONS = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'models', label: 'Models & accounts', icon: Cpu },
   { id: 'tools', label: 'Tools (MCP)', icon: Plug },
+  { id: 'phones', label: 'Paired phones', icon: Smartphone },
   { id: 'shortcuts', label: 'Keyboard', icon: Keyboard },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'privacy', label: 'Privacy & data', icon: Shield },
@@ -237,6 +239,7 @@ export function SettingsDialog() {
             </>
           )}
           {section === 'tools' && <SettingsGroup title="MCP servers"><McpSettings /></SettingsGroup>}
+          {section === 'phones' && <SettingsGroup title="Owner control from a phone"><PairedPhones /></SettingsGroup>}
           {section === 'shortcuts' && <ShortcutList />}
           {section === 'notifications' && (
             <SettingsGroup title="Notifications">

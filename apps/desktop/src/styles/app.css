@@ -1217,3 +1217,35 @@ body.is-resizing .app { transition: none; }
 .look-shot { align-self: flex-start; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); overflow: hidden; cursor: zoom-in; line-height: 0; max-width: min(100%, 360px); }
 .look-shot img { display: block; width: 100%; height: auto; }
 .look-shot.is-large { max-width: min(100%, 720px); cursor: zoom-out; }
+
+/* ============================================================ Paired phones */
+
+.phones { display: grid; gap: 16px; }
+.phones-new { display: grid; gap: 12px; justify-items: start; }
+.phones-sessions { border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 10px 12px; margin: 0; display: grid; gap: 6px; max-height: 220px; overflow: auto; width: 100%; }
+.phones-sessions legend { padding: 0 4px; color: var(--text-2); font-size: var(--fs-sm); }
+.phones-check { display: flex; gap: 8px; align-items: center; font-size: var(--fs-sm); }
+.phones-grant { display: flex; gap: 8px; align-items: center; font-size: var(--fs-sm); color: var(--text-2); }
+.phones-grant select { background: var(--surface-3); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 4px 8px; }
+.phones-offer { display: flex; gap: 20px; align-items: flex-start; border: 1px solid var(--border-strong); border-radius: var(--r-lg); padding: 16px; }
+.phones-qr { width: 168px; height: 168px; flex: none; border-radius: var(--r-md); }
+.phones-offer-text { display: grid; gap: 8px; justify-items: start; }
+.phones-offer-text h4, .phones-confirm h4 { margin: 0; font-size: var(--fs-md); display: flex; gap: 6px; align-items: center; }
+.phones-code { font-family: var(--font-mono); font-size: 22px; letter-spacing: 0.08em; margin: 0; }
+.phones-warn { color: var(--warn); font-size: var(--fs-sm); }
+.phones-confirm { border: 1px solid var(--accent-line); border-radius: var(--r-lg); padding: 16px; display: grid; gap: 10px; }
+.phones-confirm dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: var(--fs-sm); }
+.phones-confirm dt { color: var(--text-2); }
+.phones-confirm dd { margin: 0; }
+.phones-sas { font-family: var(--font-mono); font-size: 20px; letter-spacing: 0.12em; }
+.phones-perms { margin: 0; padding-left: 18px; font-size: var(--fs-sm); color: var(--text-2); display: grid; gap: 2px; }
+.phones-actions { display: flex; gap: 8px; }
+.phones-heading { margin: 8px 0 0; font-size: var(--fs-sm); color: var(--text-2); font-weight: 600; }
+.phones-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.phones-list > li { border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 10px 12px; }
+.phones-list > li.is-inactive { opacity: 0.6; }
+.phones-row { display: flex; gap: 10px; align-items: center; }
+.phones-meta { display: grid; gap: 2px; flex: 1; min-width: 0; font-size: var(--fs-sm); }
+.phones-meta span { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phones-audit { margin: 10px 0 0; padding-left: 18px; font-size: var(--fs-xs); color: var(--text-2); display: grid; gap: 2px; max-height: 200px; overflow: auto; }
+.phones-audit time { font-family: var(--font-mono); color: var(--text-3); margin-right: 6px; }

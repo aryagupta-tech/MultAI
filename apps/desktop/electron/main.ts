@@ -12,6 +12,8 @@ import {routeInference,type Editor} from './inference/router';
 import {execFile} from 'node:child_process';
 import {stat} from 'node:fs/promises';
 import {ApprovalBroker} from './inference/approvals';
+import {RemoteControlHost,routeController,type TrustedPhone} from './service/remote-control';
+import {CONTROLLER_IPC} from '../src/bridge/controller';
 import {INFERENCE_IPC} from '../src/bridge/execution';
 import {ProjectError,ProjectRegistry,git} from './inference/projects';
 import {TerminalHost} from './inference/terminal';
@@ -60,6 +62,7 @@ const send = (channel: string, payload: unknown) => {
 let connections:ConnectionManager|undefined;
 let coordinator:HostCoordinator|undefined;
 let approvals:ApprovalBroker|undefined;
+let remote:RemoteControlHost|undefined;
 const projects=new ProjectRegistry(()=>path.join(app.getPath('userData'),'projects.json'));
 // MCP servers the host adds in Settings, encrypted like AI connections (they often hold tokens).
 let mcpStore:SecureConnectionStore<McpServer[]>|undefined;
@@ -107,7 +110,8 @@ const account = new Account(origin, (state) => {
   if(state.status!=='signed-in'){
     connections?.invalidate();
     approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);
-  }
+    void remote?.stop().catch(()=>undefined);
+  }else void remote?.start().catch(()=>undefined);
   send(IPC.authChanged,state);
 }, {callbackScheme: PROTOCOL});
 const live = new LiveHub(account, (batch) => send(IPC.liveEvents, batch), (change) => send(IPC.liveStatus, change), {emitPresence: (presence) => send(IPC.livePresence, presence)});
@@ -204,6 +208,11 @@ function registerIpc(): void {
     if(!connections||!coordinator||!approvals)return {ok:false,error:{code:'not_ready',message:'Desktop inference is starting.'}};
     return routeInference(connections,coordinator,approvals,op,args,{projects,terminal,editors,openIn,mcp:mcpSettings});
   });
+  ipcMain.handle(CONTROLLER_IPC.invoke,async(event,op:unknown,args:unknown)=>{
+    assertTrustedSender(event);
+    if(!remote)return {ok:false,error:{code:'not_ready',message:'The desktop is starting.'}};
+    return routeController(remote,op,args);
+  });
 }
 
 function hardenSession(): void {
@@ -284,11 +293,22 @@ if (!app.requestSingleInstanceLock()) {
   app.enableSandbox();
   app.whenReady().then(() => {
     connections=new ConnectionManager({account,onChange:(items)=>send(INFERENCE_IPC.connections,items)});
-    approvals=new ApprovalBroker(pending=>send(INFERENCE_IPC.approvals,pending));
+    let approvalSessions:string[]=[];
+    approvals=new ApprovalBroker(pending=>{
+      send(INFERENCE_IPC.approvals,pending);
+      // A paired phone hears about approvals appearing and disappearing in its sessions.
+      const current=pending.map(item=>item.sessionId);remote?.approvalsChanged([...approvalSessions,...current]);approvalSessions=current;
+    });
     // Approvals appear as cards in the session; the host's access level decides what runs unasked.
-    coordinator=new HostCoordinator({account,connections,projects,mcp,look:electronLook(),dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
-      confirm:(descriptor,_hash,signal,preview)=>!mainWindow||mainWindow.isDestroyed()?Promise.resolve(false):approvals!.request(descriptor,signal,preview)});
-    powerMonitor.on('suspend',()=>{connections?.invalidate();live.suspend();approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);void account.suspend().catch(()=>undefined);});
+    coordinator=new HostCoordinator({account,connections,projects,mcp,look:electronLook(),dataDirectory:()=>app.getPath('userData'),emit:change=>{send(INFERENCE_IPC.run,change);remote?.runChanged(change);},
+      confirm:(descriptor,hash,signal,preview)=>!mainWindow||mainWindow.isDestroyed()?Promise.resolve(false):approvals!.request(descriptor,signal,preview,hash)});
+    // Paired phones: this computer keeps the phone keys it confirmed, OS-encrypted per account and device.
+    remote=new RemoteControlHost({request:(method,url,body)=>account.request(method,url,body),accountGeneration:()=>account.accountGeneration,
+      trust:key=>new SecureConnectionStore<TrustedPhone[]>(`controller-trust:v1:${key}`,()=>[]),identity:()=>account.identitySnapshot(),
+      coordinator,approvals,onChange:()=>send(CONTROLLER_IPC.changed,null)});
+    void account.state().then(state=>{if(state.status==='signed-in')void remote?.start().catch(()=>undefined);}).catch(()=>undefined);
+    powerMonitor.on('suspend',()=>{void remote?.suspend().catch(()=>undefined);connections?.invalidate();live.suspend();approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);void account.suspend().catch(()=>undefined);});
+    powerMonitor.on('resume',()=>{void remote?.resume().catch(()=>undefined);});
     // Forget worktrees whose folders are gone (deleted by hand, or left by a crash).
     void projects.all().then(list=>Promise.all(list.map(project=>git(project.root,['worktree','prune'],{allowFail:true}).catch(()=>undefined)))).catch(()=>undefined);
     hardenSession();
@@ -306,6 +326,7 @@ if (!app.requestSingleInstanceLock()) {
     if(quitting)return;
     event.preventDefault();quitting=true;
     live.closeAll();connections?.invalidate();terminal.stopAll();mcp.stopAll();
+    void remote?.stop().catch(()=>undefined);
     void (coordinator?.invalidate()??Promise.resolve()).catch(()=>undefined).finally(()=>app.quit());
   });
   app.on('window-all-closed', () => {

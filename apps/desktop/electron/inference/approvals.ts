@@ -8,7 +8,7 @@ const PREVIEW_LIMIT = 16_000;
 
 export class ApprovalBroker {
   private readonly levels = new Map<string, AccessLevel>();
-  private readonly pending = new Map<string, {approval: HostApproval; settle(approved: boolean): void}>();
+  private readonly pending = new Map<string, {approval: HostApproval; fingerprint: string | null; preview: string | null; settle(approved: boolean): void}>();
   constructor(private readonly show: (pending: HostApproval[]) => void) {}
 
   access(sessionId: string): AccessLevel {return this.levels.get(sessionId) ?? 'ask';}
@@ -20,7 +20,7 @@ export class ApprovalBroker {
   list(): HostApproval[] {return [...this.pending.values()].map(entry => entry.approval);}
 
   /** Resolves true only for an automatic grant or the host's explicit Approve before expiry. */
-  request(descriptor: ActionDescriptor, signal: AbortSignal, preview?: string): Promise<boolean> {
+  request(descriptor: ActionDescriptor, signal: AbortSignal, preview?: string, fingerprint?: string): Promise<boolean> {
     const operation = descriptor.operation;
     if (operation.kind === 'file_write' && preview === undefined) return Promise.resolve(false);
     const level = this.access(descriptor.sessionId);
@@ -43,7 +43,7 @@ export class ApprovalBroker {
       };
       if (signal.aborted) return resolve(false);
       signal.addEventListener('abort', onAbort, {once: true});
-      this.pending.set(approval.id, {approval, settle});
+      this.pending.set(approval.id, {approval, fingerprint: fingerprint ?? null, preview: preview === undefined ? null : preview.slice(0, PREVIEW_LIMIT), settle});
       this.show(this.list());
     });
   }
@@ -52,6 +52,21 @@ export class ApprovalBroker {
     if (typeof approved !== 'boolean') throw new TypeError('A decision must be approve or reject.');
     this.pending.get(id)?.settle(approved);
     return null;
+  }
+  /** What a paired phone may review: the exact approval with the fingerprint the host will decide. */
+  waiting(sessionId: string): {approval: HostApproval; fingerprint: string; preview: string | null}[] {
+    return [...this.pending.values()].filter(entry => entry.approval.sessionId === sessionId && entry.fingerprint).map(entry => ({approval: entry.approval, fingerprint: entry.fingerprint!, preview: entry.preview}));
+  }
+  /**
+   * A paired phone's decision. It applies only to the same session, the same action and the same
+   * fingerprint that are still waiting; anything else (decided, expired, stopped, changed) is refused.
+   */
+  decideExact(id: string, sessionId: string, fingerprint: string, approved: boolean): 'decided' | 'unavailable' | 'changed' {
+    const entry = this.pending.get(id);
+    if (!entry || entry.approval.sessionId !== sessionId || Date.parse(entry.approval.expiresAt) <= Date.now()) return 'unavailable';
+    if (!entry.fingerprint || entry.fingerprint !== fingerprint) return 'changed';
+    entry.settle(approved);
+    return 'decided';
   }
   /** Account changes, sleep and quitting reject everything still waiting. */
   rejectAll(): void {for (const entry of [...this.pending.values()]) entry.settle(false);}

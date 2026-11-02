@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import { IPC, type DesktopBridge, type ServiceApi, type ServiceOp } from '../src/bridge/contract';
 import {INFERENCE_IPC} from '../src/bridge/execution';
+import {CONTROLLER_IPC, type ControllerBridge} from '../src/bridge/controller';
 
 const call = (op: ServiceOp) => (...args: unknown[]) => ipcRenderer.invoke(IPC.invoke, op, args);
 
@@ -29,7 +30,14 @@ const service = {
   onJoinLink: listen(IPC.joinLink),
 } as unknown as ServiceApi;
 
+const controllerOps = ['createPairing', 'reviewPairing', 'confirmPairing', 'declinePairing', 'revokePairing', 'listPhones', 'audit'] as const;
+const controller = {
+  ...Object.fromEntries(controllerOps.map((op) => [op, (...args: unknown[]) => ipcRenderer.invoke(CONTROLLER_IPC.invoke, op, args)])),
+  onChange: listen<null>(CONTROLLER_IPC.changed),
+} as unknown as ControllerBridge;
+
 const bridge: DesktopBridge = {
+  controller: Object.freeze(controller),
   getBuildInfo: () => ipcRenderer.invoke(IPC.buildInfo),
   pickProjectFolder: () => ipcRenderer.invoke(IPC.pickFolder),
   service: Object.freeze(service),

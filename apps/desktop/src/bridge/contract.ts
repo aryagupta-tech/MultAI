@@ -7,6 +7,7 @@ import type {
 import type {InferenceConnectionsApi} from './inference';
 import type {HostExecutionApi} from './execution';
 import type {ReviewOperation} from './review';
+import type {ControllerBridge} from './controller';
 
 export type BuildChannel = 'development' | 'demo' | 'production';
 
@@ -106,6 +107,8 @@ export interface DesktopBridge {
   pickProjectFolder(): Promise<FolderPick>;
   service: ServiceApi;
   inference: InferenceConnectionsApi & HostExecutionApi;
+  /** Pairing phones as owner controllers. */
+  controller: ControllerBridge;
 }
 
 export const IPC = {
