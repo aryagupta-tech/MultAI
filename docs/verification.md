@@ -17,6 +17,18 @@ Live acceptance is separate: the installed signed-in macOS app and public AWS se
 
 Physical phones and actual iPhone Safari have not been exercised. The desktop must remain online and awake; push notifications are not implemented. Current service and download links are in the [mobile guide](mobile-companion.md).
 
+## Live rollout acceptance
+
+The deployed Linux service and installed macOS release both identify clean source `8af4c0a98523dea7552dc1202831834cea7d6288`; the database has all 11 migrations. `/app/` and `/app/auth` return the companion. The public `/app/android` redirects to APK 0.1.2: **7,920,205 bytes**, Android APK MIME, attachment disposition, and the exact `4fff6d…dae1d6` checksum above. The published metadata and Android certificate agree with the signed artifact.
+
+After deployment, ordinary Google Chrome sign-out/sign-in completed through real Google and returned to `/app/auth` with explicit **Ask to join**, no fragment left in the address and no error. Browser sign-out did not sign out the desktop. The final installed Mac build restored its saved account and both AI connections; phone initialization succeeded. Normal macOS launch was verified and the duplicate release-build registration was removed, keeping `/Applications/MultAI.app` as the production handler.
+
+Live Chromium mobile emulation paired with the installed desktop through the public AWS service. Host and phone computed matching check digits; the host confirmed the keys. A signed phone **Start** request caused a real **Muse Wonder 1.0** request using the existing Meta connection/credits, returning `MOBILE_OK` without tools or project-file changes. The phone retained its owner keys after reload, and native revocation removed access. This is real service/provider acceptance using an emulated phone browser, separate from the synthetic control tests. Temporary QA sessions were deleted and phone grants revoked afterward.
+
+On the Android 16 emulator, the OS genuinely verified `api.multai.si` against the published signing certificate. A normal ACTION_VIEW/BROWSABLE invitation cold-started the installed APK and rendered **Join a session** with the Google button, without automatically submitting a join request. `/app/auth`, `/app/auth/`, `/app/android`, `/application` and `/app/other` remain browser routes. Native Google sign-in still hands off to Chrome; phone credentials/consent were not entered. APK install/update and browser routing were tested on the emulator, not physical hardware.
+
+Production backups stayed on the server and passed disposable, network-isolated restoration before deployment. The final schema was backed up and restore-tested again after rollout. No cloud resources or DNS changes were added.
+
 ---
 
 # Desktop audit · 2 November 2026
