@@ -52,17 +52,20 @@ export class ApiClient {
     if (auth.type === 'controller' && auth.token) headers.authorization = `Controller ${auth.token}`;
     // Cookies are used only by the browser companion on the service's own origin.
     const cookies = this.mode === 'web' && ((auth.type === 'controller' && !auth.token) || path.startsWith('/v1/web/') || path.startsWith('/v1/controller/'));
-    const timeout = AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs);
-    const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
+    // Built by hand rather than with AbortSignal.timeout/any, which older Android WebViews lack.
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {timedOut = true; controller.abort();}, options.timeoutMs ?? this.timeoutMs);
+    const forward = () => controller.abort();
+    options.signal?.addEventListener('abort', forward, {once: true});
     let response: Response;
     try {
-      response = await this.fetcher(`${this.origin}${path}`, {method, headers, body: options.body === undefined ? null : JSON.stringify(options.body), credentials: cookies ? 'same-origin' : 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer', signal});
-    } catch (error) {
+      response = await this.fetcher(`${this.origin}${path}`, {method, headers, body: options.body === undefined ? null : JSON.stringify(options.body), credentials: cookies ? 'same-origin' : 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer', signal: controller.signal});
+    } catch {
       if (options.signal?.aborted) throw new ApiError(0, 'aborted', 'Canceled.', 'network');
-      if (timeout.aborted) throw new ApiError(0, 'timeout', 'The service took too long to answer.', 'timeout');
-      void error;
+      if (timedOut) throw new ApiError(0, 'timeout', 'The service took too long to answer.', 'timeout');
       throw new ApiError(0, 'network', 'No connection to MultAI. Check your network.', 'network');
-    }
+    } finally {clearTimeout(timer); options.signal?.removeEventListener('abort', forward);}
     if (response.status === 204) return undefined as T;
     let data: unknown;
     try {data = await response.json();}

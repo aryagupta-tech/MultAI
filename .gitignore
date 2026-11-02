@@ -13,3 +13,11 @@ coverage/
 
 # Local agent/tooling config
 .claude/
+
+# Companion builds and test output (release APKs are published deliberately, see apps/mobile/README.md)
+apps/web/test/screenshots/
+apps/mobile/build-test/
+apps/mobile/android/local.properties
+apps/mobile/android/app/src/main/assets/public/
+apps/mobile/android/app/src/main/assets/capacitor.config.json
+apps/mobile/android/capacitor-cordova-android-plugins/

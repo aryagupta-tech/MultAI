@@ -1,0 +1,8 @@
+{
+  "appId": "si.multai.companion",
+  "appName": "MultAI Companion",
+  "webDir": "dist",
+  "server": {"androidScheme": "https", "hostname": "localhost", "cleartext": false},
+  "android": {"allowMixedContent": false, "captureInput": false, "webContentsDebuggingEnabled": false},
+  "plugins": {"CapacitorHttp": {"enabled": false}, "CapacitorCookies": {"enabled": false}}
+}

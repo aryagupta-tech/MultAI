@@ -1,0 +1,25 @@
+{
+  "name": "@multai/mobile",
+  "version": "0.1.1",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "MultAI Companion for Android (Capacitor shell around the shared companion screens)",
+  "scripts": {
+    "build:web": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "android:release": "node scripts/build-android.mjs --release",
+    "android:test": "node scripts/build-android.mjs --test"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
+    "@capacitor/core": "8.5.3",
+    "@multai/companion-core": "0.1.0",
+    "@multai/companion-ui": "0.1.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {"@capacitor/cli": "8.5.3", "@types/react": "19.3.0", "@types/react-dom": "19.3.0", "@vitejs/plugin-react": "6.1.2", "vite": "8.3.5"}
+}

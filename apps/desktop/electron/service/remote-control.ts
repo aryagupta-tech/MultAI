@@ -10,8 +10,7 @@ import type {ApprovalBroker} from '../inference/approvals';
 import type {HostCoordinator} from '../inference/coordinator';
 import type {HostRunChange} from '../../src/bridge/execution';
 import type {ControllerApi, PairedPhone, PairingOffer, PairingReview} from '../../src/bridge/controller';
-import type {Result} from '../../src/bridge/contract';
-import {toError} from './account';
+import type {Result, ServiceError} from '../../src/bridge/contract';
 
 const uuid = z.uuid();
 const jwk = z.object({kty: z.literal('EC'), crv: z.literal('P-256'), x: z.string().regex(/^[A-Za-z0-9_-]{43}$/u), y: z.string().regex(/^[A-Za-z0-9_-]{43}$/u)});
@@ -343,5 +342,13 @@ export async function routeController(host: ControllerApi, op: unknown, args: un
   try {
     const call = host[op as keyof ControllerApi] as (...values: unknown[]) => Promise<unknown>;
     return {ok: true, value: await call.apply(host, parsed.data as unknown[])};
-  } catch (error) {return {ok: false, error: error instanceof RemoteControlError ? {code: error.code, message: error.message} : toError(error)};}
+  } catch (error) {return {ok: false, error: describe(error)};}
+}
+/** Service failures (account.ts ApiFailure) carry their own safe code and message; anything else stays generic. */
+function describe(error: unknown): ServiceError {
+  if (error instanceof RemoteControlError) return {code: error.code, message: error.message};
+  const failure = (error as {error?: {code?: unknown; message?: unknown}} | null)?.error;
+  if (failure && typeof failure.code === 'string' && typeof failure.message === 'string') return {code: failure.code.slice(0, 100), message: failure.message.slice(0, 500)};
+  if (error instanceof z.ZodError) return {code: 'unexpected_response', message: 'The service sent a response this app doesn’t understand.'};
+  return {code: 'internal', message: 'Something went wrong.'};
 }

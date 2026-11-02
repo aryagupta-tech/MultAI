@@ -340,8 +340,10 @@ const WEB_REFRESH_PATH = '/v1/web/auth';
  * and a custom header, so another site can neither read nor forge these calls.
  */
 function registerWebAuthRoutes(app: FastifyInstance, auth: AuthService, publicOrigin: string) {
+  // Every route here is a POST: browsers always send Origin, and it must be this origin.
   const guard = (request: FastifyRequest) => {
-    if (request.headers.origin !== publicOrigin || request.headers['x-multai-client'] !== 'web') throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
+    const site = request.headers['sec-fetch-site'];
+    if (request.headers.origin !== publicOrigin || request.headers['x-multai-client'] !== 'web' || (site !== undefined && site !== 'same-origin')) throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
   };
   const cookie = (request: FastifyRequest) => {
     for (const part of (request.headers.cookie ?? '').split(';')) {

@@ -531,9 +531,18 @@ export function cookieHeader(publicOrigin: string, name: string, value: string, 
   const secure = publicOrigin.startsWith('https:') ? '; Secure' : '';
   return `${name}=${value}; Path=${path}; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure}`;
 }
-/** Cookie-authenticated browser calls must come from this origin's own page and carry a custom header. */
+/**
+ * Cookie-authenticated browser calls must come from this origin's own page. They carry a custom header
+ * (another site cannot add one without a CORS preflight, which these routes never grant), and when the
+ * browser says where a request came from (Origin, Sec-Fetch-Site) it must be this origin. Browsers omit
+ * Origin on same-origin GETs, so its absence alone is not a refusal.
+ */
 export function requireSameOriginClient(request: FastifyRequest, publicOrigin: string) {
-  if (request.headers.origin !== publicOrigin || request.headers['x-multai-client'] !== 'web') throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
+  const origin = request.headers.origin, site = request.headers['sec-fetch-site'];
+  if (request.headers['x-multai-client'] !== 'web' || (origin !== undefined && origin !== publicOrigin) || (site !== undefined && site !== 'same-origin')) {
+    throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
+  }
+  if (origin === undefined && request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
 }
 
 export async function registerOwnerControlRoutes(app: FastifyInstance, service: OwnerControlService, authenticate: (request: FastifyRequest) => Promise<Actor>, publicOrigin: string) {

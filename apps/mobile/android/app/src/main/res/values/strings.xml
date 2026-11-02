@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MultAI Companion</string>
+    <string name="title_activity_main">MultAI Companion</string>
+    <string name="package_name">si.multai.companion</string>
+    <string name="custom_url_scheme">si.multai.companion</string>
+</resources>

@@ -10,8 +10,21 @@ import {CollaborationService} from '../src/collaboration.js';
 import {BrowserReviewService} from '../src/browser-review.js';
 import {createTestContext, seedActor, testConfig} from './helpers.js';
 
-// The phone's real signing code (WebCrypto), not a test double.
-const core = await import(new URL('../../../packages/companion-core/src/index.ts', import.meta.url).href) as typeof import('../../../packages/companion-core/src/index.js');
+// The phone's real signing code (WebCrypto), not a test double. Loaded by URL so this service's own
+// TypeScript program does not compile a sibling package.
+type Jwk = {kty: 'EC'; crv: 'P-256'; x: string; y: string};
+type Envelope = Record<string, unknown> & {requestId: string; issuedAt: number; expiresAt: number};
+interface Core {
+  generatePhoneKeys(): Promise<{signing: CryptoKeyPair; encryption: CryptoKeyPair}>;
+  exportPublic(key: CryptoKey): Promise<Jwk>;
+  keyThumbprint(signing: Jwk, encryption: Jwk): Promise<string>;
+  verificationCode(pairingId: string, thumbprint: string): Promise<string>;
+  buildEnvelope(input: Record<string, unknown>): Envelope;
+  signControl(envelope: Envelope, key: CryptoKey): Promise<{envelope: Envelope; signature: string}>;
+  verifyControl(signed: {envelope: unknown; signature: string}, key: Jwk): Promise<boolean>;
+  normalizePairingCode(code: string): string | null;
+}
+const core = await import(new URL('../../../packages/companion-core/src/index.ts', import.meta.url).href) as Core;
 
 type Context = Awaited<ReturnType<typeof createTestContext>>;
 type Identity = Awaited<ReturnType<typeof seedActor>>;
@@ -245,10 +258,10 @@ test('the host receives, decides and acknowledges; Stop cancels what is still wa
   const delivered = await hostPoll(ctx, owner);
   assert.deepEqual(delivered.map(item => item.id).sort(), [a.json().request.id, b.json().request.id].sort());
   // The host verifies each signature with the key it confirmed.
-  const pairings = (await ctx.app.inject({method: 'GET', url: '/v1/controller-pairings', headers: bearer(owner)})).json().pairings as {id: string; signingKey: core.PublicJwk}[];
+  const pairings = (await ctx.app.inject({method: 'GET', url: '/v1/controller-pairings', headers: bearer(owner)})).json().pairings as {id: string; signingKey: Jwk}[];
   for (const item of delivered) {
     const key = pairings.find(p => p.id === item.pairingId)!.signingKey;
-    assert.ok(await core.verifyControl({envelope: item.envelope as core.ControlEnvelope, signature: item.signature}, key));
+    assert.ok(await core.verifyControl({envelope: item.envelope, signature: item.signature}, key));
   }
   const status = async (id: string, by = id === b.json().request.id ? other : phone) => (await ctx.app.inject({method: 'GET', url: `/v1/controller/requests/${id}`, headers: by.auth})).json().request.status;
   assert.equal(await status(a.json().request.id), 'delivered', 'delivered is not done: the phone keeps waiting for the host');
@@ -396,6 +409,13 @@ test('browser cookies are HttpOnly, SameSite=Strict and refused without the page
   assert.equal(noHeader.statusCode, 403);
   const ok = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, origin: ORIGIN, 'x-multai-client': 'web'}});
   assert.equal(ok.statusCode, 200, ok.body);
+  // Browsers omit Origin on same-origin GETs; the custom header and Sec-Fetch-Site decide.
+  const sameOriginGet = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, 'x-multai-client': 'web', 'sec-fetch-site': 'same-origin'}});
+  assert.equal(sameOriginGet.statusCode, 200, sameOriginGet.body);
+  const crossSiteGet = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, 'x-multai-client': 'web', 'sec-fetch-site': 'cross-site'}});
+  assert.equal(crossSiteGet.statusCode, 403);
+  const noOriginPost = await ctx.app.inject({method: 'POST', url: '/v1/controller/unpair', headers: {...jar, 'x-multai-client': 'web'}, payload: {}});
+  assert.equal(noOriginPost.statusCode, 403, 'a cookie POST must name its origin');
   const forget = await ctx.app.inject({method: 'POST', url: '/v1/controller/forget', headers: {origin: ORIGIN, 'x-multai-client': 'web'}, payload: {}});
   assert.match(String(forget.headers['set-cookie']), /Max-Age=0/u);
 });
