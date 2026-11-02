@@ -31,7 +31,8 @@
 		-Server
 	}
 	request_body {
-		max_size 64KB
+		# Screenshot routes accept up to 120,000 bytes; the API keeps its per-route limits.
+		max_size 128KB
 	}
 	reverse_proxy backend:4310 {
 		header_up -Forwarded
