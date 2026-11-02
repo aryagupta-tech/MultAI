@@ -102,7 +102,7 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'deleteSkill':value=await coordinator.deleteSkill(values[0] as string);break;
       case 'compact':value=await coordinator.compact(values[0]);break;
       case 'contextUsage':value=await coordinator.contextUsage(values[0] as string);break;
-      case 'usageLimits':value=coordinator.usageLimits(values[0] as string);break;
+      case 'usageLimits':value=await coordinator.usageLimits(values[0] as string);break;
       case 'transcribe':value=await transcribe(manager,coordinator,values[0] as string);break;
       case 'segmentAvailable':value=Boolean(metaConnection(await manager.list(),null));break;
       case 'segment':{

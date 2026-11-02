@@ -429,8 +429,28 @@ export class HostCoordinator {
   }
   /** How full the agent's input was at the start of the session's last run on this computer. */
   /** The usage limits the provider last reported for a connection, if any. */
-  private readonly limits=new Map<string,{windows:LimitWindow[];at:number}>();
-  usageLimits(connectionId:string):{windows:LimitWindow[];at:number}|null{z.uuid().parse(connectionId);return this.limits.get(connectionId)??null;}
+  private limits:Map<string,{windows:LimitWindow[];at:number}>|null=null;
+  /** Kept on this device so "usage left" shows after a restart; only percentages and reset times. */
+  private limitsFile(){return path.join(this.options.dataDirectory(),'usage-limits.json');}
+  private async loadLimits():Promise<Map<string,{windows:LimitWindow[];at:number}>>{
+    if(this.limits)return this.limits;
+    const parsed=await readFile(this.limitsFile(),'utf8').then(text=>z.record(z.uuid(),z.object({windows:z.array(z.object({label:z.string().max(60),usedPercent:z.number().min(0).max(100),resetsAt:z.number().optional()})).max(8),at:z.number()})).parse(JSON.parse(text)),()=>({}));
+    this.limits??=new Map(Object.entries(parsed) as [string,{windows:LimitWindow[];at:number}][]);
+    return this.limits;
+  }
+  private saveLimits(connectionId:string,windows:LimitWindow[]):void{
+    void this.loadLimits().then(async limits=>{
+      limits.set(connectionId,{windows,at:Date.now()});
+      const file=this.limitsFile(),temporary=`${file}.${randomUUID()}.tmp`;
+      await writeFile(temporary,JSON.stringify(Object.fromEntries(limits)),{mode:0o600});await rename(temporary,file);
+    }).catch(()=>undefined);
+  }
+  async usageLimits(connectionId:string):Promise<{windows:LimitWindow[];at:number}|null>{
+    z.uuid().parse(connectionId);
+    const saved=(await this.loadLimits()).get(connectionId);
+    // A window that has reset since it was reported is no longer used up.
+    return saved?{...saved,windows:saved.windows.map(window=>window.resetsAt!==undefined&&window.resetsAt<=Date.now()?{...window,usedPercent:0}:window)}:null;
+  }
   async contextUsage(sessionId:string):Promise<{used:number;limit:number;compactedAt:string|null}|null>{
     z.uuid().parse(sessionId);
     const {directory}=await this.scope();
@@ -711,7 +731,7 @@ export class HostCoordinator {
             onEvent:async event=>{
               if(event.type==='text.delta'){pending+=event.text;share();}
               if(event.type==='usage'){await sharing;await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}
-              if(event.type==='limits')this.limits.set(body.connectionId,{windows:event.windows,at:Date.now()});
+              if(event.type==='limits')this.saveLimits(body.connectionId,event.windows);
               if(event.type==='web.search'){await shared();await this.publish(running,'activity.completed',{summary:event.query?`Searched the web: ${event.query}`:'Searched the web'});}
             }});
           await shared(true);const final=textChunks(redactText(result.text,running.secrets),13500);const truncated=final.length>1;

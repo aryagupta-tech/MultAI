@@ -683,4 +683,19 @@ describe('team verification uses actual host checks and a separate read-only rev
     expect(blocked).toBe(false);
     expect(y.requests.filter(request => request.route.endsWith('/finish'))).toHaveLength(1);
   });
+
+  test('usage limits a provider reports are kept on this device, and a window that has reset shows as unused', async () => {
+    const x = await fixture();
+    runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
+      await options.onEvent?.({type: 'limits', windows: [{label: '5-hour', usedPercent: 40, resetsAt: Date.now() + 3_600_000}, {label: 'Weekly', usedPercent: 90, resetsAt: Date.now() - 1000}]});
+      return {text: 'ok', iterations: 1};
+    });
+    await x.host.run(x.input); await x.terminal();
+    await vi.waitFor(async () => expect((await x.host.usageLimits(x.input.connectionId))?.windows).toEqual([expect.objectContaining({label: '5-hour', usedPercent: 40}), expect.objectContaining({label: 'Weekly', usedPercent: 0})]));
+    await vi.waitFor(async () => expect(JSON.parse(await readFile(join(x.directory, 'usage-limits.json'), 'utf8'))[x.input.connectionId].windows).toHaveLength(2));
+    // A new app process reads them back.
+    const again = new HostCoordinator({account: x.account, connections: x.connections, projects: x.projects, mcp: new McpHost(async () => []), dataDirectory: () => x.directory, confirm: x.confirm, emit: () => undefined});
+    expect((await again.usageLimits(x.input.connectionId))?.windows[0]).toMatchObject({label: '5-hour', usedPercent: 40});
+    expect(await again.usageLimits(randomUUID())).toBeNull();
+  });
 });
