@@ -69,17 +69,35 @@ export function outputText(body:string, contentType:string):string {
   return (json.output ?? []).flatMap(item => item.content ?? []).filter(part => part.type === 'output_text' && typeof part.text === 'string').map(part => part.text as string).join('');
 }
 
-/** Asks SAM 3.1 which element is at this point of the screenshot. */
-export async function segmentPoint(credentials:{apiKey:string}, image:string, point:Point, fetcher:typeof fetch, signal:AbortSignal):Promise<Box|null> {
-  if (!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/u.test(image) || image.length > 12_000_000) throw new SegmentError('SEGMENT_INVALID', 'Attach a PNG, JPEG or WebP screenshot first.');
+/** One SAM 3.1 call: a point or concept prompt on the screenshot, answered with boxes. */
+async function ask(credentials:{apiKey:string}, image:string, prompt:string, fetcher:typeof fetch, signal:AbortSignal):Promise<Box[]> {
   const response = await fetcher('https://api.meta.ai/v1/responses', {
     method: 'POST', signal, redirect: 'error',
     headers: {'content-type': 'application/json', authorization: `Bearer ${credentials.apiKey}`},
     body: JSON.stringify({model: SAM_MODEL, stream: false, metadata: {mask_encoding: 'one_bit'},
-      input: [{type: 'message', role: 'user', content: [{type: 'input_text', text: pointPrompt(point)}, {type: 'input_image', image_url: image}]}]}),
+      input: [{type: 'message', role: 'user', content: [{type: 'input_text', text: prompt}, {type: 'input_image', image_url: image}]}]}),
   });
   if (response.status === 401) throw new SegmentError('provider_credentials_invalid', 'This Meta key was refused. Check it in Settings.');
   if (!response.ok) throw new SegmentError('SEGMENT_FAILED', `SAM 3.1 couldn’t look at that screenshot (HTTP ${response.status}). Drag a box around the problem instead.`);
-  const text = outputText(await response.text(), response.headers.get('content-type') ?? '');
-  return pickBox(parseBoxes(text), point);
+  return parseBoxes(outputText(await response.text(), response.headers.get('content-type') ?? ''));
+}
+
+/** Concepts SAM is asked to find on an app screenshot, so a click on a label outlines its whole control. */
+export const UI_CONCEPTS = ['button'];
+
+/**
+ * Asks SAM 3.1 which element is at this point of the screenshot. A point prompt alone tends to outline
+ * just the word or icon clicked, so the controls around it are asked for at the same time: the smallest
+ * one that contains the click (and isn't most of the screen) wins, else the point's own outline.
+ */
+export async function segmentPoint(credentials:{apiKey:string}, image:string, point:Point, fetcher:typeof fetch, signal:AbortSignal):Promise<Box|null> {
+  if (!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/u.test(image) || image.length > 12_000_000) throw new SegmentError('SEGMENT_INVALID', 'Attach a PNG, JPEG or WebP screenshot first.');
+  const prompt = pointPrompt(point);
+  const [own, ...controls] = await Promise.allSettled([ask(credentials, image, prompt, fetcher, signal), ...UI_CONCEPTS.map(concept => ask(credentials, image, concept, fetcher, signal))]);
+  if (own!.status === 'rejected') throw own!.reason;
+  const area = (box:Box) => (box.x2 - box.x1 + 1) * (box.y2 - box.y1 + 1);
+  const around = controls.flatMap(result => result.status === 'fulfilled' ? result.value : [])
+    .filter(box => point.x >= box.x1 && point.x <= box.x2 && point.y >= box.y1 && point.y <= box.y2 && area(box) < point.width * point.height * 0.4)
+    .sort((a, b) => area(a) - area(b))[0];
+  return around ?? pickBox(own!.value, point);
 }

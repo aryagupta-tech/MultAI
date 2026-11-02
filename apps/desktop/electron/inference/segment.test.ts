@@ -37,11 +37,27 @@ describe('point at the bug with SAM 3.1',()=>{
     const fetcher=async(input:string|URL|Request,init?:RequestInit)=>{url=String(input);body=JSON.parse(String(init?.body));return new Response(JSON.stringify({output_text:'<0f>0<|box;x1=10;y1=20;x2=30;y2=40;w=100;h=100|>'}),{headers:{'content-type':'application/json'}});};
     expect(await segmentPoint({apiKey:'meta'},png,{x:15,y:25,width:100,height:100},fetcher as typeof fetch,signal())).toEqual({x1:10,y1:20,x2:30,y2:40});
     expect(url).toBe('https://api.meta.ai/v1/responses');
-    expect(body).toMatchObject({model:SAM_MODEL,input:[{role:'user',content:[{type:'input_text',text:'<0f>1<|point;x=15;y=25;w=100;h=100|>'},{type:'input_image',image_url:png}]}]});
+    expect(body).toMatchObject({model:SAM_MODEL,input:[{role:'user',content:[{type:'input_text'},{type:'input_image',image_url:png}]}]});
     await expect(segmentPoint({apiKey:'m'},'https://example.com/a.png',{x:1,y:1,width:9,height:9},fetcher as typeof fetch,signal())).rejects.toMatchObject({code:'SEGMENT_INVALID'});
     await expect(segmentPoint({apiKey:'m'},png,{x:1,y:1,width:9,height:9},(async()=>new Response('{}',{status:401}))as typeof fetch,signal())).rejects.toMatchObject({code:'provider_credentials_invalid'});
     await expect(segmentPoint({apiKey:'m'},png,{x:1,y:1,width:9,height:9},(async()=>new Response('{}',{status:400}))as typeof fetch,signal())).rejects.toMatchObject({code:'SEGMENT_FAILED'});
     expect(await segmentPoint({apiKey:'m'},png,{x:1,y:1,width:9,height:9},(async()=>new Response(JSON.stringify({output_text:''})))as typeof fetch,signal())).toBeNull();
+  });
+
+  it('outlines the whole control around a clicked label, not just the word, unless the control is most of the screen',async()=>{
+    const lanes:Record<string,string>={'<0f>1<|point;x=50;y=52;w=1000;h=800|>':'<0f>0<|box;x1=40;y1=48;x2=70;y2=56;w=1000;h=800|>',button:'<0f>0<|box;x1=10;y1=40;x2=160;y2=66;w=1000;h=800|>,1<|box;x1=300;y1=40;x2=400;y2=66;w=1000;h=800|>'};
+    const prompts:string[]=[];
+    const fetcher=async(_url:string|URL|Request,init?:RequestInit)=>{const text=(JSON.parse(String(init?.body)).input[0].content[0].text as string);prompts.push(text);return new Response(JSON.stringify({output_text:lanes[text]??''}));};
+    expect(await segmentPoint({apiKey:'m'},png,{x:50,y:52,width:1000,height:800},fetcher as typeof fetch,signal())).toEqual({x1:10,y1:40,x2:160,y2:66});
+    expect(prompts.sort()).toEqual(['<0f>1<|point;x=50;y=52;w=1000;h=800|>','button']);
+    // No control around the click: the point's own outline.
+    expect(await segmentPoint({apiKey:'m'},png,{x:500,y:500,width:1000,height:800},(async()=>new Response(JSON.stringify({output_text:'<0f>0<|box;x1=490;y1=490;x2=510;y2=510;w=1000;h=800|>'})))as typeof fetch,signal())).toEqual({x1:490,y1:490,x2:510,y2:510});
+    // A "button" that is most of the screen is ignored.
+    const huge=async(_url:string|URL|Request,init?:RequestInit)=>new Response(JSON.stringify({output_text:JSON.parse(String(init?.body)).input[0].content[0].text==='button'?'<0f>0<|box;x1=0;y1=0;x2=999;y2=799;w=1000;h=800|>':'<0f>0<|box;x1=40;y1=48;x2=70;y2=56;w=1000;h=800|>'}));
+    expect(await segmentPoint({apiKey:'m'},png,{x:50,y:52,width:1000,height:800},huge as typeof fetch,signal())).toEqual({x1:40,y1:48,x2:70,y2:56});
+    // If only the concept lookup fails, the point still answers.
+    const flaky=async(_url:string|URL|Request,init?:RequestInit)=>JSON.parse(String(init?.body)).input[0].content[0].text==='button'?new Response('{}',{status:500}):new Response(JSON.stringify({output_text:'<0f>0<|box;x1=40;y1=48;x2=70;y2=56;w=1000;h=800|>'}));
+    expect(await segmentPoint({apiKey:'m'},png,{x:50,y:52,width:1000,height:800},flaky as typeof fetch,signal())).toEqual({x1:40,y1:48,x2:70,y2:56});
   });
 
   it('uses a ready Meta connection, preferring the selected one',()=>{
