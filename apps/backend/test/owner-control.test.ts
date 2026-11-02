@@ -452,6 +452,10 @@ test('the browser companion is served with a strict policy and nothing outside i
   await writeFile(path.join(folder, 'index.html'), '<!doctype html><title>MultAI</title><script type="module" src="/app/assets/app-abc.js"></script>');
   await writeFile(path.join(folder, 'assets', 'app-abc.js'), 'console.log(1)');
   await writeFile(path.join(folder, 'manifest.webmanifest'), '{}');
+  await mkdir(path.join(folder,'downloads'));
+  await writeFile(path.join(folder,'downloads','latest.json'),JSON.stringify({file:'multai-companion-0.1.2.apk'}));
+  await writeFile(path.join(folder,'downloads','multai-companion-0.1.2.apk'),Buffer.from('PK synthetic APK transport fixture'));
+  await writeFile(path.join(folder,'downloads','multai-companion-0.1.2.apk.sha256'),'synthetic checksum');
   const ctx = await createTestContext({config: {...testConfig, companionDirectory: folder, androidCertificates: [Array.from({length: 32}, () => 'AB').join(':')]}}); t.after(() => ctx.close());
   const index = await ctx.app.inject({method: 'GET', url: '/app/'});
   assert.equal(index.statusCode, 200);
@@ -462,6 +466,18 @@ test('the browser companion is served with a strict policy and nothing outside i
   assert.equal(deep.statusCode, 200, 'app routes load the app');
   const asset = await ctx.app.inject({method: 'GET', url: '/app/assets/app-abc.js'});
   assert.equal(asset.headers['cache-control'], 'public, max-age=31536000, immutable');
+  const download=await ctx.app.inject({method:'GET',url:'/app/android'});
+  assert.equal(download.statusCode,302);
+  assert.equal(download.headers.location,'/app/downloads/multai-companion-0.1.2.apk');
+  assert.equal(download.headers['cache-control'],'no-store');
+  const apk=await ctx.app.inject({method:'GET',url:download.headers.location});
+  assert.equal(apk.headers['content-type'],'application/vnd.android.package-archive');
+  assert.equal(apk.headers['content-disposition'],'attachment');
+  assert.equal(apk.body,'PK synthetic APK transport fixture');
+  assert.equal((await ctx.app.inject({method:'GET',url:'/app/downloads/multai-companion-0.1.2.apk.sha256'})).body,'synthetic checksum');
+  await writeFile(path.join(folder,'downloads','latest.json'),JSON.stringify({file:'../../private.apk'}));
+  const invalid=await createTestContext({config:{...testConfig,companionDirectory:folder}});t.after(()=>invalid.close());
+  assert.equal((await invalid.app.inject({method:'GET',url:'/app/android'})).statusCode,404,'malformed release metadata cannot select arbitrary files');
   for (const url of ['/app/../src/app.ts', '/app/%2e%2e/package.json', '/app/assets/missing.js', '/app/.env']) {
     const reply = await ctx.app.inject({method: 'GET', url});
     assert.ok(reply.statusCode === 404 || (reply.statusCode === 200 && reply.body.includes('<title>MultAI')), `${url} ${reply.statusCode}`);

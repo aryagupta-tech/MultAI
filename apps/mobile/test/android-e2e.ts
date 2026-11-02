@@ -7,11 +7,13 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {mkdirSync, writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {_android as android, type AndroidDevice, type Page} from 'playwright';
 import {PORT, call, desktop, hostSession, repo, seedUser, startService, stopService, wait} from '../../web/test/harness.ts';
 
 const [v1, v2] = process.argv.slice(2);
+const firstVersion = Number(process.env.MULTAI_E2E_FIRST_VERSION ?? 1), secondVersion = Number(process.env.MULTAI_E2E_SECOND_VERSION ?? 2);
 if (!v1 || !v2) throw new Error('Pass the version 1 and version 2 test APKs.');
 const sdk = process.env.ANDROID_HOME!;
 const adb = (...args: string[]) => execFileSync(path.join(sdk, 'platform-tools/adb'), args, {encoding: 'utf8'}).trim();
@@ -21,11 +23,12 @@ mkdirSync(shots, {recursive: true});
 const results: {name: string; ok: boolean; detail?: string}[] = [];
 async function step(name: string, work: () => Promise<void>) {
   try {await work(); results.push({name, ok: true}); process.stdout.write(`✔ ${name}\n`);}
-  catch (error) {results.push({name, ok: false, detail: String(error)}); process.stdout.write(`✖ ${name}\n  ${String(error).split('\n').slice(0, 6).join('\n  ')}\n`);}
+  catch (error) {results.push({name, ok: false, detail: String(error)}); process.stdout.write(`✖ ${name}\n  ${String(error).split('\n').slice(0, 6).join('\n  ')}\n`); throw error;}
 }
 const screencap = (name: string) => writeFileSync(path.join(shots, `${name}.png`), execFileSync(path.join(sdk, 'platform-tools/adb'), ['exec-out', 'screencap', '-p']));
 
 let device: AndroidDevice | undefined;
+let stopDesktop: (() => Promise<void> | void) | undefined;
 /** Launches the app and attaches to its WebView through Playwright's Android driver (test builds only). */
 async function attach(): Promise<Page> {
   device ??= (await android.devices())[0];
@@ -44,13 +47,14 @@ try {
   adb('reverse', `tcp:${PORT}`, `tcp:${PORT}`);
   const host = await seedUser('Android e2e host');
   const {remote, approvals, decided} = desktop(host);
+  stopDesktop = () => remote.stop();
   await remote.start();
   const sessionId = await hostSession(host, 'Checkout fix (Android)');
   try {adb('uninstall', APP);} catch {/* not installed */}
 
   await step('install the version 1 test APK', async () => {
     adb('install', v1);
-    assert.match(adb('shell', 'dumpsys', 'package', APP), /versionCode=1 /u);
+    assert.match(adb('shell', 'dumpsys', 'package', APP), new RegExp(`versionCode=${firstVersion} `, 'u'));
   });
 
   let page = await attach();
@@ -59,6 +63,34 @@ try {
     assert.match(await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content') ?? '', /connect-src http:\/\/localhost:4319;/u);
     assert.match(await page.textContent('body') ?? '', /Android app/u);
     screencap('android-home');
+  });
+
+  await step('an HTTPS invitation opens inside the app and survives Android process death', async () => {
+    // Same production URL shape; the test APK is restricted to its local test service.
+    const link = `http://localhost:${PORT}/app/#join=${'A'.repeat(43)}`;
+    adb('shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW', '-d', link, '-n', `${APP}/si.multai.companion.MainActivity`);
+    await page.getByRole('heading', {name: 'Join a session'}).waitFor({timeout: 15_000});
+    await page.getByRole('button', {name: 'Sign in with Google'}).waitFor();
+    assert.match(await page.textContent('body') ?? '', /no app download is needed/u);
+    const stored = await page.evaluate(() => JSON.stringify({...localStorage}));
+    assert.doesNotMatch(stored, /companion\.joinIntent|account\.pendingFlow/u, 'sign-in return state is not plaintext WebView storage');
+    const flowKey = `flow.${createHash('sha256').update(`companion.joinIntent.v1:http://localhost:${PORT}`).digest('hex').slice(0, 58)}`;
+    await page.waitForFunction(async key => {
+      const native = (window as unknown as {Capacitor: {Plugins: {SecureStore: {get(options: {key: string}): Promise<{value: string | null}>}}}}).Capacitor.Plugins.SecureStore;
+      return (await native.get({key})).value !== null;
+    }, flowKey, {timeout: 10_000});
+    adb('shell', 'am', 'force-stop', APP);
+    page = await attach();
+    await page.getByRole('heading', {name: 'Join a session'}).waitFor({timeout: 15_000});
+    await page.getByRole('button', {name: 'Sign in with Google'}).waitFor();
+    assert.equal(await page.getByRole('button', {name: 'Ask to join'}).count(), 0, 'a signed-out visitor is never automatically admitted');
+    screencap('android-invitation');
+    await page.getByRole('button', {name: 'Back', exact: true}).click();
+    await page.getByRole('heading', {name: 'Companion'}).waitFor();
+    await page.waitForFunction(async key => {
+      const native = (window as unknown as {Capacitor: {Plugins: {SecureStore: {get(options: {key: string}): Promise<{value: string | null}>}}}}).Capacitor.Plugins.SecureStore;
+      return (await native.get({key})).value === null;
+    }, flowKey, {timeout: 10_000});
   });
 
   let pairingId = '';
@@ -142,16 +174,16 @@ try {
     await page.getByText('The desktop did it').first().waitFor({timeout: 15_000});
   });
 
-  await step('update in place to version 2 keeps the pairing', async () => {
+  await step('update in place keeps the pairing', async () => {
     adb('install', '-r', v2);
-    assert.match(adb('shell', 'dumpsys', 'package', APP), /versionCode=2 /u);
+    assert.match(adb('shell', 'dumpsys', 'package', APP), new RegExp(`versionCode=${secondVersion} `, 'u'));
     page = await attach();
     await page.getByRole('button', {name: 'Owner control', exact: true}).click({timeout: 15_000});
     await page.getByText('Checkout fix (Android)').waitFor({timeout: 15_000});
     screencap('android-after-update');
   });
 
-  await step('a downgrade over version 2 is refused', async () => {
+  await step('a version downgrade is refused', async () => {
     let refused = false;
     try {adb('install', '-r', v1);} catch (error) {refused = /INSTALL_FAILED_VERSION_DOWNGRADE/u.test(String((error as {stderr?: unknown}).stderr ?? error)); }
     assert.ok(refused, 'downgrade must be refused');
@@ -168,8 +200,8 @@ try {
     adb('uninstall', APP);
     assert.doesNotMatch(adb('shell', 'pm', 'list', 'packages', APP), new RegExp(APP.replaceAll('.', '\\.'), 'u'));
   });
-  await remote.stop();
 } finally {
+  await stopDesktop?.();
   await device?.close().catch(() => undefined);
   try {adb('reverse', '--remove-all');} catch {/* ignore */}
   await stopService();

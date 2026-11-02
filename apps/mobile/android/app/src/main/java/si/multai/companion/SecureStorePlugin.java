@@ -108,7 +108,10 @@ public class SecureStorePlugin extends Plugin {
     public void remove(PluginCall call) {
         String key = name(call);
         if (key == null) return;
-        prefs().edit().remove(key).commit();
+        if (!prefs().edit().remove(key).commit()) {
+            call.reject("Secure storage is unavailable.", "secure_storage_unavailable");
+            return;
+        }
         call.resolve();
     }
 }

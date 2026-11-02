@@ -23,11 +23,13 @@ type Screen =
   | {name: 'join'; token?: string};
 
 /** Screens are kept in history state (never in the URL), so Back and Android's back button work. */
-function useNavigation(initial: Screen) {
+function useNavigation(initial: Screen, onNavigate: (next: Screen) => void) {
   const [screen, setScreen] = useState<Screen>(initial);
+  const changed=useRef(onNavigate);changed.current=onNavigate;
+  const transition=useCallback((next:Screen)=>{changed.current(next);setScreen(next);},[]);
   useEffect(() => {
     history.replaceState({screen: initial}, '');
-    const pop = (event: PopStateEvent) => setScreen((event.state as {screen?: Screen} | null)?.screen ?? {name: 'home'});
+    const pop = (event: PopStateEvent) => transition((event.state as {screen?: Screen} | null)?.screen ?? {name: 'home'});
     window.addEventListener('popstate', pop);
     return () => window.removeEventListener('popstate', pop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -35,10 +37,10 @@ function useNavigation(initial: Screen) {
   const go = useCallback((next: Screen, replace = false) => {
     // A guest review never survives navigation: its credential is memory-only.
     if (replace) history.replaceState({screen: next}, ''); else history.pushState({screen: next.name === 'review' ? {name: 'home'} : next}, '');
-    setScreen(next);
+    transition(next);
     window.scrollTo?.(0, 0);
-  }, []);
-  const back = useCallback(() => {if (history.state && history.length > 1) history.back(); else setScreen({name: 'home'});}, []);
+  }, [transition]);
+  const back = useCallback(() => {if (history.state && history.length > 1) history.back(); else transition({name: 'home'});}, [transition]);
   return {screen, go, back};
 }
 
@@ -54,11 +56,10 @@ export function CompanionApp({platform}: {platform: CompanionPlatform}) {
   const [resume, setResume] = useState(0);
   const online = useOnline();
   const [initial]=useState<Screen>(()=>{const token=links.join??(!links.signin?joinIntent.resume():null);return links.review?{name:'review',token:links.review}:links.pair?{name:'pair',code:links.pair}:token?{name:'join',token}:{name:'home'};});
-  const {screen,go:navigate,back}=useNavigation(initial);
-  const go=useCallback((next:Screen,replace=false)=>{
+  const trackDestination=useCallback((next:Screen)=>{
     if(next.name==='join'&&next.token)joinIntent.remember(next.token);else joinIntent.clear();
-    navigate(next,replace);
-  },[joinIntent,navigate]);
+  },[joinIntent]);
+  const {screen,go,back}=useNavigation(initial,trackDestination);
   const completing=useRef<{fragment:string;promise:Promise<void>}|null>(null);
 
   useEffect(() => account.subscribe(setAccountState), [account]);

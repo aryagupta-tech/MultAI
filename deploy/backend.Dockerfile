@@ -29,6 +29,10 @@ COPY apps/web/index.html apps/web/vite.config.ts apps/web/tsconfig.json apps/web
 COPY apps/web/src apps/web/src
 COPY apps/web/public apps/web/public
 RUN cd apps/web && ../../node_modules/.bin/vite build
+COPY apps/mobile/release/ /tmp/multai-apk/
+COPY apps/mobile/version.properties /tmp/multai-version.properties
+COPY deploy/package-companion-apk.mjs /tmp/package-companion-apk.mjs
+RUN node /tmp/package-companion-apk.mjs /tmp/multai-apk /tmp/multai-version.properties /workspace/apps/web/dist
 
 FROM node:24.22.0-bookworm-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4
 WORKDIR /service

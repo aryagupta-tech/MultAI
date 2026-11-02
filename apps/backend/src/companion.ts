@@ -9,6 +9,7 @@ const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png',
   '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+  '.apk': 'application/vnd.android.package-archive', '.sha256': 'text/plain; charset=utf-8',
 };
 /** The page can talk only to this origin and load only its own files. */
 export const COMPANION_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -48,6 +49,7 @@ export async function registerCompanion(app: FastifyInstance, options: {director
     reply.header('ETag', asset.etag);
     reply.header('Cross-Origin-Opener-Policy', 'same-origin');
     reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    if(asset.type==='application/vnd.android.package-archive')reply.header('Content-Disposition','attachment');
     if (request.headers['if-none-match'] === asset.etag) return reply.code(304).send();
     return reply.type(asset.type).send(asset.body);
   };
@@ -55,6 +57,15 @@ export async function registerCompanion(app: FastifyInstance, options: {director
   app.get('/app', async (_request, reply) => reply.redirect('/app/', 308));
   app.get('/app/*', async (request, reply) => {
     const wanted = (request.params as {'*': string})['*'] ?? '';
+    if(wanted==='android'){
+      try{
+        const manifest=JSON.parse(assets.get('downloads/latest.json')!.body.toString('utf8')) as {file?:unknown};
+        if(typeof manifest.file==='string'&&/^multai-companion-\d+\.\d+\.\d+\.apk$/u.test(manifest.file)&&assets.has(`downloads/${manifest.file}`)){
+          return reply.header('Cache-Control','no-store').redirect(`/app/downloads/${manifest.file}`,302);
+        }
+      }catch{/* No approved Android artifact is installed. */}
+      return unavailable(reply);
+    }
     const asset = assets.get(wanted);
     if (asset) return send(reply, asset, request);
     // Unknown paths without an extension are app routes; unknown files are missing.

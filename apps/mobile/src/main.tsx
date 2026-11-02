@@ -7,11 +7,14 @@ import {App as CapApp} from '@capacitor/app';
 import {Browser} from '@capacitor/browser';
 import {registerPlugin} from '@capacitor/core';
 import {indexedDbKeyStore, safePlainStore, type SecureStore} from '@multai/companion-core';
-import {CompanionApp, parseLinks, type CompanionPlatform, type Links} from '@multai/companion-ui';
+import {CompanionApp, type CompanionPlatform} from '@multai/companion-ui';
+import {nativeLinks} from './links';
+import {nativeFlowStore} from './flow-store';
 import '@multai/companion-ui/styles.css';
 
 declare const __COMPANION_VERSION__: string;
 declare const __SERVICE_ORIGIN__: string;
+declare const __AUTH_SCHEME__: string;
 
 interface NativeSecureStore {
   get(options: {key: string}): Promise<{value: string | null}>;
@@ -30,19 +33,13 @@ function deviceName(): string {
   return model && model !== 'K' ? `${model} (Android app)` : 'Android phone (app)';
 }
 
-/** App links (https://…/app/#pair=…) and the sign-in callback; nothing else is accepted. */
-function linksFrom(url: string | undefined): Links {
-  if (!url) return {};
-  try {
-    const parsed = new URL(url);
-    const service = new URL(__SERVICE_ORIGIN__);
-    if ((parsed.protocol === 'multai-companion:' || parsed.protocol === 'multai-companion-dev:') && parsed.hostname === 'auth' && parsed.pathname === '/callback') return parseLinks(parsed.hash);
-    if (parsed.origin === service.origin && parsed.pathname.startsWith('/app')) return parseLinks(parsed.hash);
-  } catch {/* ignore */}
-  return {};
-}
+const linksFrom = (url: string | undefined) => nativeLinks(url, __SERVICE_ORIGIN__, __AUTH_SCHEME__);
 
 const launch = await CapApp.getLaunchUrl().catch(() => undefined);
+const flowNames = ['account.pendingFlow', `companion.joinIntent.v1:${new URL(__SERVICE_ORIGIN__).origin}`];
+const flows = await nativeFlowStore(secure, flowNames);
+// Drop plaintext leftovers from older APKs; a fresh sign-in is safer than importing an untrusted flow.
+for (const key of flowNames) {try {localStorage.removeItem(key);} catch {/* Storage can be unavailable. */}}
 
 const platform: CompanionPlatform = {
   kind: 'android',
@@ -51,9 +48,9 @@ const platform: CompanionPlatform = {
   account: {
     secure,
     // The PKCE verifier survives Android ending the app while the Custom Tab is open; it is removed on use.
-    flows: safePlainStore(() => localStorage),
+    flows,
     deviceName,
-    openSignIn: async url => {await Browser.open({url, presentationStyle: 'fullscreen'});},
+    openSignIn: async url => {await flows.flush(); await Browser.open({url, presentationStyle: 'fullscreen'});},
   },
   controller: {secure, plain: safePlainStore(() => localStorage), keys: indexedDbKeyStore(), platform: 'android', deviceName},
   initialLinks: () => linksFrom(launch?.url),

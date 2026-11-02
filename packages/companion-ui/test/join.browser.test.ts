@@ -70,4 +70,15 @@ describe.skipIf(!existsSync(chromium.executablePath()))('browser invitations',()
     await page.reload();await page.getByRole('heading',{name:'Companion',exact:true}).waitFor();
     expect(await page.getByRole('heading',{name:'Join a session',exact:true}).count()).toBe(0);expect(joinCount).toBe(0);
   },15000);
+  it('browser Back abandons a pasted invitation before a reload or a new sign-in',async()=>{
+    await page.goto(`${ORIGIN}/app/`);
+    await page.getByLabel('Invitation or review link',{exact:true}).fill(`${ORIGIN}/app/#join=${TOKEN}`);
+    await page.getByRole('button',{name:'Open link',exact:true}).click();
+    await page.getByRole('heading',{name:'Join a session',exact:true}).waitFor();
+    expect(await page.evaluate(()=>sessionStorage.getItem('companion.joinIntent.v1:'+location.origin))).not.toBeNull();
+    await page.goBack();await page.getByRole('heading',{name:'Companion',exact:true}).waitFor();
+    expect(await page.evaluate(()=>sessionStorage.getItem('companion.joinIntent.v1:'+location.origin))).toBeNull();
+    await page.reload();await page.getByRole('heading',{name:'Companion',exact:true}).waitFor();
+    expect(joinCount).toBe(0);
+  },15000);
 });

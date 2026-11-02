@@ -1,12 +1,13 @@
 {
   "name": "@multai/mobile",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "license": "MIT",
   "type": "module",
   "description": "MultAI Companion for Android (Capacitor shell around the shared companion screens)",
   "scripts": {
     "build:web": "vite build",
+    "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "android:release": "node scripts/build-android.mjs --release",
     "android:test": "node scripts/build-android.mjs --test"

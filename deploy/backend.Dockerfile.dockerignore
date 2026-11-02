@@ -15,6 +15,12 @@
 !deploy/backend.Dockerfile
 !deploy/entrypoint.mjs
 !deploy/stamp-build.mjs
+!deploy/package-companion-apk.mjs
+!apps/mobile/
+!apps/mobile/version.properties
+!apps/mobile/release/
+!apps/mobile/release/*.apk
+!apps/mobile/release/*.apk.json
 !packages/
 !packages/companion-core/
 !packages/companion-core/package.json

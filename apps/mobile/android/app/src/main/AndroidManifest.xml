@@ -35,12 +35,13 @@
                 <data android:scheme="${authScheme}" android:host="auth" android:path="/callback" />
             </intent-filter>
 
-            <!-- Pairing and review links open the app when it is installed (verified against assetlinks.json). -->
+            <!-- Invitations, pairing and review links open the installed app (verified against assetlinks.json). -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="${linkHost}" android:pathPrefix="/app" />
+                <data android:scheme="https" android:host="${linkHost}" android:path="/app" />
+                <data android:path="/app/" />
             </intent-filter>
         </activity>
 

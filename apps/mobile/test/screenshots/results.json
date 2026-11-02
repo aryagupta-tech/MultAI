@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-02T13:19:51.129Z",
+  "at": "2026-11-02T15:14:05.111Z",
   "device": "Android emulator (not a physical phone)",
   "results": [
     {
@@ -8,6 +8,10 @@
     },
     {
       "name": "the app opens on the home screen inside the WebView, with its CSP",
+      "ok": true
+    },
+    {
+      "name": "an HTTPS invitation opens inside the app and survives Android process death",
       "ok": true
     },
     {
@@ -31,11 +35,11 @@
       "ok": true
     },
     {
-      "name": "update in place to version 2 keeps the pairing",
+      "name": "update in place keeps the pairing",
       "ok": true
     },
     {
-      "name": "a downgrade over version 2 is refused",
+      "name": "a version downgrade is refused",
       "ok": true
     },
     {

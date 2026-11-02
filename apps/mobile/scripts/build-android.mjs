@@ -18,8 +18,11 @@ if (!process.env.JAVA_HOME) throw new Error('Set JAVA_HOME to a JDK 21.');
 const origin = release ? 'https://api.multai.si' : (process.env.MULTAI_SERVICE_ORIGIN ?? 'http://localhost:4319');
 const run = (command, args, options = {}) => execFileSync(command, args, {cwd: root, stdio: 'inherit', ...options, env: {...process.env, ...options.env}});
 const git = (...args) => execFileSync('git', args, {cwd: root, encoding: 'utf8'}).trim();
+const sourceStatus = () => git('status', '--porcelain', '--', ':(top)*', ':(top,exclude)apps/mobile/release', ':(top,exclude)apps/mobile/build-test', ':(top,exclude)apps/mobile/test/screenshots');
+const sourceCommit = git('rev-parse', 'HEAD');
+if (release && sourceStatus()) throw new Error('Release builds require committed source. Commit the changes first; test builds may use a dirty checkout.');
 
-run('npx', ['vite', 'build'], {env: {MULTAI_SERVICE_ORIGIN: origin}});
+run('npx', ['vite', 'build'], {env: {MULTAI_SERVICE_ORIGIN: origin, MULTAI_ANDROID_TEST: test ? '1' : '0'}});
 run('npx', ['cap', 'sync', 'android']);
 const config = path.join(root, 'android/app/src/main/assets/capacitor.config.json');
 // Only test builds can be inspected with Chrome DevTools.
@@ -40,12 +43,19 @@ copyFileSync(built, target);
 const apksigner = path.join(sdk, 'build-tools', '36.0.0', 'apksigner');
 const certs = execFileSync(apksigner, ['verify', '--verbose', '--print-certs', target], {encoding: 'utf8'});
 if (!/^Verifies$/mu.test(certs) || !/Verified using v[23] scheme \(APK Signature Scheme v[23]\): true/u.test(certs)) throw new Error('APK signature did not verify.');
-const certificate = /Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})/u.exec(certs)?.[1] ?? 'unknown';
+const certificate = /Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})/u.exec(certs)?.[1];
+if (!certificate) throw new Error('The APK signing certificate is missing.');
+const badging = execFileSync(path.join(sdk, 'build-tools', '36.0.0', 'aapt2'), ['dump', 'badging', target], {encoding: 'utf8'});
+const applicationId = release ? 'si.multai.companion' : 'si.multai.companion.test';
+const packaged = /^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'/mu.exec(badging);
+if (!packaged || packaged[1] !== applicationId || packaged[2] !== versionCode || packaged[3] !== `${versionName}${test ? '-test' : ''}`) throw new Error('The APK package/version does not match this build.');
+if (release && /^application-debuggable/mu.test(badging)) throw new Error('A release APK must not be debuggable.');
+if (git('rev-parse', 'HEAD') !== sourceCommit || (release && sourceStatus())) throw new Error('Source changed during the build. Retry from the intended commit.');
 const sha256 = createHash('sha256').update(readFileSync(target)).digest('hex');
 const manifest = {
-  product: 'MultAI Companion', applicationId: release ? 'si.multai.companion' : 'si.multai.companion.test', versionName, versionCode: Number(versionCode),
+  product: 'MultAI Companion', applicationId, versionName, versionCode: Number(versionCode),
   service: origin, file: name, sha256, signingCertificateSha256: certificate.toUpperCase().match(/../gu).join(':'),
-  sourceCommit: git('rev-parse', 'HEAD'), sourceDirty: git('status', '--porcelain', '--', '.', ':!release', ':!build-test', '../../packages').length > 0, builtAt: new Date().toISOString(),
+  sourceCommit, sourceDirty: sourceStatus().length > 0, builtAt: new Date().toISOString(),
 };
 writeFileSync(path.join(outDir, `${name}.json`), `${JSON.stringify(manifest, null, 2)}\n`);
 writeFileSync(path.join(outDir, `${name}.sha256`), `${sha256}  ${name}\n`);
