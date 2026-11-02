@@ -11,6 +11,21 @@ import type {TerminalHost} from './terminal';
 import {SkillError} from './skills';
 import {McpError,type McpServer} from './mcp';
 import type {AddConnectionInput} from '../../src/bridge/inference';
+import {MAX_PCM_BYTES,VoiceError,chooseVoiceConnection,transcribeMeta,transcribeOpenAI} from './voice';
+import {publicProviderFetch} from './network';
+
+/** Speech to text with the host's own Meta or OpenAI connection. */
+async function transcribe(manager:ConnectionManager,coordinator:HostCoordinator,audio:string):Promise<{text:string;provider:'meta'|'openai'}>{
+  const connection=chooseVoiceConnection(await manager.list(),(await coordinator.selection())?.connectionId??null);
+  if(!connection)throw new VoiceError('VOICE_UNAVAILABLE','Voice needs a Meta (Muse Voice Transcribe) or OpenAI connection. Add one in Settings → Models.');
+  const credentials=await manager.resolve(connection.id);
+  const pcm=Buffer.from(audio,'base64');
+  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),60_000);timer.unref();
+  try{
+    const text=connection.provider==='meta'?await transcribeMeta(credentials,pcm,controller.signal):await transcribeOpenAI(credentials,pcm,publicProviderFetch,controller.signal);
+    return {text,provider:connection.provider==='meta'?'meta':'openai'};
+  }finally{clearTimeout(timer);}
+}
 
 const schemas={
   list:z.tuple([]),add:z.tuple([z.object({provider:z.enum(['meta','openai','anthropic','kimi','compatible']),apiKey:z.string().min(1).max(8192),name:z.string().max(120).optional(),baseUrl:z.string().max(2048).optional()}).strict()]),
@@ -23,6 +38,7 @@ const schemas={
   terminalRun:z.tuple([z.uuid(),z.string().min(1).max(8000)]),terminalStop:z.tuple([z.uuid()]),run:z.tuple([z.unknown()]),stop:z.tuple([z.uuid()]),
   listFiles:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),skills:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),
   saveSkill:z.tuple([z.object({name:z.string().min(1).max(48),description:z.string().max(300),body:z.string().min(1).max(32_000)}).strict()]),deleteSkill:z.tuple([z.string().min(1).max(48)]),
+  transcribe:z.tuple([z.string().min(1).max(Math.ceil(MAX_PCM_BYTES/3)*4).regex(/^[A-Za-z0-9+/]+={0,2}$/u)]),
   compact:z.tuple([z.unknown()]),contextUsage:z.tuple([z.uuid()]),undoPreview:z.tuple([z.uuid()]),undo:z.tuple([z.uuid()]),
   editors:z.tuple([]),mcpServers:z.tuple([]),mcpDelete:z.tuple([z.uuid()]),mcpTest:z.tuple([z.uuid()]),
   mcpSave:z.tuple([z.object({id:z.string().max(64),name:z.string().max(64),command:z.string().max(1024),args:z.array(z.string().max(4096)).max(64),env:z.record(z.string().max(128),z.string().max(8192)),enabled:z.boolean()}).strict()]),lockedActions:z.tuple([z.uuid()]),resolveLocked:z.tuple([z.uuid(),z.uuid(),z.enum(['happened','did_not_happen'])]),openIn:z.tuple([z.uuid(),z.enum(['vscode','cursor','zed','finder'])]),
@@ -73,6 +89,7 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'deleteSkill':value=await coordinator.deleteSkill(values[0] as string);break;
       case 'compact':value=await coordinator.compact(values[0]);break;
       case 'contextUsage':value=await coordinator.contextUsage(values[0] as string);break;
+      case 'transcribe':value=await transcribe(manager,coordinator,values[0] as string);break;
       case 'undoPreview':value=await coordinator.undoPreview(values[0] as string);break;
       case 'undo':value=await coordinator.undo(values[0] as string);break;
       case 'editors':value=await host.editors();break;
@@ -86,7 +103,7 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
     }
     return {ok:true,value};
   }catch(error){
-    if(error instanceof ConnectionError||error instanceof ProviderError||error instanceof RuntimeError||error instanceof ProjectError||error instanceof SkillError||error instanceof McpError)return {ok:false,error:{code:error.code,message:error.message}};
+    if(error instanceof ConnectionError||error instanceof ProviderError||error instanceof RuntimeError||error instanceof ProjectError||error instanceof SkillError||error instanceof McpError||error instanceof VoiceError)return {ok:false,error:{code:error.code,message:error.message}};
     return {ok:false,error:toError(error)};
   }
 }

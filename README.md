@@ -43,6 +43,7 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 - **Context meter and compaction.** A ring shows how full the agent's input was on the last run. `/compact` (or a click on the ring) summarizes the conversation so later runs start from the summary, and it's posted as a brief so teammates see what the agent remembers. Long chats compact automatically before they run out of room.
 - **Run on send.** Your own instructions start the agent right away; teammates' still wait for you. Switch it off in Settings.
 - **Steer while it works.** A message sent while the agent runs reaches it at its next step ("use cents, not floats"), from anyone in the session, without stopping the run.
+- **Voice.** Click the microphone, say the instruction (or “agent 2: use cents”), and click again: the text lands in the composer to review before sending. A Meta connection transcribes with **Muse Voice Transcribe**, an OpenAI key with OpenAI's transcription; the audio goes to that provider only. Esc cancels.
 - **`@codebase`.** Finds the code most related to your request from a local search index of the project, and attaches it. The agent can search the same way with its `codebase_search` tool.
 - **Web search.** For Muse (Meta's built-in `web_search`), GPT (OpenAI or your ChatGPT plan) and Claude models, turn on *Allow web search* in the access menu: the provider runs the searches, the timeline shows each one, and replies cite their sources. Muse runs on Meta's Responses API for this.
 

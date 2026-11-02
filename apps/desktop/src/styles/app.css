@@ -1189,3 +1189,10 @@ body.is-resizing .app { transition: none; }
 .lane-steps { font-family: inherit; }
 .lanes-foot { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; font-size: var(--fs-sm); color: var(--text-2); }
 @media (max-width: 720px) { .lanes { grid-template-columns: 1fr !important; } }
+
+/* ---------------------------------------------------------------- Voice */
+.icon-btn.is-recording { color: var(--danger, #ef4444); }
+.voice-state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.voice-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger, #ef4444); animation: voice-pulse 1.2s ease-in-out infinite; }
+@keyframes voice-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .voice-dot { animation: none; } }

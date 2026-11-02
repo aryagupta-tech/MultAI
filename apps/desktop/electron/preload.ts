@@ -69,6 +69,7 @@ const bridge: DesktopBridge = {
     deleteSkill:(name)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'deleteSkill',[name]),
     compact:(input)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'compact',[input]),
     contextUsage:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'contextUsage',[sessionId]),
+    transcribe:(audio)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'transcribe',[audio]),
     undoPreview:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'undoPreview',[sessionId]),
     undo:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'undo',[sessionId]),
     editors:()=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'editors',[]),

@@ -206,8 +206,13 @@ function registerIpc(): void {
 }
 
 function hardenSession(): void {
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  // Only the microphone, only for the app's own window (voice instructions). Everything else is refused.
+  const ownWindow = (contents: Electron.WebContents | null) => Boolean(contents && mainWindow && !mainWindow.isDestroyed() && contents === mainWindow.webContents);
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const types = (details as { mediaTypes?: string[] }).mediaTypes ?? [];
+    callback(permission === 'media' && ownWindow(contents) && types.length > 0 && types.every((type) => type === 'audio'));
+  });
+  session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) => permission === 'media' && ownWindow(contents) && (details as { mediaType?: string }).mediaType === 'audio');
   session.defaultSession.on('will-download', (event) => event.preventDefault());
 }
 

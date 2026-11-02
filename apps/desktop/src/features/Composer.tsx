@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   ArrowUp, BookMarked, BookOpen, CircleHelp, FileCode2, FileText, FlaskConical, Folder, GitCompare, GitPullRequestArrow, Hammer,
-  ImagePlus, ListChecks, ScanSearch, Lock, MessageCircle, Minimize2, Plus, SearchCheck, Sparkles, SquareTerminal, Undo2, WandSparkles, X, type LucideIcon,
+  ImagePlus, ListChecks, Loader2, Mic, ScanSearch, Lock, MessageCircle, Minimize2, Plus, SearchCheck, Sparkles, Split, SquareTerminal, Square, Undo2, WandSparkles, X, type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { DRAFT_LIMIT, applyFormat, draftMeter, resolveEnter, type FormatKind } from '../model/composer';
@@ -16,6 +16,32 @@ import { isImage, toScreenshot } from './screenshot';
 import { filesFor, loadFiles, loadSkills, runAppCommand, runShortcutCommand, skillsFor, subscribeAssist, useAssist } from '../live/assist';
 import { useWork } from '../live/work';
 import { reportTyping, stopTyping } from '../live/presence';
+import { cancelVoice, toggleVoice, useVoice } from '../live/voice';
+
+/** Record a voice instruction; the host's Meta or OpenAI connection turns it into text in the draft. */
+function VoiceButton({ draftKey, disabled }: { draftKey: string; disabled: boolean }) {
+  const recording = useVoice((s) => s.recording === draftKey);
+  const busy = useVoice((s) => s.busy === draftKey);
+  const startedAt = useVoice((s) => s.startedAt);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!recording) return;
+    const timer = setInterval(() => tick((n) => n + 1), 500);
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') cancelVoice(); };
+    window.addEventListener('keydown', onKey);
+    return () => { clearInterval(timer); window.removeEventListener('keydown', onKey); };
+  }, [recording]);
+  useEffect(() => () => { if (useVoice.getState().recording === draftKey) cancelVoice(); }, [draftKey]);
+  const seconds = Math.floor((Date.now() - startedAt) / 1000);
+  if (busy) return <span className="voice-state" aria-live="polite"><Loader2 size={13} className="spin" aria-hidden /> Transcribing…</span>;
+  return (
+    <>
+      <IconButton size="sm" icon={recording ? Square : Mic} label={recording ? 'Stop and transcribe' : 'Speak an instruction'} tipSide="top" active={recording}
+        className={cx(recording && 'is-recording')} onClick={() => toggleVoice(draftKey)} disabled={disabled} />
+      {recording && <span className="voice-state is-live" aria-live="polite"><span className="voice-dot" aria-hidden />{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`} · Esc to cancel</span>}
+    </>
+  );
+}
 
 /** “Ana is typing…” for teammates typing in this session right now. */
 function TypingIndicator({ d }: { d: SessionDetail }) {
@@ -28,7 +54,7 @@ function TypingIndicator({ d }: { d: SessionDetail }) {
 
 const COMMAND_ICONS: Record<string, LucideIcon> = {
   plan: ListChecks, build: Hammer, review: SearchCheck, test: FlaskConical, explain: BookOpen, init: FileCode2, compact: Minimize2, undo: Undo2,
-  diff: GitCompare, terminal: SquareTerminal, pr: GitPullRequestArrow, brief: Sparkles, skills: WandSparkles, new: Plus, help: CircleHelp,
+  split: Split, diff: GitCompare, terminal: SquareTerminal, pr: GitPullRequestArrow, brief: Sparkles, skills: WandSparkles, new: Plus, help: CircleHelp,
 };
 const MAX_FILE_ITEMS = 60;
 
@@ -317,6 +343,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
         <IconButton size="sm" icon={ImagePlus} label="Attach a screenshot" tipSide="top" onClick={() => picker.current?.click()} disabled={!canSubmit} />
         <input ref={picker} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/heic" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void attach(file); }} />
         {!team && <SavedPrompts text={text} onInsert={insert} />}
+        <VoiceButton draftKey={draftKey} disabled={!canSubmit} />
         {d?.mode === 'plan' && instruction && (
           <span className="mode-hint" title="Plan mode blocks file writes, shell commands and external actions">
             <ListChecks size={12} aria-hidden /> Plan

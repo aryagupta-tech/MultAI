@@ -127,7 +127,7 @@ const [appDir] = await packager({
   arch: process.arch,
   ...(await exists(iconPath) ? { icon: iconPath } : {}),
   protocols: [{ name: identity.linkName, schemes: [identity.scheme] }],
-  extendInfo: { LSApplicationCategoryType: 'public.app-category.developer-tools' },
+  extendInfo: { LSApplicationCategoryType: 'public.app-category.developer-tools', NSMicrophoneUsageDescription: 'MultAI uses the microphone only while you record a voice instruction.' },
 });
 // Keep readable standalone copies beside the application as well as inside app.asar.
 await cp(path.join(stage, 'LICENSE'), path.join(appDir, 'LICENSE.multai.txt'));

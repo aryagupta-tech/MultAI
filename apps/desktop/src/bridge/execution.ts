@@ -53,6 +53,8 @@ export interface HostExecutionApi {
   /** Summarizes the conversation so later runs start from the summary; it's posted as a brief too. */
   compact(input:{sessionId:string;connectionId:string;model:string}):Promise<Result<{sequence:number;model:string}>>;
   contextUsage(sessionId:string):Promise<Result<ContextUsage|null>>;
+  /** Speech to text with the host's Meta (Muse Voice Transcribe) or OpenAI connection. `audio` is base64 24 kHz mono PCM16. */
+  transcribe(audio:string):Promise<Result<{text:string;provider:'meta'|'openai'}>>;
   undoPreview(sessionId:string):Promise<Result<UndoPreview|null>>;
   undo(sessionId:string):Promise<Result<{checkpoint:Checkpoint;files:string[]}>>;
   editors():Promise<Result<Editor[]>>;
