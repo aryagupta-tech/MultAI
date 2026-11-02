@@ -1,7 +1,7 @@
 import {afterEach,expect,test,vi} from 'vitest';
-import {mkdtemp,realpath,writeFile,mkdir,rm,rename,chmod,symlink,truncate,utimes,stat} from 'node:fs/promises';
+import {mkdtemp,realpath,writeFile,mkdir,rm,rename,chmod,symlink,truncate,utimes,stat,lstat,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,dirname} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {checkRequirements,sourceRevision,type VerificationCriterion} from './verification';
@@ -33,7 +33,10 @@ test('source revisions track file bytes, paths, untracked additions and deletion
 test('source fingerprints executable permissions, binary bytes and unusual valid names',async()=>{
   const root=await workspace(),file=join(root,'a space-é-file.bin');await writeFile(file,Buffer.from([0,1,255,13,10]));
   await chmod(file,0o644);const original=await sourceRevision(root);
-  if(process.platform!=='win32'){await chmod(file,0o755);expect(await sourceRevision(root)).not.toBe(original);await chmod(file,0o644);expect(await sourceRevision(root)).toBe(original);}
+  await chmod(file,0o755);
+  if(process.platform==='win32')expect(await sourceRevision(root)).toBe(original); // Windows has no POSIX executable bits.
+  else expect(await sourceRevision(root)).not.toBe(original);
+  await chmod(file,0o644);expect(await sourceRevision(root)).toBe(original);
   await writeFile(file,Buffer.from([0,1,254,13,10]));expect(await sourceRevision(root)).not.toBe(original);
 });
 
@@ -53,9 +56,20 @@ test('protected secrets and dependency folders are excluded even when Git tracks
 
 test('symlink roots, source symlinks and oversized files fail closed',async()=>{
   const root=await workspace(),outside=await workspace();await writeFile(join(outside,'secret'),'not source');
-  await symlink(outside,join(root,'linked-root'),'dir');await expect(sourceRevision(join(root,'linked-root'))).rejects.toMatchObject({code:'VERIFICATION_PATH'});
-  await rm(join(root,'linked-root'));await symlink(join(outside,'secret'),join(root,'linked-file'));
-  await expect(sourceRevision(root)).rejects.toMatchObject({code:'VERIFICATION_PATH'});await rm(join(root,'linked-file'));
+  const link=async(target:string,name:string,type:'dir'|'file')=>{
+    try{await symlink(target,name,type);}
+    catch(error){
+      if(process.platform!=='win32'||!['EPERM','EACCES'].includes(String((error as NodeJS.ErrnoException).code)))throw error;
+      // Windows without Developer Mode cannot create file symlinks. A directory junction still
+      // exercises the same real external-source-link boundary without elevating or skipping it.
+      await symlink(type==='file'?dirname(target):target,name,'junction');
+    }
+    expect((await lstat(name)).isSymbolicLink()).toBe(true);
+  };
+  await link(outside,join(root,'linked-root'),'dir');await expect(sourceRevision(join(root,'linked-root'))).rejects.toMatchObject({code:'VERIFICATION_PATH'});
+  await rm(join(root,'linked-root'),{recursive:true});await link(join(outside,'secret'),join(root,'linked-file'),'file');
+  await expect(sourceRevision(root)).rejects.toMatchObject({code:'VERIFICATION_PATH'});await rm(join(root,'linked-file'),{recursive:true});
+  expect(await readFile(join(outside,'secret'),'utf8')).toBe('not source');
   const large=join(root,'large.bin');await writeFile(large,'');await truncate(large,16*1024*1024+1);await expect(sourceRevision(root)).rejects.toMatchObject({code:'VERIFICATION_LIMIT'});
 });
 

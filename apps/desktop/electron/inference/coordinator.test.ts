@@ -73,7 +73,7 @@ async function fixture() {
   const projects = new ProjectRegistry(() => join(directory, 'projects.json'));
   const host = new HostCoordinator({account, connections, projects, mcp: new McpHost(async () => []), dataDirectory: () => directory, confirm, emit: change => {changes.push(change);}});
   cleanup.push(async () => {await host.invalidate(); await rm(directory, {recursive: true, force: true});});
-  const terminal = async () => {await vi.waitFor(() => expect(changes.at(-1)?.status).toMatch(/^(?:completed|failed|stopped)$/u), {timeout: 5000});};
+  const terminal = async (timeout=5000) => {await vi.waitFor(() => expect(changes.at(-1)?.status).toMatch(/^(?:completed|failed|stopped)$/u), {timeout});};
   const scopeDirectory = async () => join(directory, 'runtime-v1', (await readdir(join(directory, 'runtime-v1')))[0]!);
   const workspace = async () => join(await scopeDirectory(), 'workspaces', input.sessionId);
   return {directory, state, input, runId, credentials, requests, respond, account, connections, changes, confirm, host, terminal, scopeDirectory, workspace, projects};
@@ -474,7 +474,10 @@ describe('parallel agents', () => {
   });
 });
 
-describe('team verification uses actual host checks and a separate read-only reviewer',()=>{
+describe('team verification uses actual host checks and a separate read-only reviewer',{timeout:process.platform==='win32'?30_000:5000},()=>{
+  // Static JavaScript avoids shell expansion; the quoted absolute executable also works in cmd.exe
+  // when Node is installed under a path such as C:\\Program Files\\nodejs.
+  const nodeCheck=(script:string)=>`"${process.execPath}" -e "${script}"`;
   const requirement=(command:string|null)=>({id:randomUUID(),text:'Never create a duplicate order',checkCommand:command,version:1,state:'approved'});
   function acceptance(x:Awaited<ReturnType<typeof fixture>>,criteria:ReturnType<typeof requirement>[]){
     x.account.request.mockImplementation(async(method,route,body)=>{
@@ -489,7 +492,7 @@ describe('team verification uses actual host checks and a separate read-only rev
   }
 
   test('publishes a real nonzero shell outcome and does not let reviewer prose manufacture a pass',async()=>{
-    const x=await fixture(),agreed=requirement("printf 'duplicate order'; exit 7");acceptance(x,[agreed]);
+    const x=await fixture(),agreed=requirement(nodeCheck("process.stdout.write('duplicate order');process.exitCode=7"));acceptance(x,[agreed]);
     runtime.run.mockImplementation(async(options:RunAgentOptions)=>{
       await options.beforeRequest?.(options.signal);
       expect(options.messages).toHaveLength(1);const context=String(options.messages[0]!.content);
@@ -499,7 +502,7 @@ describe('team verification uses actual host checks and a separate read-only rev
       await expect(Promise.resolve().then(()=>options.executeTool!({id:'malicious-command',name:'run_command',arguments:{command:'true'}},options.signal))).rejects.toMatchObject({code:'VERIFIER_READ_ONLY'});
       return {text:'Synthetic reviewer incorrectly says passed',iterations:1};
     });
-    await x.host.run({...x.input,verification:true});await x.terminal();
+    await x.host.run({...x.input,verification:true});await x.terminal(process.platform==='win32'?20_000:5000);
     expect(x.changes.at(-1)?.status).toBe('completed');expect(x.confirm).toHaveBeenCalledTimes(1);expect(x.confirm.mock.calls[0]![0].operation).toMatchObject({commandText:agreed.checkCommand});
     const evidence=x.requests.filter(item=>item.route.endsWith('/acceptance/evidence'));
     expect(evidence).toHaveLength(1);expect(evidence[0]!.body).toMatchObject({criterionId:agreed.id,criterionVersion:1,kind:'command',command:agreed.checkCommand,exitCode:7,output:'duplicate order'});
@@ -509,30 +512,30 @@ describe('team verification uses actual host checks and a separate read-only rev
   });
 
   test('rejecting the exact check produces no evidence even if the reviewer declares success',async()=>{
-    const x=await fixture();acceptance(x,[requirement("printf 'must not execute' > forbidden.txt")]);x.confirm.mockResolvedValue(false);
-    runtime.run.mockResolvedValue({text:'All passed',iterations:1});await x.host.run({...x.input,verification:true});await x.terminal();
+    const x=await fixture();acceptance(x,[requirement(nodeCheck("require('node:fs').writeFileSync('forbidden.txt','must not execute')"))]);x.confirm.mockResolvedValue(false);
+    runtime.run.mockResolvedValue({text:'All passed',iterations:1});await x.host.run({...x.input,verification:true});await x.terminal(process.platform==='win32'?20_000:5000);
     expect(x.changes.at(-1)?.status).toBe('completed');expect(x.requests.filter(item=>item.route.endsWith('/acceptance/evidence'))).toHaveLength(0);
     await expect(readFile(join(await x.workspace(),'forbidden.txt'))).rejects.toMatchObject({code:'ENOENT'});
     expect(x.requests.some(item=>item.body?.decision==='consume')).toBe(false);
   });
 
   test('a real check that modifies source cannot publish a successful verdict for its old source',async()=>{
-    const x=await fixture();acceptance(x,[requirement("printf 'changed' > cart.ts")]);await x.host.prepareWorkspace(x.input.sessionId);await writeFile(join(await x.workspace(),'cart.ts'),'before');
-    await x.host.run({...x.input,verification:true});await x.terminal();
+    const x=await fixture();acceptance(x,[requirement(nodeCheck("require('node:fs').writeFileSync('cart.ts','changed')"))]);await x.host.prepareWorkspace(x.input.sessionId);await writeFile(join(await x.workspace(),'cart.ts'),'before');
+    await x.host.run({...x.input,verification:true});await x.terminal(process.platform==='win32'?20_000:5000);
     expect(await readFile(join(await x.workspace(),'cart.ts'),'utf8')).toBe('changed');expect(x.requests.filter(item=>item.route.endsWith('/acceptance/evidence'))).toHaveLength(0);
     expect(String((runtime.run.mock.calls[0]![0] as RunAgentOptions).messages[0]!.content)).toContain('source changed during the check');
   });
 
   test('Stop during independent review prevents late proof publication',async()=>{
-    const x=await fixture();acceptance(x,[requirement("printf 'checked'")]);const entered=deferred<void>(),release=deferred<void>();
+    const x=await fixture();acceptance(x,[requirement(nodeCheck("process.stdout.write('checked')"))]);const entered=deferred<void>(),release=deferred<void>();
     runtime.run.mockImplementation(async()=>{entered.resolve();await release.promise;return {text:'Late review',iterations:1};});
     await x.host.run({...x.input,verification:true});await entered.promise;
-    const stopping=x.host.stop(x.input.sessionId);release.resolve();await stopping;await x.terminal();
+    const stopping=x.host.stop(x.input.sessionId);release.resolve();await stopping;await x.terminal(process.platform==='win32'?20_000:5000);
     expect(x.requests.filter(item=>item.route.endsWith('/acceptance/evidence'))).toHaveLength(0);expect(x.changes.at(-1)?.status).toBe('stopped');
   });
 
   test('explicit verification refuses pending team directions before posting or executing',async()=>{
-    const x=await fixture();acceptance(x,[requirement('true')]);
+    const x=await fixture();acceptance(x,[requirement(nodeCheck('process.exitCode=0'))]);
     const base=x.account.request.getMockImplementation()!;
     x.account.request.mockImplementation(async(method,route,body)=>{
       if(route.endsWith('/conflict-context')){await x.respond(method,route,body);return {fingerprint:'a'.repeat(64),requiresReview:false,pending:[{id:randomUUID(),authorId:x.state.userId,authorName:'Host',text:'Still building',revision:1}]};}
@@ -550,14 +553,14 @@ describe('team verification uses actual host checks and a separate read-only rev
   });
   test('a requirement revised, withdrawn or replaced after claim cannot execute an outdated command',async()=>{
     for(const replacement of [{version:2},{state:'withdrawn'},{checkCommand:'replacement command'}]){
-      const x=await fixture(),original=requirement("printf 'obsolete' > forbidden.txt");acceptance(x,[original]);
+      const x=await fixture(),original=requirement(nodeCheck("require('node:fs').writeFileSync('forbidden.txt','obsolete')"));acceptance(x,[original]);
       const base=x.account.request.getMockImplementation()!;let reads=0;
       x.account.request.mockImplementation(async(method,route,body)=>{
         const response=await base(method,route,body);
         if(method==='GET'&&route.endsWith('/acceptance')&&++reads>1)return {revision:null,criteria:[{...original,...replacement}]};
         return response;
       });
-      await x.host.run({...x.input,verification:true});await x.terminal();
+      await x.host.run({...x.input,verification:true});await x.terminal(process.platform==='win32'?20_000:5000);
       expect(x.changes.at(-1)).toMatchObject({status:'failed',error:{code:'VERIFICATION_CHANGED'}});
       expect(x.confirm).not.toHaveBeenCalled();expect(x.requests.some(item=>item.route.endsWith('/actions'))).toBe(false);expect(x.requests.some(item=>item.route.endsWith('/acceptance/evidence'))).toBe(false);
       await expect(readFile(join(await x.workspace(),'forbidden.txt'))).rejects.toMatchObject({code:'ENOENT'});
@@ -567,7 +570,7 @@ describe('team verification uses actual host checks and a separate read-only rev
 
   test('unavailable verification model or credentials leave no orphan pending instruction',async()=>{
     for(const unavailable of ['model','credentials'] as const){
-      const x=await fixture();acceptance(x,[requirement('true')]);
+      const x=await fixture();acceptance(x,[requirement(nodeCheck('process.exitCode=0'))]);
       if(unavailable==='model')x.connections.models.mockResolvedValue([]);else x.connections.resolve.mockRejectedValue(new Error('Synthetic credential unavailable'));
       await expect(x.host.verify({sessionId:x.input.sessionId,connectionId:x.input.connectionId,model:x.input.model})).rejects.toBeDefined();
       expect(x.requests.filter(item=>item.method!=='GET')).toHaveLength(0);expect(x.confirm).not.toHaveBeenCalled();
@@ -576,9 +579,9 @@ describe('team verification uses actual host checks and a separate read-only rev
   });
 
   test('provider reviewer outage preserves actual check evidence and makes no AI review claim',async()=>{
-    const x=await fixture(),agreed=requirement("printf 'real fixture result'; exit 3");acceptance(x,[agreed]);
+    const x=await fixture(),agreed=requirement(nodeCheck("process.stdout.write('real fixture result');process.exitCode=3"));acceptance(x,[agreed]);
     runtime.run.mockRejectedValue(new Error('Synthetic provider timeout containing private error details'));
-    await x.host.run({...x.input,verification:true});await x.terminal();
+    await x.host.run({...x.input,verification:true});await x.terminal(process.platform==='win32'?20_000:5000);
     expect(x.changes.at(-1)?.status).toBe('completed');
     const evidence=x.requests.filter(item=>item.route.endsWith('/acceptance/evidence'));
     expect(evidence).toHaveLength(1);expect(evidence[0]!.body).toMatchObject({criterionId:agreed.id,kind:'command',exitCode:3,output:'real fixture result'});
