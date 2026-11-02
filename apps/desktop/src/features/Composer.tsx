@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   ArrowUp, BookMarked, BookOpen, CircleHelp, FileCode2, FileText, FlaskConical, Folder, GitCompare, GitPullRequestArrow, Hammer,
-  Crosshair, ImagePlus, ListChecks, Loader2, Mic, ScanSearch, Lock, MessageCircle, Minimize2, Plus, SearchCheck, Sparkles, Split, SquareTerminal, Square, Undo2, WandSparkles, X, type LucideIcon,
+  Crosshair, ImagePlus, ListChecks, Loader2, Mic, ScanSearch, Lock, MessageCircle, Minimize2, Paperclip, Plus, SearchCheck, Sparkles, Split, SquareTerminal, Square, Undo2, WandSparkles, X, type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { DRAFT_LIMIT, applyFormat, draftMeter, resolveEnter, type FormatKind } from '../model/composer';
@@ -18,6 +18,8 @@ import { useWork } from '../live/work';
 import { reportTyping, stopTyping } from '../live/presence';
 import { cancelVoice, toggleVoice, useVoice } from '../live/voice';
 import { MarkProblem } from './MarkProblem';
+import { AttachmentQueue, composeAttachmentText, MAX_ATTACHMENTS, readTextAttachments, TEXT_FILE_ACCEPT } from './attachments';
+import './composer.css';
 
 /** Record a voice instruction; the host's Meta or OpenAI connection turns it into text in the draft. */
 function VoiceButton({ draftKey, disabled }: { draftKey: string; disabled: boolean }) {
@@ -86,13 +88,54 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
   const live = useApp((s) => s.dataMode === 'live');
   const ta = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const filePicker = useRef<HTMLInputElement>(null);
+  const imageQueue = useRef(new AttachmentQueue());
+  const fileQueue = useRef(new AttachmentQueue());
+  const [preparingImage, setPreparingImage] = useState(false);
+  const [preparingFiles, setPreparingFiles] = useState(false);
   const [marking, setMarking] = useState(false);
   const image = draft?.image;
-  const attach = async (file: Blob) => {
-    try { app.setDraft(draftKey, { image: await toScreenshot(file) }); }
-    catch (error) { app.toast(error instanceof Error ? error.message : 'That image couldn’t be attached.', 'error'); }
+  const attachedFiles = draft?.files ?? [];
+  const activeId = useApp((s) => s.activeId);
+  const targetProject = useApp((s) => s.draftTarget.projectId);
+  useLayoutEffect(() => {
+    setPreparingImage(false);
+    setPreparingFiles(false);
+    setMarking(false);
+    return () => { imageQueue.current.cancel(); fileQueue.current.cancel(); };
+  }, [account?.id, activeId, draftKey, targetProject]);
+  const currentScope = () => {
+    const current = useApp.getState();
+    return current.account?.id === account?.id && current.activeId === activeId && current.draftTarget.projectId === targetProject;
   };
-  const fromTransfer = (items: DataTransferItemList | undefined) => [...(items ?? [])].map((item) => item.kind === 'file' ? item.getAsFile() : null).find((file): file is File => Boolean(file && isImage(file)));
+  const attachmentError = (error: unknown) => app.toast(error instanceof Error ? error.message : 'That file couldn’t be attached.', 'error');
+  const attach = async (file: Blob) => {
+    const previous = useApp.getState().drafts[draftKey]?.image;
+    setPreparingImage(true);
+    await imageQueue.current.run(() => toScreenshot(file), () => currentScope() && useApp.getState().drafts[draftKey]?.image === previous,
+      (next) => app.setDraft(draftKey, { image: next }), attachmentError, () => setPreparingImage(false));
+  };
+  const attachFiles = async (selected: File[]) => {
+    const previous = useApp.getState().drafts[draftKey]?.files;
+    const isCurrent = () => currentScope() && useApp.getState().drafts[draftKey]?.files === previous;
+    setPreparingFiles(true);
+    await fileQueue.current.run(() => readTextAttachments(selected, previous ?? [], useApp.getState().drafts[draftKey]?.text ?? ''), isCurrent, (next) => {
+      const currentText = useApp.getState().drafts[draftKey]?.text ?? '';
+      if (composeAttachmentText(currentText, next).length > DRAFT_LIMIT) throw new Error('The message and files exceed the 16,000-character limit. Shorten the message or attach a smaller excerpt.');
+      app.setDraft(draftKey, { files: next });
+    }, attachmentError, () => setPreparingFiles(false));
+  };
+  const fromTransfer = (items: DataTransferItemList | undefined) => [...(items ?? [])].flatMap((item) => {
+    const file = item.kind === 'file' ? item.getAsFile() : null;
+    return file ? [file] : [];
+  });
+  const attachTransfer = (selected: File[]) => {
+    const images = selected.filter(isImage);
+    const documents = selected.filter((file) => !isImage(file));
+    if (images.length > 1) { app.toast('Attach one screenshot at a time.', 'error'); return; }
+    if (images[0]) void attach(images[0]);
+    if (documents.length) void attachFiles(documents);
+  };
   const composing = useRef(false);
   const pendingSelection = useRef<[number, number] | null>(null);
   const [caret, setCaret] = useState(0);
@@ -104,9 +147,11 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
 
   const running = d?.status === 'running';
   const canSubmit = d ? d.capabilities.submit : true;
-  const meter = draftMeter(text.length);
-  const tooLong = text.length > DRAFT_LIMIT;
-  const empty = text.trim().length === 0;
+  const payloadLength = composeAttachmentText(text, attachedFiles).length;
+  const meter = draftMeter(payloadLength);
+  const tooLong = payloadLength > DRAFT_LIMIT;
+  const empty = text.trim().length === 0 && attachedFiles.length === 0;
+  const preparing = preparingImage || preparingFiles;
 
   // Autosize the textarea to its content.
   useLayoutEffect(() => {
@@ -171,7 +216,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
         id: `prompt:${item.id}`, label: item.label, detail: 'Saved prompt', icon: BookMarked, group: 'Saved prompts', indices,
       })),
     ];
-  }, [trigger?.kind, trigger?.query, triggerKey, dismissed, files, skills, hostControls, d, inProject]);
+  }, [trigger?.kind, trigger?.query, triggerKey, dismissed, files, skills, hostControls, d, inProject, account?.id]);
   const suggesting = Boolean(trigger && triggerKey !== dismissed && (trigger.kind === 'slash' || hostControls));
   const suggestLeft = useMemo(() => (trigger && ta.current ? Math.max(0, Math.min(caretLeft(ta.current, trigger.start) - 12, (ta.current.clientWidth || 400) - 380)) : 0), [triggerKey]);
   const syncCaret = () => { const el = ta.current; if (el) setCaret(el.selectionEnd); };
@@ -187,12 +232,16 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
 
   const context = { sessionId, projectId, draftKey };
   const submit = (as: MessageKind) => {
-    if (empty || tooLong) return;
+    if (empty || tooLong || sending || preparing) return;
     if (as === 'instruction' && !team && hostControls) {
       // `!cmd` runs in the terminal; app commands act here. Agent commands and skills are sent as written.
       const shell = shellCommand(text);
-      if (shell) { void runShortcutCommand(sessionId, shell, draftKey); return; }
       const slash = parseSlash(text);
+      if ((image || attachedFiles.length) && (shell || (slash && commandNamed(slash.name)?.kind === 'app'))) {
+        app.toast('Remove attachments before running an app or terminal command.', 'info');
+        return;
+      }
+      if (shell) { void runShortcutCommand(sessionId, shell, draftKey); return; }
       if (slash && commandNamed(slash.name)?.kind === 'app') { void runAppCommand(slash.name, slash.args, context); return; }
     }
     if (d) stopTyping(d.id);
@@ -222,7 +271,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
   };
   const insert = (prompt: string) => {
     const next = text ? `${text}\n\n${prompt}` : prompt;
-    if (next.length > DRAFT_LIMIT) app.toast('That would make the draft longer than the limit.', 'error');
+    if (composeAttachmentText(next, attachedFiles).length > DRAFT_LIMIT) app.toast('That would make the message and files longer than the limit.', 'error');
     else app.setDraft(draftKey, { text: next });
     requestAnimationFrame(() => ta.current?.focus());
   };
@@ -230,7 +279,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
     const el = ta.current;
     if (!el) return;
     const edit = applyFormat(text, el.selectionStart, el.selectionEnd, k);
-    if (!edit) {
+    if (!edit || composeAttachmentText(edit.text, attachedFiles).length > DRAFT_LIMIT) {
       app.toast('That would make the draft longer than the limit.', 'error');
       return;
     }
@@ -289,28 +338,40 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
 
   const instruction = kind === 'instruction';
   const placeholder = !instruction
-    ? 'Message your team. The agent won’t act on this…'
-    : !d ? (hostControls ? 'Describe what you want to build or fix. @ for files, / for commands' : 'Describe what you want to build or fix…')
-      : running ? 'Queue a follow-up. Press Steer on it to send it to the agent now…' : hostControls ? 'Tell the agent what to do next. @ for files, / for commands' : 'Tell the agent what to do next…';
+    ? 'Message your team…'
+    : !d ? 'Describe what you want to build or fix…'
+      : running ? 'Queue a follow-up…' : 'Tell the agent what to do next…';
   const sendLabel = instruction ? (running ? 'Add to queue' : 'Send to agent') : 'Send to team';
 
   return (
     <div
       className={cx('composer', instruction ? 'is-instruction' : 'is-discussion')}
       onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) e.preventDefault(); }}
-      onDrop={(e) => { const file = fromTransfer(e.dataTransfer.items); if (file) { e.preventDefault(); void attach(file); } }}
+      onDrop={(e) => { const selected = fromTransfer(e.dataTransfer.items); if (selected.length) { e.preventDefault(); attachTransfer(selected); } }}
     >
       {image && (
         <div className="composer-attachment">
           <img src={image} alt="Attached screenshot" />
-          <button type="button" aria-label="Remove screenshot" onClick={() => app.setDraft(draftKey, { image: undefined })}><X size={12} aria-hidden /></button>
+          <button type="button" aria-label="Remove screenshot" onClick={() => { imageQueue.current.cancel(); setPreparingImage(false); setMarking(false); app.setDraft(draftKey, { image: undefined }); }}><X size={12} aria-hidden /></button>
           {!team && <button type="button" className="mark-open" onClick={() => setMarking(true)}><Crosshair size={12} aria-hidden /> Point at the problem</button>}
         </div>
       )}
       {image && marking && <MarkProblem image={image} open onClose={() => setMarking(false)} onDone={(marked, note) => {
+        if (!currentScope() || useApp.getState().drafts[draftKey]?.image !== image) return;
+        imageQueue.current.cancel();
+        setPreparingImage(false);
         const current = useApp.getState().drafts[draftKey]?.text ?? '';
         app.setDraft(draftKey, { image: marked, text: current.includes(note) ? current : `${current.replace(/\s+$/u, '')}${current.trim() ? '\n\n' : ''}${note}` });
       }} />}
+      {attachedFiles.length > 0 && <ul className="composer-files" aria-label="Attached files">
+        {attachedFiles.map((file) => <li key={file.name} className="composer-file">
+          <FileText size={13} aria-hidden /><span className="truncate" title={file.name}>{file.name}</span>
+          <button type="button" aria-label={`Remove ${file.name}`} onClick={() => {
+            fileQueue.current.cancel(); setPreparingFiles(false);
+            app.setDraft(draftKey, { files: attachedFiles.filter((item) => item !== file) });
+          }}><X size={12} aria-hidden /></button>
+        </li>)}
+      </ul>}
       {d && <TypingIndicator d={d} />}
       {suggesting && (
         <ComposerSuggest
@@ -344,7 +405,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
           aria-expanded={suggesting}
           aria-controls={suggesting ? SUGGEST_LIST_ID : undefined}
           aria-activedescendant={suggesting && suggestions[active] ? suggestOptionId(suggestions[active]) : undefined}
-          onPaste={(e) => { const file = fromTransfer(e.clipboardData.items); if (file) { e.preventDefault(); void attach(file); } }}
+          onPaste={(e) => { const selected = fromTransfer(e.clipboardData.items); if (selected.length) { e.preventDefault(); attachTransfer(selected); } }}
           onCompositionStart={() => { composing.current = true; }}
           onCompositionEnd={() => { composing.current = false; }}
         />
@@ -353,7 +414,9 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
       <div className="composer-bar">
         <IconButton size="sm" icon={ImagePlus} label="Attach a screenshot" tipSide="top" onClick={() => picker.current?.click()} disabled={!canSubmit} />
         <input ref={picker} type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/heic" hidden onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void attach(file); }} />
-        {!team && <SavedPrompts text={text} onInsert={insert} />}
+        <IconButton size="sm" icon={Paperclip} label="Attach text or source files" tipSide="top" onClick={() => filePicker.current?.click()} disabled={!canSubmit || attachedFiles.length >= MAX_ATTACHMENTS} />
+        <input ref={filePicker} type="file" accept={TEXT_FILE_ACCEPT} multiple hidden onChange={(e) => { const selected = [...(e.target.files ?? [])]; e.target.value = ''; if (selected.length) void attachFiles(selected); }} />
+        {!team && <SavedPrompts key={account?.id ?? 'signed-out'} text={text} onInsert={insert} />}
         <VoiceButton draftKey={draftKey} disabled={!canSubmit} />
         {d?.mode === 'plan' && instruction && (
           <span className="mode-hint" title="Plan mode blocks file writes, shell commands and external actions">
@@ -363,12 +426,12 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
         <span className="spacer" />
         {meter.show && (
           <span className={cx('meter', `tone-${meter.tone}`)} aria-live="polite">
-            {text.length.toLocaleString()} / {DRAFT_LIMIT.toLocaleString()}
+            {payloadLength.toLocaleString()} / {DRAFT_LIMIT.toLocaleString()}
           </span>
         )}
         {hostControls && instruction && <>
           {d && <ContextMeter sessionId={d.id} />}
-          <ModelPicker />
+          <ModelPicker key={account?.id ?? 'signed-out'} />
           <EffortPicker />
           <AccessPicker sessionId={d?.id ?? null} />
         </>}
@@ -377,13 +440,13 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
           type="button"
           className={cx('send-btn', instruction ? 'is-instruction' : 'is-discussion')}
           onClick={() => submit(kind)}
-          disabled={empty || tooLong || sending}
-          aria-busy={sending}
-          aria-label={sending ? 'Sending' : sendLabel}
+          disabled={empty || tooLong || sending || preparing}
+          aria-busy={sending || preparing}
+          aria-label={preparing ? 'Preparing attachment' : sending ? 'Sending' : sendLabel}
           data-tip={`${sendLabel}  ↵`}
           data-tip-side="top"
         >
-          {sending ? <span className="spinner" style={{ width: 14, height: 14 }} aria-hidden /> : instruction ? <ArrowUp size={16} strokeWidth={2.2} aria-hidden /> : <MessageCircle size={15} strokeWidth={2} aria-hidden />}
+          {sending || preparing ? <span className="spinner" style={{ width: 14, height: 14 }} aria-hidden /> : instruction ? <ArrowUp size={16} strokeWidth={2.2} aria-hidden /> : <MessageCircle size={15} strokeWidth={2} aria-hidden />}
         </button>
       </div>
 

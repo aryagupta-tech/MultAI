@@ -58,8 +58,8 @@ function messagePayload(e: WireEvent): { messageId?: string; text: string; image
 }
 
 export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => string): TimelineItem | null {
-  const base = { id: e.id, sequence: e.sequence, at: e.createdAt };
   const p = (e.payload ?? {}) as Record<string, unknown>;
+  const base = { id: e.id, sequence: e.sequence, at: e.createdAt, eventType:e.type, ...(typeof p.actionId==='string'?{actionId:p.actionId}:{}) };
   const actor = nameOf(e.actorId);
   switch (e.type) {
     case 'reviewer.comment': {
@@ -127,12 +127,15 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
       if (e.type === 'activity.completed' && p.tool === 'look_at_app' && typeof p.image === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/u.test(p.image) && p.image.length <= 20_000) {
         return {...base,type:'look',page:typeof p.page === 'string' ? p.page.slice(0,500) : '',summary:typeof p.summary === 'string' ? p.summary.slice(0,1000) : 'Looked at the app',image:p.image,...(typeof p.detail === 'string' && p.detail ? {detail:p.detail.slice(0,3000)} : {})};
       }
-      const kinds:Record<string,ToolCall['tool']>={read:'read',read_file:'read',search:'search',search_text:'search',list:'list',list_files:'list',list_directory:'list',codebase_search:'search',write:'write',write_file:'write',shell:'shell',run_shell:'shell',diff:'diff'};
+      const kinds:Record<string,ToolCall['tool']>={read:'read',read_file:'read',search:'search',search_text:'search',list:'list',list_files:'list',list_directory:'list',codebase_search:'search',write:'write',write_file:'write',shell:'shell',run_shell:'shell',run_command:'shell',diff:'diff'};
       const tool = typeof p.tool === 'string' ? kinds[p.tool] : undefined;
-      const detail = typeof p.detail === 'string' ? p.detail.slice(0,32_000) : typeof p.output === 'string' ? p.output.slice(0,32_000) : undefined;
+      const result=p.result&&typeof p.result==='object'?p.result as Record<string,unknown>:{};
+      const detail = typeof p.detail === 'string' ? p.detail.slice(0,32_000) : typeof p.output === 'string' ? p.output.slice(0,32_000) : typeof result.output==='string'?result.output.slice(0,32_000):typeof p.path==='string'?p.path.slice(0,4096):undefined;
       const summary = typeof p.summary === 'string' ? p.summary.slice(0,1000) : `${tool ?? 'Tool'} ${e.type === 'activity.failed' ? 'failed' : 'completed'}`;
       if (!tool) return {...base,type:'system',tone:e.type === 'activity.failed' ? 'error' : 'info',text:summary};
-      return {...base,type:'tools',calls:[{id:typeof p.callId === 'string' ? p.callId.slice(0,512) : e.id,tool,summary,status:e.type === 'activity.failed' ? 'failed' : 'completed',...(detail ? {detail} : {}),...(Number.isSafeInteger(p.exitCode) ? {exitCode:p.exitCode as number} : {}),...(typeof p.durationMs === 'number' && Number.isFinite(p.durationMs) && p.durationMs >= 0 ? {durationMs:p.durationMs} : {})}]};
+      const exitCode=p.exitCode??result.exitCode;
+      const failed=e.type==='activity.failed'||(typeof exitCode==='number'&&exitCode!==0)||(typeof result.signal==='string'&&Boolean(result.signal));
+      return {...base,type:'tools',calls:[{id:typeof p.callId === 'string' ? p.callId.slice(0,512) : e.id,tool,summary,status:failed?'failed':'completed',...(detail ? {detail} : {}),...(Number.isSafeInteger(exitCode) ? {exitCode:exitCode as number} : {}),...(typeof p.durationMs === 'number' && Number.isFinite(p.durationMs) && p.durationMs >= 0 ? {durationMs:p.durationMs} : {})}]};
     }
     case 'usage.reported': {
       const usage = p.usage && typeof p.usage === 'object' ? p.usage as Record<string,unknown> : p;

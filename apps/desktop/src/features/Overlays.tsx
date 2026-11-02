@@ -7,6 +7,7 @@ import { useApp, type Preferences } from '../model/store';
 import { fuzzyFilter } from '../model/fuzzy';
 import type { Project } from '../model/types';
 import { getBridge } from '../bridge/client';
+import {copyText} from '../bridge/clipboard';
 import * as live from '../live/controller';
 import * as execution from '../live/execution';
 import {AiConnections} from './AiConnections';
@@ -191,7 +192,7 @@ export function SettingsDialog() {
                 <Switch label="Start the agent when I send" description="Your own instructions run right away. Teammates’ instructions still wait for you to press Run." checked={prefs.autoRun} onChange={(v) => set({ autoRun: v })} />
               </SettingsGroup>
               <SettingsGroup title="Window">
-                <p className="settings-note">Closing the window keeps a running session alive in the menu bar. Quit stops the agent and any terminals safely.</p>
+                <p className="settings-note">Closing the window stops the agent. Your saved sessions remain available.</p>
               </SettingsGroup>
             </>
           )}
@@ -338,6 +339,10 @@ export function InviteDialog() {
   const app = useApp.getState();
   const d = activeId ? details[activeId] : undefined;
   const isLive = d?.source === 'live';
+  const accountId=useApp(s=>s.account?.id);
+  const scopeKey=`${open}:${activeId}:${accountId}`;
+  const scope=useRef({key:scopeKey});if(scope.current.key!==scopeKey)scope.current={key:scopeKey};
+  const creating=useRef<object|null>(null);
   const [role, setRole] = useState<'collaborator' | 'viewer'>('collaborator');
   const [expiry, setExpiry] = useState<'1h' | '24h' | '7d'>('24h');
   const [invite, setInvite] = useState<{ code: string; link: string; expiresAt?: string } | null>(null);
@@ -347,27 +352,31 @@ export function InviteDialog() {
   useEffect(() => {
     if (open) {
       setInvite(null);
-      setCopied(null);
+      setCopied(null);setBusy(false);
     }
-  }, [open]);
+  }, [open,activeId,accountId]);
 
   const create = async () => {
-    if (!d) return;
+    if (!d||creating.current===scope.current) return;
+    const operation=scope.current;
     if (dataMode === 'demo') {
       const code = `demo-${Math.random().toString(36).slice(2, 10)}`;
       setInvite({ code, link: `https://collab.example.test/join/${code}` });
       return;
     }
-    setBusy(true);
-    const seconds = expiry === '1h' ? 3600 : 86_400;
-    const created = await live.createInvitation(d.id, seconds);
-    setBusy(false);
-    if (created) setInvite({ code: created.token, link: live.inviteLink(created.token), expiresAt: created.expiresAt });
+    creating.current=operation;setBusy(true);
+    try{
+      const seconds = expiry === '1h' ? 3600 : 86_400;
+      const created = await live.createInvitation(d.id, seconds);
+      if(scope.current===operation&&created)setInvite({code:created.token,link:live.inviteLink(created.token),expiresAt:created.expiresAt});
+    }catch{if(scope.current===operation)app.toast('Couldn’t create the invitation. Try again.','error');}
+    finally{if(creating.current===operation)creating.current=null;if(scope.current===operation)setBusy(false);}
   };
 
-  const copy = (what: 'link' | 'code', value: string) => {
-    void navigator.clipboard?.writeText(value).catch(() => undefined);
-    setCopied(what);
+  const copy = async (what:'link'|'code',value:string) => {
+    const operation=scope.current;setCopied(null);
+    try{await copyText(value);if(scope.current===operation)setCopied(what);}
+    catch{if(scope.current===operation)app.toast('Couldn’t copy. Select the link and copy it manually.','error');}
   };
 
   return (
@@ -392,6 +401,7 @@ export function InviteDialog() {
             label="Link expiry"
             size="sm"
             value={expiry}
+            disabled={busy}
             onChange={(v) => { setExpiry(v); setInvite(null); }}
             options={isLive
               ? [{ value: '1h', label: '1 hour' }, { value: '24h', label: '1 day' }]
@@ -404,12 +414,12 @@ export function InviteDialog() {
             <div className="invite-link">
               <Link2 size={14} aria-hidden className="tone-muted" />
               <input readOnly value={invite.link} aria-label="Invitation link" onFocus={(e) => e.currentTarget.select()} />
-              <Button size="sm" variant={copied === 'link' ? 'secondary' : 'primary'} icon={copied === 'link' ? Check : Copy} onClick={() => copy('link', invite.link)}>{copied === 'link' ? 'Copied' : 'Copy link'}</Button>
+              <Button size="sm" variant={copied === 'link' ? 'secondary' : 'primary'} icon={copied === 'link' ? Check : Copy} onClick={() => void copy('link', invite.link)}>{copied === 'link' ? 'Copied' : 'Copy link'}</Button>
             </div>
             {isLive && (
               <p className="invite-code">
                 Or share the code: <code>{invite.code.slice(0, 10)}…</code>
-                <button type="button" className="link-btn" onClick={() => copy('code', invite.code)}>{copied === 'code' ? 'Copied' : 'Copy code'}</button>
+                <button type="button" className="link-btn" onClick={() => void copy('code', invite.code)}>{copied === 'code' ? 'Copied' : 'Copy code'}</button>
               </p>
             )}
             {invite.expiresAt && <p className="field-help">Expires {new Date(invite.expiresAt).toLocaleString()}. Anyone with it can ask to join; nobody gets in until you admit them.</p>}

@@ -14,8 +14,12 @@ type TeamMessage = Extract<TimelineItem, { type: 'message' }>;
 export const isTeamMessage = (item: TimelineItem): item is TeamMessage => item.type === 'message' && item.kind === 'discussion';
 
 const seenKey = () => `multai.team-seen.v1:${useApp.getState().account?.id ?? 'signed-out'}`;
-function readSeen(): Record<string, number> {
-  try { return JSON.parse(localStorage.getItem(seenKey()) ?? '{}') as Record<string, number>; } catch { return {}; }
+export function readSeen(): Record<string, number> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(seenKey()) ?? '{}');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([, count]) => Number.isSafeInteger(count) && (count as number) >= 0));
+  } catch { return {}; }
 }
 interface TeamState { open: boolean; seen: Record<string, number> }
 export const useTeam = create<TeamState>()(() => ({ open: false, seen: readSeen() }));
@@ -54,7 +58,7 @@ export function TeamPanel({ d }: { d: SessionDetail }) {
   const messages = useMemo(() => d.timeline.filter(isTeamMessage), [d.timeline]);
   const people = useMemo(() => new Map(d.participants.map((p) => [p.id, p])), [d.participants]);
   const scroller = useRef<HTMLDivElement>(null);
-  const others = d.participants.filter((p) => p.presence !== 'offline' && !p.isHost).length;
+  const online = d.participants.filter((p) => p.presence === 'online' || p.presence === 'idle').length;
 
   useEffect(() => { markSeen(d.id, messages.length); }, [d.id, messages.length]);
   useLayoutEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [d.id, messages.length]);
@@ -65,14 +69,14 @@ export function TeamPanel({ d }: { d: SessionDetail }) {
         <MessageCircle size={15} strokeWidth={1.8} aria-hidden />
         <div className="team-title">
           <strong>Team chat</strong>
-          <span>{d.participants.length === 1 ? 'Only you so far. Invite a teammate to talk here.' : `${d.participants.length} people${others ? ` · ${others} online` : ''}`}</span>
+          <span>{d.participants.length === 1 ? 'Invite a teammate to chat' : `${d.participants.length} people${online ? ` · ${online} online` : ''}`}</span>
         </div>
         <span className="spacer" />
         <IconButton className="no-drag" icon={X} label="Close team chat" onClick={() => setTeamOpen(false)} />
       </header>
       <div className="team-log" ref={scroller} role="log" aria-live="polite" aria-label="Team messages">
         {messages.length === 0 && (
-          <p className="team-empty">Talk with your teammates here. The agent sees these messages as context but never acts on them.</p>
+          <p className="team-empty">Messages here go to your teammates.</p>
         )}
         {messages.map((m, i) => {
           const prev = messages[i - 1];

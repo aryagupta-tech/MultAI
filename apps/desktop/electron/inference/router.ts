@@ -89,7 +89,12 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'workDiscard':value=await coordinator.workDiscard(values[0] as string);break;
       case 'draftPullRequest':value=await coordinator.draftPullRequest(values[0]);break;
       case 'workPush':value=await coordinator.workPush(values[0] as string,values[1] as {title:string;body:string});break;
-      case 'terminalRun':await coordinator.invalidateVerification(values[0] as string);value=host.terminal.run(values[0] as string,await coordinator.terminalRoot(values[0] as string),values[1] as string);break;
+      case 'terminalRun':{
+        const sessionId=values[0] as string,generation=host.terminal.generation(sessionId);
+        await coordinator.invalidateVerification(sessionId);
+        const root=await coordinator.terminalRoot(sessionId);
+        value=host.terminal.run(sessionId,root,values[1] as string,generation);break;
+      }
       case 'terminalStop':value=host.terminal.stop(values[0] as string);break;
       case 'listFiles':value=await coordinator.listFiles(values[0] as string|null,values[1] as string|null);break;
       case 'skills':value=await coordinator.skills(values[0] as string|null,values[1] as string|null);break;

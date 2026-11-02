@@ -117,6 +117,9 @@ interface TimelineBase {
   id: string;
   sequence: number;
   at: string;
+  /** Source event identity lets the conversation compact bookkeeping without matching prose. */
+  eventType?: string;
+  actionId?: string;
 }
 
 export type TimelineItem =

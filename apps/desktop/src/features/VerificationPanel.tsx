@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {Check,RefreshCw,Plus,Copy,UserCheck,Trash2,Play} from 'lucide-react';
 import {getBridge} from '../bridge/client';
+import {copyText} from '../bridge/clipboard';
 import type {AcceptanceSnapshot,AcceptanceCriterion,BrowserReviewers,ReviewOperation} from '../bridge/review';
 import type {SessionDetail} from '../model/types';
 import {useApp} from '../model/store';
@@ -18,10 +19,29 @@ async function request<T>(sessionId:string,operation:ReviewOperation):Promise<T>
 }
 const errorText=(error:unknown)=>error instanceof Error?error.message:'The review could not be updated. Refresh and try again.';
 const labels={proposed:'Proposed',needs_review:'Needs human review',passed:'Check passed',failed:'Check failed',stale:'Stale — check again'};
+type ReviewTask=(current:()=>boolean)=>Promise<unknown>;
+
+/** A ref closes the gap before React disables a button after the first click. */
+function useReviewActions(refresh:()=>void){
+  const account=useApp(s=>s.account?.id),scope=useRef({active:true,generation:0,pending:false}),[busy,setBusy]=useState(false);
+  useEffect(()=>{scope.current.active=true;return()=>{scope.current.active=false;scope.current.generation++;};},[]);
+  const perform=async(task:ReviewTask)=>{
+    const generation=scope.current.generation;
+    const current=()=>scope.current.active&&scope.current.generation===generation&&useApp.getState().account?.id===account;
+    if(scope.current.pending||!current())return;
+    scope.current.pending=true;setBusy(true);
+    try{await task(current);if(current())refresh();}
+    catch(error){if(current())useApp.getState().toast(errorText(error),'error');}
+    finally{if(scope.current.generation===generation)scope.current.pending=false;if(current())setBusy(false);}
+  };
+  return {busy,perform};
+}
 
 /** Polls only this account/session; late requests cannot populate a replacement view. */
 function useReview<T>(d:SessionDetail,kind:'acceptance'|'reviewers'){
-  const account=useApp(s=>s.account?.id),[data,setData]=useState<T|null>(null),[error,setError]=useState(''),[revision,setRevision]=useState(0);
+  const account=useApp(s=>s.account?.id),[stored,setStored]=useState<{key:string;value:T}|null>(null),[failure,setFailure]=useState<{key:string;message:string}|null>(null),[revision,setRevision]=useState(0);
+  const key=`${account??''}:${d.id}:${kind}`;
+  const data=stored?.key===key?stored.value:null;
   const refresh=()=>setRevision(value=>value+1);
   useEffect(()=>{
     if(d.source!=='live')return;
@@ -31,28 +51,30 @@ function useReview<T>(d:SessionDetail,kind:'acceptance'|'reviewers'){
         const sync=await getBridge()?.inference.syncVerification(d.id);
         if(sync&&!sync.ok&&!['SESSION_ACTIVE','session_active'].includes(sync.error.code))throw new Error(describe(sync.error));
       }
+      if(disposed||useApp.getState().account?.id!==account)return;
       const value=await request<T>(d.id,{kind});
-      if(!disposed&&useApp.getState().account?.id===account){setData(value);setError('');}
-    }catch(error){if(!disposed){setError(errorText(error));setData(null);}}finally{loading=false;}};
+      if(!disposed&&useApp.getState().account?.id===account){setStored({key,value});setFailure(null);}
+    }catch(error){if(!disposed&&useApp.getState().account?.id===account){setFailure({key,message:errorText(error)});setStored(null);}}finally{loading=false;}};
     void load();const timer=setInterval(()=>void load(),5000);return()=>{disposed=true;clearInterval(timer);};
   },[d.id,d.source,d.status,d.capabilities.configure,kind,account,revision]);
-  return {data,error,refresh};
+  return {data,error:failure?.key===key?failure.message:'',refresh};
 }
 
 export function VerificationPanel({d}:{d:SessionDetail}){
+  const account=useApp(s=>s.account?.id);
+  return <VerificationContent key={JSON.stringify([account,d.id])} d={d}/>;
+}
+function VerificationContent({d}:{d:SessionDetail}){
   const {data,error,refresh}=useReview<AcceptanceSnapshot>(d,'acceptance');
-  const [text,setText]=useState(''),[command,setCommand]=useState(''),[editing,setEditing]=useState<AcceptanceCriterion|null>(null),[busy,setBusy]=useState(false);
-  const account=useApp(s=>s.account?.id),mounted=useRef(true);
-  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
-  const current=()=>mounted.current&&useApp.getState().account?.id===account;
-  const perform=async(task:()=>Promise<unknown>)=>{if(busy)return;setBusy(true);try{await task();if(current())refresh();}catch(error){if(current())useApp.getState().toast(errorText(error),'error');}finally{if(current())setBusy(false);}};
+  const [text,setText]=useState(''),[command,setCommand]=useState(''),[editing,setEditing]=useState<AcceptanceCriterion|null>(null);
+  const {busy,perform}=useReviewActions(refresh);
   if(d.source!=='live')return <div className="review-panel"><h3>Team verification</h3><p>Open a live session to agree on requirements and record actual verification evidence.</p></div>;
   const host=d.capabilities.configure,idle=d.status!=='running',canWrite=d.capabilities.submit&&idle;
-  const save=()=>perform(async()=>{
+  const save=()=>perform(async(current)=>{
     await request(d.id,editing?{kind:'revise',requestId:crypto.randomUUID(),criterionId:editing.id,expectedVersion:editing.version,text,checkCommand:command.trim()||null}:{kind:'propose',requestId:crypto.randomUUID(),text,checkCommand:command.trim()||null});
     if(current()){setText('');setCommand('');setEditing(null);}
   });
-  const verify=()=>perform(async()=>{
+  const verify=()=>perform(async(current)=>{
     const selected=getSelection();if(!selected)throw new Error('Choose an AI connection and model first.');
     const result=await getBridge()!.inference.verify({sessionId:d.id,connectionId:selected.connectionId,model:selected.model});
     if(!result.ok)throw new Error(describe(result.error));
@@ -76,15 +98,16 @@ export function VerificationPanel({d}:{d:SessionDetail}){
     </form>}
   </div>;
 }
-export function CriterionCard({item,d,busy,currentRevision,perform,edit}:{item:AcceptanceCriterion;d:SessionDetail;busy:boolean;currentRevision:string|null;perform:(task:()=>Promise<unknown>)=>Promise<void>;edit:()=>void}){
+export function CriterionCard({item,d,busy,currentRevision,perform,edit}:{item:AcceptanceCriterion;d:SessionDetail;busy:boolean;currentRevision:string|null;perform:(task:ReviewTask)=>Promise<void>;edit:()=>void}){
   const [comment,setComment]=useState('');
   const evidence=item.evidence,host=d.capabilities.configure,idle=d.status!=='running';
   const status=!idle&&evidence?'stale':item.status;
   const canReview=idle&&d.capabilities.submit&&item.state==='approved'&&evidence&&evidence.criterionVersion===item.version&&evidence.revision===currentRevision;
   const review=(decision:'accept'|'reject')=>perform(()=>request(d.id,{kind:'decision',requestId:crypto.randomUUID(),criterionId:item.id,criterionVersion:item.version,evidenceId:evidence!.id,revision:evidence!.revision,decision,...(comment.trim()?{comment:comment.trim()}:{})}));
-  const repair=()=>perform(async()=>{
+  const repair=()=>perform(async(current)=>{
     const result=await getBridge()!.service.postMessage(d.id,{requestId:crypto.randomUUID(),kind:'instruction',text:`Repair the implementation to satisfy this approved requirement without weakening its check:\n${item.text}\nLocked check: ${item.checkCommand??'Human review'}\nRecorded evidence: ${evidence?.output.slice(0,3000)??'No evidence'}\nAfter repairing, the host will rerun verification.`});
-    if(!result.ok)throw new Error(describe(result.error));await open(d.id);await runPending(d.id);
+    if(!current())return;
+    if(!result.ok)throw new Error(describe(result.error));await open(d.id);if(current())await runPending(d.id);
   });
   return <article className={`requirement-card status-${status}`}>
     <div className="review-heading"><strong>{item.text}</strong><span className="review-status">{labels[status]}</span></div>
@@ -99,19 +122,20 @@ export function CriterionCard({item,d,busy,currentRevision,perform,edit}:{item:A
 }
 
 export function BrowserReviewPanel({d}:{d:SessionDetail}){
-  const {data,error,refresh}=useReview<BrowserReviewers>(d,'reviewers'),[link,setLink]=useState(''),[busy,setBusy]=useState(false);
-  const account=useApp(s=>s.account?.id),mounted=useRef(true);
-  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
-  const current=()=>mounted.current&&useApp.getState().account?.id===account;
-  const perform=async(task:()=>Promise<unknown>)=>{if(busy)return;setBusy(true);try{await task();if(current())refresh();}catch(error){if(current())useApp.getState().toast(errorText(error),'error');}finally{if(current())setBusy(false);}};
-  const create=()=>perform(async()=>{const result=await request<{link:string}>(d.id,{kind:'invite',expiresInSeconds:86400});if(current())setLink(result.link);});
+  const account=useApp(s=>s.account?.id);
+  return <BrowserReviewContent key={JSON.stringify([account,d.id])} d={d}/>;
+}
+function BrowserReviewContent({d}:{d:SessionDetail}){
+  const {data,error,refresh}=useReview<BrowserReviewers>(d,'reviewers'),[link,setLink]=useState('');
+  const {busy,perform}=useReviewActions(refresh);
+  const create=()=>perform(async(current)=>{const result=await request<{link:string}>(d.id,{kind:'invite',expiresInSeconds:86400});if(current())setLink(result.link);});
   return <section className="review-panel browser-review-panel"><h3>Browser reviewers</h3><p className="field-help">Invite a teammate to comment, mark a shared screenshot and review evidence from their browser. Names are self-chosen; admit only someone you recognize. Reviewers cannot run agents or approve commands.</p>
     {error&&<p role="alert" className="tone-danger">{error}</p>}
     <Button size="sm" icon={Plus} disabled={busy} onClick={()=>void create()}>Create one-day invitation</Button>
-    {link&&<div className="review-form"><input readOnly value={link} aria-label="Browser invitation" onFocus={event=>event.target.select()}/><Button size="sm" icon={Copy} onClick={()=>void navigator.clipboard.writeText(link).catch(()=>useApp.getState().toast('Select and copy the invitation link.','info'))}>Copy link</Button></div>}
+    {link&&<div className="review-form"><input readOnly value={link} aria-label="Browser invitation" onFocus={event=>event.target.select()}/><Button size="sm" icon={Copy} onClick={()=>void copyText(link).catch(()=>useApp.getState().toast('Select and copy the invitation link.','info'))}>Copy link</Button></div>}
     {data?.invitations.map(invite=><div className="review-row" key={invite.id}><small>Invitation expires {new Date(invite.expiresAt).toLocaleString()}</small><Button size="sm" disabled={busy} onClick={()=>void perform(()=>request(d.id,{kind:'revokeInvite',invitationId:invite.id}))}>Revoke</Button></div>)}
     {data?.reviewers.map(person=><div className="review-row" key={person.id}><span>{person.name} · {person.status}</span><div className="review-actions">{person.status==='pending'&&<Button size="sm" icon={UserCheck} disabled={busy} onClick={()=>void perform(()=>request(d.id,{kind:'admit',reviewerId:person.id,decision:'admit'}))}>Admit</Button>}{person.status!=='revoked'&&<Button size="sm" disabled={busy} onClick={()=>void perform(()=>request(d.id,{kind:'admit',reviewerId:person.id,decision:'revoke'}))}>{person.status==='pending'?'Decline':'Remove'}</Button>}</div></div>)}
-    <label className="review-upload">Share a screenshot with admitted reviewers<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy||(data?.screenshots.length??0)>=5} onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file)void perform(async()=>{const image=await toScreenshot(file);if(current())await request(d.id,{kind:'screenshot',image,label:file.name.slice(0,120)});});}}/></label>
+    <label className="review-upload">Share a screenshot with admitted reviewers<input type="file" accept="image/png,image/jpeg,image/webp" disabled={busy||(data?.screenshots.length??0)>=5} onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file)void perform(async(current)=>{const image=await toScreenshot(file);if(current())await request(d.id,{kind:'screenshot',image,label:file.name.slice(0,120)});});}}/></label>
     {data?.screenshots.map(screenshot=><div className="review-screenshot" key={screenshot.id}><img src={screenshot.image} alt={screenshot.label}/><span>{screenshot.label}</span><Button size="sm" icon={Trash2} disabled={busy} onClick={()=>void perform(()=>request(d.id,{kind:'removeScreenshot',screenshotId:screenshot.id}))}>Stop sharing</Button></div>)}
   </section>;
 }

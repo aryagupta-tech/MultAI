@@ -1,3 +1,9 @@
+# Desktop audit · 2 November 2026
+
+The later [desktop bug-fix audit](bugfix-audit.md) records 493 passing tests across the current workspaces, native clipboard/cold-invitation checks, browser interaction coverage, and a real Muse Wonder checkout failure/repair/recovery session through MultAI. It distinguishes the installed build used for live inference from the newly rebuilt source, and records deployment limits.
+
+---
+
 # Mobile companion · 2 November 2026
 
 The browser companion, the Android app and phone owner control ([guide](mobile-companion.md)). The full suite passed **425 tests: 100 backend, 254 desktop, 59 runtime, 6 companion-core, 6 companion-ui; zero failures or skips** (`npm run test:integration`, disposable PostgreSQL 18). Root typecheck passed for all eight workspaces. Identities, model output and the agent are synthetic; no Google, model provider or production service was contacted, and no production data was touched.

@@ -1,0 +1,19 @@
+/* Routine agent work reads as one quiet line; its event history is available on demand. */
+.activity-group { min-width: 0; margin: 4px 0 4px 46px; color: var(--text-3); font-size: var(--fs-sm); }
+.activity-summary { display: flex; align-items: center; gap: 8px; min-height: 30px; width: fit-content; max-width: 100%; padding: 3px 0; list-style: none; cursor: pointer; }
+.activity-summary::-webkit-details-marker { display: none; }
+.activity-summary:hover { color: var(--text); }
+.activity-summary:focus-visible { outline: 2px solid var(--border-strong); outline-offset: 4px; border-radius: var(--r-sm); }
+.activity-summary > svg { flex: none; }
+.activity-summary > span { min-width: 0; line-height: 1.5; }
+.activity-chevron { transition: transform var(--dur) var(--ease); }
+.activity-group[open] > .activity-summary .activity-chevron { transform: rotate(90deg); }
+.activity-details { display: grid; gap: 3px; margin: 4px 0 8px 6px; padding: 2px 0 2px 12px; border-left: 1px solid var(--border); list-style: none; }
+.activity-details .tool-line { padding-block: 3px; }
+.activity-note { display: flex; align-items: baseline; gap: 12px; padding: 4px 6px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.5; }
+.activity-note > span { overflow-wrap: anywhere; }
+.activity-note time { flex: none; opacity: .65; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .activity-group { margin-left: 36px; }
+  .activity-note time { display: none; }
+}

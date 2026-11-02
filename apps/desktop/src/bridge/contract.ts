@@ -103,6 +103,7 @@ export interface ServiceApi {
 }
 
 export interface DesktopBridge {
+  writeClipboard(text:string):Promise<Result<null>>;
   getBuildInfo(): Promise<BuildInfo>;
   pickProjectFolder(): Promise<FolderPick>;
   service: ServiceApi;
@@ -112,6 +113,8 @@ export interface DesktopBridge {
 }
 
 export const IPC = {
+  clipboard:'multai:clipboard-write',
+  joinReady:'multai:join-ready',
   buildInfo: 'multai:build-info',
   pickFolder: 'multai:pick-folder',
   invoke: 'multai:service',

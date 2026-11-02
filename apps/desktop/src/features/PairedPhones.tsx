@@ -5,7 +5,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Smartphone, Trash2, ShieldCheck, History} from 'lucide-react';
 import {getBridge} from '../bridge/client';
-import type {PairedPhone, PairingOffer, PairingReview} from '../bridge/controller';
+import type {ControllerBridge,PairedPhone, PairingOffer, PairingReview} from '../bridge/controller';
 import {useApp} from '../model/store';
 import {describe} from '../live/controller';
 import {Button, Spinner} from '../ui/primitives';
@@ -27,11 +27,20 @@ function Qr({modules, label}: {modules: boolean[][]; label: string}) {
 }
 
 export function PairedPhones() {
+  const account=useApp(state=>state.account?.id);
+  return <PairedPhonesContent key={account??'signed-out'}/>;
+}
+function PairedPhonesContent() {
+  const account=useApp(state=>state.account?.id);
+  const scope=useRef({generation:0,alive:true});
+  const current=(generation:number)=>scope.current.alive&&scope.current.generation===generation&&useApp.getState().account?.id===account;
+  const pending=useRef<number|null>(null),listRequest=useRef(0),auditRequest=useRef(0);
+  const [error,setError]=useState(''),[loadError,setLoadError]=useState('');
   const sessions = useApp((s) => s.sessions);
   const details = useApp((s) => s.details);
   const activeId = useApp((s) => s.activeId);
   const toast = useApp.getState().toast;
-  const hosted = useMemo(() => sessions.filter((session) => !session.archived && details[session.id]?.capabilities.configure !== false), [sessions, details]);
+  const hosted = useMemo(() => sessions.filter((session) => !session.archived && details[session.id]?.capabilities.configure === true), [sessions, details]);
   const [phones, setPhones] = useState<PairedPhone[] | null>(null);
   const [chosen, setChosen] = useState<string[]>([]);
   const [grant, setGrant] = useState(7 * 86_400);
@@ -43,59 +52,94 @@ export function PairedPhones() {
   const offerRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
-    const result = await api()?.listPhones();
-    if (result?.ok) setPhones(result.value); else if (result) {setPhones([]); toast(describe(result.error), 'error');}
-  }, [toast]);
-  useEffect(() => {void load(); return api()?.onChange(() => void load());}, [load]);
-  useEffect(() => {if (!chosen.length && activeId && hosted.some((s) => s.id === activeId)) setChosen([activeId]);}, [activeId, hosted, chosen.length]);
-
-  // While a code is showing, watch for the phone to claim it.
+    const generation=scope.current.generation,request=++listRequest.current;
+    try{
+      const bridge=api();if(!bridge)throw new Error('Phone pairing is unavailable.');
+      const result=await bridge.listPhones();
+      if(!current(generation)||request!==listRequest.current)return;
+      if(!result.ok)throw new Error(describe(result.error));
+      setPhones(result.value);setLoadError('');
+    }catch(failure){if(current(generation)&&request===listRequest.current)setLoadError(failure instanceof Error?failure.message:'Couldn’t load paired phones.');}
+  }, [account]);
   useEffect(() => {
-    if (!offer) return;
-    offerRef.current = offer.id;
-    const tick = async () => {
-      setNow(Date.now());
-      const result = await api()?.reviewPairing(offer.id);
-      if (!result?.ok || offerRef.current !== offer.id) return;
-      setReview(result.value);
-      if (result.value.status !== 'awaiting_device') clearInterval(timer);
-    };
-    const timer = setInterval(() => void tick(), 1500);
-    void tick();
-    return () => clearInterval(timer);
-  }, [offer]);
+    scope.current.alive=true;
+    void load();const stop=api()?.onChange(()=>void load());
+    return()=>{scope.current.alive=false;scope.current.generation++;offerRef.current=null;stop?.();};
+  }, [load]);
+  const defaulted=useRef(false);
+  useEffect(() => {
+    if(defaulted.current)return;
+    if(activeId&&hosted.some(session=>session.id===activeId)){setChosen([activeId]);defaulted.current=true;}
+  }, [account,activeId,hosted]);
 
-  const start = async () => {
-    if (!chosen.length) return;
-    setBusy(true);
-    const result = await api()?.createPairing(chosen, grant);
-    setBusy(false);
-    if (!result?.ok) {if (result) toast(describe(result.error), 'error'); return;}
-    setReview(null); setOffer(result.value);
+  // Poll one request at a time. A canceled or replaced offer cannot return from a late response.
+  useEffect(() => {
+    if(!offer)return;
+    offerRef.current=offer.id;let stopped=false,inFlight=false;
+    const generation=scope.current.generation;
+    const clock=setInterval(()=>setNow(Date.now()),1000);
+    const tick=async()=>{
+      if(inFlight||stopped)return;inFlight=true;
+      try{
+        const bridge=api();if(!bridge)throw new Error('Phone pairing is unavailable.');
+        const result=await bridge.reviewPairing(offer.id);
+        if(stopped||!current(generation)||offerRef.current!==offer.id)return;
+        if(!result.ok)throw new Error(describe(result.error));
+        setError('');setReview(result.value);
+        if(result.value.status==='active'){offerRef.current=null;setOffer(null);setReview(null);void load();}
+        if(['active','declined','revoked'].includes(result.value.status)){clearInterval(timer);clearInterval(clock);}
+      }catch(failure){if(!stopped&&current(generation)&&offerRef.current===offer.id)setError(failure instanceof Error?failure.message:'Couldn’t refresh this pairing.');}
+      finally{inFlight=false;}
+    };
+    const timer=setInterval(()=>void tick(),1500);void tick();
+    return()=>{stopped=true;clearInterval(timer);clearInterval(clock);if(offerRef.current===offer.id)offerRef.current=null;};
+  },[offer,account,load]);
+
+  const perform=async(task:(bridge:ControllerBridge,generation:number)=>Promise<void>)=>{
+    const generation=scope.current.generation;if(pending.current===generation||!current(generation))return;
+    pending.current=generation;setBusy(true);setError('');
+    try{const bridge=api();if(!bridge)throw new Error('Phone pairing is unavailable.');await task(bridge,generation);}
+    catch(failure){if(current(generation)){const message=failure instanceof Error?failure.message:'The phone action failed. Try again.';setError(message);toast(message,'error');}}
+    finally{if(pending.current===generation)pending.current=null;if(current(generation))setBusy(false);}
   };
-  const cancel = async (decline: boolean) => {
-    if (decline && offer) await api()?.declinePairing(offer.id);
-    offerRef.current = null; setOffer(null); setReview(null);
-  };
-  const confirm = async () => {
-    if (!offer || !review) return;
-    setBusy(true);
-    const result = await api()?.confirmPairing(offer.id, review.sessionIds);
-    setBusy(false);
-    if (!result?.ok) {if (result) toast(describe(result.error), 'error'); return;}
-    toast(`${result.value.deviceName} can now control the selected sessions.`, 'info');
-    offerRef.current = null; setOffer(null); setReview(null); void load();
-  };
-  const revoke = async (phone: PairedPhone) => {
-    const result = await api()?.revokePairing(phone.id);
-    if (result && !result.ok) toast(`${phone.deviceName} is no longer trusted here, but the service couldn’t be told yet: ${describe(result.error)}`, 'error');
-    else toast(`${phone.deviceName} was removed. Its requests are refused from now on.`, 'info');
+  const start = ()=>perform(async(bridge,generation)=>{
+    const allowed=chosen.filter(id=>hosted.some(session=>session.id===id));
+    if(!allowed.length)throw new Error('Choose a session hosted on this computer.');
+    const result=await bridge.createPairing(allowed,grant);
+    if(!current(generation))return;
+    if(!result.ok)throw new Error(describe(result.error));
+    setNow(Date.now());setReview(null);setOffer(result.value);
+  });
+  const cancel = (decline:boolean)=>perform(async(bridge,generation)=>{
+    if(decline&&offer){const result=await bridge.declinePairing(offer.id);if(!result.ok)throw new Error(describe(result.error));}
+    if(!current(generation))return;
+    offerRef.current=null;setOffer(null);setReview(null);
+  });
+  const confirm = ()=>perform(async(bridge,generation)=>{
+    if(!offer||review?.status!=='awaiting_confirmation')return;
+    const result=await bridge.confirmPairing(offer.id,review.sessionIds);
+    if(!current(generation)||offerRef.current!==offer.id)return;
+    if(!result.ok)throw new Error(describe(result.error));
+    toast(`${result.value.deviceName} can now control the selected sessions.`,'info');
+    offerRef.current=null;setOffer(null);setReview(null);void load();
+  });
+  const revoke = (phone:PairedPhone)=>perform(async(bridge,generation)=>{
+    const result=await bridge.revokePairing(phone.id);
+    if(!current(generation))return;
     void load();
-  };
-  const showAudit = async (phone: PairedPhone) => {
-    if (audit?.id === phone.id) {setAudit(null); return;}
-    const result = await api()?.audit(phone.id);
-    if (result?.ok) setAudit({id: phone.id, rows: result.value});
+    if(!result.ok)throw new Error(`${phone.deviceName} is no longer trusted here, but the service couldn’t be told yet: ${describe(result.error)}`);
+    toast(`${phone.deviceName} was removed. Its requests are refused from now on.`,'info');
+  });
+  const showAudit = async(phone:PairedPhone)=>{
+    const request=++auditRequest.current,generation=scope.current.generation;
+    if(audit?.id===phone.id){setAudit(null);return;}
+    try{
+      const bridge=api();if(!bridge)throw new Error('Phone pairing is unavailable.');
+      const result=await bridge.audit(phone.id);
+      if(!current(generation)||request!==auditRequest.current)return;
+      if(!result.ok)throw new Error(describe(result.error));
+      setAudit({id:phone.id,rows:result.value});
+    }catch(failure){if(current(generation)&&request===auditRequest.current)setError(failure instanceof Error?failure.message:'Couldn’t load phone history.');}
   };
   const titleOf = (id: string) => sessions.find((s) => s.id === id)?.title ?? 'Session';
   const left = offer ? Math.max(0, Math.round((Date.parse(offer.codeExpiresAt) - now) / 1000)) : 0;
@@ -103,6 +147,7 @@ export function PairedPhones() {
   if (!api()) return <p className="settings-note">Phone pairing is available in the desktop app.</p>;
   return (
     <div className="phones">
+      {error&&<p className="phones-warn" role="alert">{error}</p>}
       <p className="settings-note">Control this computer’s agent from your phone, in the MultAI Android app or a phone browser. The phone can only ask; this computer checks every request and does it itself. Your files, terminal, model keys and sign-in never leave this computer.</p>
 
       {!offer && (
@@ -112,17 +157,17 @@ export function PairedPhones() {
             {hosted.length === 0 && <p className="settings-note">Start a session on this computer first.</p>}
             {hosted.slice(0, 20).map((session) => (
               <label key={session.id} className="phones-check">
-                <input type="checkbox" checked={chosen.includes(session.id)} onChange={(event) => setChosen((list) => event.target.checked ? [...list, session.id] : list.filter((id) => id !== session.id))} />
+                <input type="checkbox" disabled={busy} checked={chosen.includes(session.id)} onChange={(event) => {defaulted.current=true;setChosen((list) => event.target.checked ? [...list, session.id] : list.filter((id) => id !== session.id));}} />
                 <span>{session.title}</span>
               </label>
             ))}
           </fieldset>
           <label className="phones-grant">Owner access lasts
-            <select value={grant} onChange={(event) => setGrant(Number(event.target.value))}>
+            <select value={grant} disabled={busy} onChange={(event) => setGrant(Number(event.target.value))}>
               {GRANTS.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}
             </select>
           </label>
-          <Button variant="primary" icon={Smartphone} disabled={busy || !chosen.length} onClick={() => void start()}>Pair a phone</Button>
+          <Button variant="primary" icon={Smartphone} disabled={busy || !chosen.some(id=>hosted.some(session=>session.id===id))} onClick={() => void start()}>Pair a phone</Button>
         </div>
       )}
 
@@ -134,7 +179,7 @@ export function PairedPhones() {
             <p className="phones-code" aria-label={`Pairing code ${offer.code.split('').join(' ')}`}>{offer.code}</p>
             <p className="settings-note">In MultAI on the phone, choose <b>Pair as owner</b>. The code works once and expires in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}.</p>
             {left === 0 && <p className="phones-warn">This code expired. Start again.</p>}
-            <Button variant="ghost" onClick={() => void cancel(true)}>Cancel</Button>
+            <Button variant="ghost" disabled={busy} onClick={() => void cancel(true)}>Cancel</Button>
           </div>
         </div>
       )}
@@ -153,17 +198,18 @@ export function PairedPhones() {
           <p className="settings-note">It can’t open a terminal, browse files, see model keys or use this computer’s sign-in.</p>
           <div className="phones-actions">
             <Button variant="primary" disabled={busy || !review.verificationCode} onClick={() => void confirm()}>Confirm phone</Button>
-            <Button variant="danger" onClick={() => void cancel(true)}>Decline</Button>
+            <Button variant="danger" disabled={busy} onClick={() => void cancel(true)}>Decline</Button>
           </div>
         </div>
       )}
 
       {offer && review && ['declined', 'revoked'].includes(review.status) && (
-        <div className="phones-offer"><p className="settings-note">This pairing ended. Start again if you meant to pair.</p><Button onClick={() => void cancel(false)}>Done</Button></div>
+        <div className="phones-offer"><p className="settings-note">This pairing ended. Start again if you meant to pair.</p><Button disabled={busy} onClick={() => void cancel(false)}>Done</Button></div>
       )}
 
       <h4 className="phones-heading">Paired phones</h4>
-      {phones === null ? <Spinner /> : phones.length === 0 ? <p className="settings-note">No phones are paired.</p> : (
+      {loadError&&<p className="phones-warn" role="alert">{loadError} <Button size="sm" onClick={()=>void load()}>Retry</Button></p>}
+      {phones === null ? !loadError&&<Spinner /> : phones.length === 0 ? <p className="settings-note">No phones are paired.</p> : (
         <ul className="phones-list">
           {phones.map((phone) => (
             <li key={phone.id} className={phone.status !== 'active' ? 'is-inactive' : undefined}>
@@ -175,7 +221,7 @@ export function PairedPhones() {
                   <span>{phone.sessionIds.map(titleOf).join(', ')}</span>
                 </div>
                 <Button size="sm" variant="ghost" icon={History} onClick={() => void showAudit(phone)} aria-expanded={audit?.id === phone.id}>History</Button>
-                {phone.status !== 'revoked' && <Button size="sm" variant="danger" icon={Trash2} onClick={() => void revoke(phone)}>Remove</Button>}
+                {phone.status !== 'revoked' && <Button size="sm" variant="danger" icon={Trash2} disabled={busy} onClick={() => void revoke(phone)}>Remove</Button>}
               </div>
               {audit?.id === phone.id && (
                 <ol className="phones-audit">{audit.rows.length ? audit.rows.map((row, index) => <li key={index}><time>{when(row.at)}</time> {row.detail}</li>) : <li>No activity yet.</li>}</ol>

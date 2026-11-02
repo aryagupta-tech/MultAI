@@ -186,6 +186,7 @@ function resetAccountState(): void {
   if (subscribed) void api().unsubscribe(subscribed);
   subscribed = null;
   cache.clear();
+  assist.resetAssist();
   me = null;
   local = { meta: {}, projects: [], onboarded: false };
   useApp.setState({
@@ -371,9 +372,14 @@ function onLiveStatus(change: LiveStatusChange): void {
 /** key is the draft; target the session it posts to (the team panel keeps its own draft for the same session). */
 export async function send(key: string, kind: MessageKind, text: string, image?: string, target = key): Promise<void> {
   const app = useApp.getState();
+  if(app.sending[key])return;
+  const owner=app.account;
+  const current=()=>useApp.getState().account===owner;
+  const projectId=app.draftTarget.projectId;
   const draft = app.drafts[key];
+  const clearDraft=()=>{const latest=useApp.getState().drafts[key];if(latest?.text===draft?.text&&latest?.image===draft?.image&&JSON.stringify(latest?.files)===JSON.stringify(draft?.files))useApp.getState().setDraft(key,{text:'',image:undefined,files:undefined});};
   // A different screenshot is a different message, so it gets its own retry identity.
-  const requestFor = image ? `${text}\u0000${image.length}:${image.slice(-48)}` : text;
+  const requestFor = JSON.stringify({kind,text,image,target,projectId:key==='new'?projectId:null});
   const requestId = draft?.requestId && draft.requestFor === requestFor ? draft.requestId : crypto.randomUUID();
   app.setDraft(key, { requestId, requestFor });
   useApp.setState((s) => ({ sending: { ...s.sending, [key]: true } }));
@@ -381,32 +387,36 @@ export async function send(key: string, kind: MessageKind, text: string, image?:
     if (key === 'new') {
       const title = titleFromMessage(text);
       const r = await api().createSession({ requestId, ...(title ? { title: title.slice(0, 120) } : {}), message: { kind, text, ...(image ? { image } : {}) } });
+      if(!current())return;
       if (!r.ok) return fail(r.error);
       const { session, event } = r.value;
-      const projectId = useApp.getState().draftTarget.projectId;
       local.meta[session.id] = { ...local.meta[session.id], projectId };
       // Projects added before worktree support have no registered folder; their chats stay private.
       if (projectId && !projectId.startsWith('p-')) await work.startWork(session.id, projectId, session.title ?? title ?? 'session');
+      if(!current())return;
       await execution.applyNewChatAccess(session.id);
+      if(!current())return;
       cache.set(session.id, { session, participants: [], events: [event], loaded: false });
-      useApp.getState().setDraft('new', { text: '', image: undefined });
+      clearDraft();
       useApp.setState((s) => ({ sessions: [projectSummary(session, metaFor(session.id), [event]), ...s.sessions.filter((x) => x.id !== session.id)], activeId: session.id }));
       persistLocal();
       await open(session.id);
-      if (kind === 'instruction') assist.autoRun(session.id);
+      if (current()&&kind === 'instruction') assist.autoRun(session.id);
     } else {
       const r = await api().postMessage(target, { requestId, kind, text, ...(image ? { image } : {}) });
+      if(!current())return;
       if (!r.ok) return fail(r.error);
       const c = cache.get(target);
       if (c) {
         c.events = mergeEvents(c.events, [r.value.event]);
         publish(target);
       }
-      useApp.getState().setDraft(key, { text: '', image: undefined });
+      clearDraft();
       if (kind === 'instruction') assist.autoRun(target);
     }
-  } finally {
-    useApp.setState((s) => ({ sending: { ...s.sending, [key]: false } }));
+  } catch {if(current())fail({code:'network_uncertain',message:'The send could not be confirmed. Your draft is kept; retry to check its result.'});}
+  finally {
+    if(current())useApp.setState((s) => ({ sending: { ...s.sending, [key]: false } }));
   }
 }
 
@@ -449,21 +459,21 @@ export async function createInvitation(id: string, expiresInSeconds: number): Pr
 /** Invitation tokens are exactly 43 base64url characters, matching the service. */
 export const INVITE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
-/** The invitation link for this build: multai:// in release builds, multai-dev:// otherwise. */
-export function inviteLink(token: string): string {
-  const scheme = useApp.getState().build?.channel === 'production' ? 'multai' : 'multai-dev';
+/** Desktop invitation; browser companion links are accepted when pasted too. */
+export function inviteLink(token:string):string {
+  const scheme=useApp.getState().build?.channel==='production'?'multai':'multai-dev';
   return `${scheme}://join?token=${token}`;
 }
 
-/** Extracts an invitation token from a pasted code or a multai:// (or multai-dev://) join link. */
-export function parseInvite(input: string): string | null {
-  const trimmed = input.trim();
-  let token = trimmed;
-  try {
-    const url = new URL(trimmed);
-    token = url.searchParams.get('token') ?? '';
-  } catch { /* not a URL: treat as a bare code */ }
-  return INVITE_TOKEN.test(token) ? token : null;
+/** Accept current browser invitations, legacy native links, or the complete invitation code. */
+export function parseInvite(input:string):string|null {
+  const trimmed=input.trim();if(INVITE_TOKEN.test(trimmed))return trimmed;
+  try{
+    const url=new URL(trimmed);let token:string|null=null;
+    if(['multai:','multai-dev:'].includes(url.protocol)&&url.hostname==='join'&&(url.pathname===''||url.pathname==='/'))token=url.searchParams.get('token');
+    else if(['https:','http:'].includes(url.protocol)&&['/app','/app/'].includes(url.pathname))token=new URLSearchParams(url.hash.slice(1)).get('join');
+    return token&&INVITE_TOKEN.test(token)?token:null;
+  }catch{return null;}
 }
 
 export async function join(token: string): Promise<'pending' | 'admitted' | null> {

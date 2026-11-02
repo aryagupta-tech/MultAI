@@ -21,7 +21,8 @@ describe('links', () => {
     expect(parseInvitation(`https://api.multai.si/review#${token}`)).toEqual({kind: 'review', token});
     expect(parseInvitation(`https://api.multai.si/app/#review=${token}`)).toEqual({kind: 'review', token});
     expect(parseInvitation('javascript:alert(1)')).toBeNull();
-    expect(parseInvitation(token)).toBeNull();
+    expect(parseInvitation(token)).toEqual({kind:'join',token});
+    expect(parseInvitation(`https://api.multai.si/app/#join=${token}`)).toEqual({kind:'join',token});
   });
 });
 

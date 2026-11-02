@@ -39,6 +39,7 @@ export function parseLinks(fragment: string): Links {
 /** A pasted desktop invitation (multai://join?token=…) or browser review link (…/review#… or …/app/#review=…). */
 export function parseInvitation(raw: string): {kind: 'join' | 'review'; token: string} | null {
   const text = raw.trim();
+  if(/^[A-Za-z0-9_-]{43}$/u.test(text))return {kind:'join',token:text};
   try {
     const url = new URL(text);
     if ((url.protocol === 'multai:' || url.protocol === 'multai-dev:') && url.hostname === 'join') {
@@ -48,6 +49,7 @@ export function parseInvitation(raw: string): {kind: 'join' | 'review'; token: s
     if (url.protocol === 'https:' || url.protocol === 'http:') {
       if (url.pathname === '/review' && /^#[A-Za-z0-9_-]{43}$/u.test(url.hash)) return {kind: 'review', token: url.hash.slice(1)};
       const links = parseLinks(url.hash);
+      if (links.join&&['/app','/app/'].includes(url.pathname))return {kind:'join',token:links.join};
       if (links.review) return {kind: 'review', token: links.review};
     }
   } catch {/* not a URL */}

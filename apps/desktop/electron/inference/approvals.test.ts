@@ -69,3 +69,46 @@ describe('host approvals', () => {
     expect(() => broker.decide(randomUUID(), 'yes')).toThrow();
   });
 });
+
+it('never automatically grants expired or aborted actions, including full access',async()=>{
+  const broker=new ApprovalBroker(()=>undefined);broker.setAccess(sessionId,'full');
+  const stopped=new AbortController();stopped.abort();
+  await expect(broker.request(descriptor(shell('echo hi')),stopped.signal)).resolves.toBe(false);
+  await expect(broker.request(descriptor(shell('echo hi'),-1),new AbortController().signal)).resolves.toBe(false);
+  await expect(broker.request(descriptor(write),new AbortController().signal,'x'.repeat(16001))).resolves.toBe(false);
+  expect(broker.list()).toEqual([]);
+});
+
+it('checks expiry again when deciding even if the expiry timer has not fired',async()=>{
+  const broker=new ApprovalBroker(()=>undefined),action=descriptor(shell('echo hi'));
+  const pending=broker.request(action,new AbortController().signal);
+  const now=vi.spyOn(Date,'now').mockReturnValue(action.expiresAt+1);
+  try{broker.decide(action.requestId,true);await expect(pending).resolves.toBe(false);}finally{now.mockRestore();}
+});
+
+it('duplicate action identity cannot replace or orphan the original approval',async()=>{
+  const broker=new ApprovalBroker(()=>undefined),action=descriptor(shell('echo hi'));
+  const original=broker.request(action,new AbortController().signal);
+  await expect(broker.request({...action,operation:shell('different')},new AbortController().signal)).resolves.toBe(false);
+  expect(broker.list()).toHaveLength(1);expect(broker.list()[0]).toMatchObject({command:'echo hi'});
+  broker.decide(action.requestId,true);await expect(original).resolves.toBe(true);
+});
+
+it('a gone renderer cannot prevent an approval from settling',async()=>{
+  const broker=new ApprovalBroker(()=>{throw new Error('Renderer gone');}),action=descriptor(shell('echo hi'));
+  const original=broker.request(action,new AbortController().signal);broker.rejectAll();
+  await expect(original).resolves.toBe(false);expect(broker.list()).toEqual([]);
+});
+
+it('account reset rejects pending approvals and forgets every access grant',async()=>{
+  const broker=new ApprovalBroker(()=>undefined);
+  broker.setAccess(sessionId,'full');
+  const other=randomUUID();broker.setAccess(other,'auto');
+  const waiting=broker.request({...descriptor(shell('echo hi')),sessionId:randomUUID()},new AbortController().signal);
+  broker.reset();
+  await expect(waiting).resolves.toBe(false);
+  expect(broker.access(sessionId)).toBe('ask');expect(broker.access(other)).toBe('ask');
+  const next=broker.request(descriptor(shell('echo hi')),new AbortController().signal);
+  expect(broker.list()).toHaveLength(1);
+  broker.rejectAll();await expect(next).resolves.toBe(false);
+});

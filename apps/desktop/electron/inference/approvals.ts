@@ -18,11 +18,13 @@ export class ApprovalBroker {
     return this.access(sessionId);
   }
   list(): HostApproval[] {return [...this.pending.values()].map(entry => entry.approval);}
+  private notify():void {try{this.show(this.list());}catch{/* Renderer delivery cannot hold an approval open. */}}
 
   /** Resolves true only for an automatic grant or the host's explicit Approve before expiry. */
   request(descriptor: ActionDescriptor, signal: AbortSignal, preview?: string, fingerprint?: string): Promise<boolean> {
+    if(signal.aborted||!Number.isFinite(descriptor.expiresAt)||descriptor.expiresAt<=Date.now()||this.pending.has(descriptor.requestId))return Promise.resolve(false);
     const operation = descriptor.operation;
-    if (operation.kind === 'file_write' && preview === undefined) return Promise.resolve(false);
+    if (operation.kind === 'file_write' && (preview === undefined||preview.length>PREVIEW_LIMIT)) return Promise.resolve(false);
     const level = this.access(descriptor.sessionId);
     const reason = needsHost(level, operation);
     if (reason === null) return Promise.resolve(true);
@@ -38,13 +40,13 @@ export class ApprovalBroker {
       const settle = (approved: boolean) => {
         if (!this.pending.delete(approval.id)) return;
         clearTimeout(timer); signal.removeEventListener('abort', onAbort);
-        this.show(this.list());
-        resolve(approved && !signal.aborted);
+        this.notify();
+        resolve(approved && !signal.aborted && descriptor.expiresAt>Date.now());
       };
       if (signal.aborted) return resolve(false);
       signal.addEventListener('abort', onAbort, {once: true});
       this.pending.set(approval.id, {approval, fingerprint: fingerprint ?? null, preview: preview === undefined ? null : preview.slice(0, PREVIEW_LIMIT), settle});
-      this.show(this.list());
+      this.notify();
     });
   }
 
@@ -70,4 +72,6 @@ export class ApprovalBroker {
   }
   /** Account changes, sleep and quitting reject everything still waiting. */
   rejectAll(): void {for (const entry of [...this.pending.values()]) entry.settle(false);}
+  /** Access grants belong to the signed-in account, unlike a temporary sleep or disconnect. */
+  reset(): void {this.levels.clear();this.rejectAll();}
 }

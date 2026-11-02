@@ -1,6 +1,7 @@
 // The queue above the composer: messages sent while the agent works wait here. Steer hands one to the
 // running agent at its next step; the rest run after it, oldest first. Changes arrive as live events.
 import { getBridge } from '../bridge/client';
+import {copyText} from '../bridge/clipboard';
 import { useApp } from '../model/store';
 import { describe } from './controller';
 import { runPending } from './execution';
@@ -32,5 +33,5 @@ export async function editQueued(sessionId: string, instructionId: string, text:
 export function runQueued(sessionId: string): void { void runPending(sessionId); }
 
 export async function copyQueued(text: string): Promise<void> {
-  try { await navigator.clipboard.writeText(text); toast('Copied.'); } catch { toast('Couldn’t copy the message.', 'error'); }
+  try { await copyText(text); toast('Copied.'); } catch { toast('Couldn’t copy the message.', 'error'); }
 }

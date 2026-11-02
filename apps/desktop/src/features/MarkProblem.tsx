@@ -42,6 +42,9 @@ async function outlined(image: string, box: Box): Promise<string> {
 
 export function MarkProblem({ image, open, onClose, onDone }: { image: string; open: boolean; onClose: () => void; onDone: (image: string, note: string) => void }) {
   const picture = useRef<HTMLImageElement>(null);
+  const owner=useApp(s=>s.account);
+  const scope=useRef({image,open,owner});
+  if(scope.current.image!==image||scope.current.open!==open||scope.current.owner!==owner)scope.current={image,open,owner};
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const [box, setBox] = useState<Box | null>(null);
   const [source, setSource] = useState<'sam' | 'hand' | null>(null);
@@ -51,32 +54,38 @@ export function MarkProblem({ image, open, onClose, onDone }: { image: string; o
   const toast = useApp.getState().toast;
   useEffect(() => {
     if (!open) return;
-    setBox(null); setSource(null); setDrag(null);
-    void getBridge()?.inference.segmentAvailable().then((result) => setSam(Boolean(result?.ok && result.value)));
-  }, [open, image]);
+    setBox(null); setSource(null); setDrag(null);setSize(null);setBusy(false);setSam(false);
+    let active=true;
+    void getBridge()?.inference.segmentAvailable().then(result=>{if(active)setSam(Boolean(result?.ok&&result.value));}).catch(()=>{if(active)setSam(false);});
+    return()=>{active=false;};
+  }, [open, image,owner]);
   const at = (event: PointerEvent) => {
     const rect = picture.current!.getBoundingClientRect();
     return { x: ((event.clientX - rect.left) / rect.width) * (size?.width ?? 1), y: ((event.clientY - rect.top) / rect.height) * (size?.height ?? 1) };
   };
   const click = async (point: { x: number; y: number }) => {
     if (!size) return;
+    const operation=scope.current;
     const x = Math.min(size.width - 1, Math.max(0, Math.round(point.x))), y = Math.min(size.height - 1, Math.max(0, Math.round(point.y)));
     if (!sam) { setBox(boxAround(x, y, size.width, size.height)); setSource('hand'); return; }
     setBusy(true);
     try {
       const result = await getBridge()!.inference.segment(image, { x, y, width: size.width, height: size.height });
+      if(scope.current!==operation)return;
       if (result.ok && result.value) { setBox(result.value); setSource('sam'); return; }
       if (!result.ok) toast(describe(result.error), 'error');
       else toast('SAM 3.1 didn’t find an element there. Drag a box around the problem instead.', 'info');
       setBox(boxAround(x, y, size.width, size.height)); setSource('hand');
-    } finally { setBusy(false); }
+    }catch{if(scope.current===operation){setBox(boxAround(x,y,size.width,size.height));setSource('hand');toast('Couldn’t find the element. You can mark it by hand.','info');}}
+    finally {if(scope.current===operation)setBusy(false); }
   };
   const finish = async () => {
     if (!box) return;
+    const operation=scope.current;
     setBusy(true);
-    try { onDone(await outlined(image, box), source === 'sam' ? 'The problem is outlined in red on the screenshot (found by SAM 3.1).' : 'The problem is outlined in red on the screenshot.'); onClose(); }
-    catch (error) { toast(error instanceof Error ? error.message : 'The outline couldn’t be drawn.', 'error'); }
-    finally { setBusy(false); }
+    try { const marked=await outlined(image,box);if(scope.current!==operation)return;onDone(marked, source === 'sam' ? 'The problem is outlined in red on the screenshot (found by SAM 3.1).' : 'The problem is outlined in red on the screenshot.'); onClose(); }
+    catch (error) {if(scope.current===operation)toast(error instanceof Error ? error.message : 'The outline couldn’t be drawn.', 'error'); }
+    finally {if(scope.current===operation)setBusy(false); }
   };
   const shown = drag && size ? boxFrom(drag.start, drag.now, size.width, size.height) : box;
   const pct = (value: number, total: number) => `${(value / total) * 100}%`;

@@ -12,6 +12,8 @@ import { LogoMark } from '../ui/Logo';
 import * as execution from '../live/execution';
 import {getBridge} from '../bridge/client';
 import type {BrowserReviewers} from '../bridge/review';
+import {activitySummary,groupActivity,type ActivityGroup} from './activity';
+import './conversation.css';
 
 type Item<T extends TimelineItem['type']> = Extract<TimelineItem, { type: T }>;
 
@@ -23,10 +25,10 @@ export function Conversation({ d }: { d: SessionDetail }) {
   const decisions = useMemo(() => new Map(d.decisions.map((x) => [x.id, x])), [d.decisions]);
   // Team chat lives in its own panel; this column is the work with the agent.
   // Queued messages wait above the composer until the agent picks them up.
-  const timeline = useMemo(() => d.timeline.filter((item) => !(item.type === 'message' && (item.kind === 'discussion' || (d.source === 'live' && item.queue === 'pending')))), [d.timeline, d.source]);
+  const timeline = useMemo(() => groupActivity(d.timeline.filter((item) => !(item.type === 'message' && (item.kind === 'discussion' || (d.source === 'live' && item.queue === 'pending'))))), [d.timeline, d.source]);
   const last = d.timeline.at(-1);
   const signature = `${d.timeline.length}:${last?.type === 'agent' ? last.text.length : ''}`;
-  const lastCount = useRef(d.timeline.length);
+  const lastCount = useRef(timeline.length);
 
   // Jump to the bottom when switching sessions.
   useLayoutEffect(() => {
@@ -34,7 +36,7 @@ export function Conversation({ d }: { d: SessionDetail }) {
     if (el) el.scrollTop = el.scrollHeight;
     setAtBottom(true);
     setUnseen(0);
-    lastCount.current = d.timeline.length;
+    lastCount.current = timeline.length;
   }, [d.id]);
 
   // Follow new activity only while the reader is already at the bottom; otherwise preserve position.
@@ -42,8 +44,8 @@ export function Conversation({ d }: { d: SessionDetail }) {
     const el = scroller.current;
     if (!el) return;
     if (atBottom) el.scrollTop = el.scrollHeight;
-    else if (d.timeline.length > lastCount.current) setUnseen((n) => n + d.timeline.length - lastCount.current);
-    lastCount.current = d.timeline.length;
+    else if (timeline.length > lastCount.current) setUnseen((n) => n + timeline.length - lastCount.current);
+    lastCount.current = timeline.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
 
@@ -71,6 +73,7 @@ export function Conversation({ d }: { d: SessionDetail }) {
           )}
           {timeline.length === 0 && <p className="timeline-empty">No activity yet.</p>}
           {timeline.map((item, i) => {
+            if(item.type==='activity')return <ActivitySummary key={item.id} item={item}/>;
             const prev = timeline[i - 1];
             const grouped = item.type === 'message' && prev?.type === 'message' && prev.authorId === item.authorId && prev.kind === item.kind
               && new Date(item.at).getTime() - new Date(prev.at).getTime() < 5 * 60_000;
@@ -265,6 +268,23 @@ function HostApprovals({ sessionId }: { sessionId: string }) {
 
 const TOOL_ICON = { read: FileText, search: Search, list: FolderTree, write: PenLine, shell: TerminalSquare, diff: Split } as const;
 
+function ActivitySummary({item}:{item:ActivityGroup}){
+  const showDetails=useApp(state=>state.prefs.showToolDetails);
+  const running=item.calls.some(call=>call.status==='running'||call.status==='pending');
+  return <details className="activity-group" open={showDetails||undefined}>
+    <summary className="activity-summary">
+      {running?<Loader2 size={13} className="spin" aria-label="Working"/>:<Wrench size={13} aria-hidden/>}
+      <span>{activitySummary(item.calls)}</span>
+      <ChevronRight size={13} className="activity-chevron" aria-hidden/>
+    </summary>
+    <ul className="activity-details">
+      {item.items.flatMap(entry=>entry.type==='tools'
+        ? entry.calls.map(call=><ToolRow key={`${entry.id}:${call.id}`} c={call}/>)
+        : [<li key={entry.id} className="activity-note"><span>{entry.text}</span><time dateTime={entry.at}>{clockTime(entry.at)}</time></li>])}
+    </ul>
+  </details>;
+}
+
 function ToolStatusIcon({ status }: { status: ToolCall['status'] }) {
   switch (status) {
     case 'running': return <Loader2 size={13} className="spin tone-accent" aria-label="Running" />;
@@ -279,13 +299,10 @@ function ToolGroup({ item }: { item: Item<'tools'> }) {
   const showDetails = useApp((s) => s.prefs.showToolDetails);
   const running = item.calls.some((c) => c.status === 'running');
   const failed = item.calls.filter((c) => c.status === 'failed' || c.status === 'uncertain').length;
-  const [open, setOpen] = useState(showDetails || running);
-  useEffect(() => { if (running) setOpen(true); }, [running]);
+  const [open, setOpen] = useState(showDetails || failed>0);
+  useEffect(() => { if (failed) setOpen(true); }, [failed]);
 
-  const writes = item.calls.filter((c) => c.tool === 'write').length;
-  const summary = running
-    ? item.calls.find((c) => c.status === 'running')?.summary ?? 'Working…'
-    : writes === item.calls.length ? `Edited ${writes} file${writes > 1 ? 's' : ''}` : `Used ${item.calls.length} tool${item.calls.length > 1 ? 's' : ''}`;
+  const summary = activitySummary(item.calls);
 
   return (
     <div className={cx('tools', open && 'is-open')}>
@@ -311,15 +328,15 @@ function ToolGroup({ item }: { item: Item<'tools'> }) {
 }
 
 function ToolRow({ c }: { c: ToolCall }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(c.status==='failed'||c.status==='uncertain');
   const Icon = TOOL_ICON[c.tool];
   const multiline = c.detail?.includes('\n');
   return (
     <li className="tool-row">
-      <button type="button" className="tool-line" onClick={() => multiline && setOpen(!open)} aria-expanded={multiline ? open : undefined} disabled={!multiline}>
+      <button type="button" className="tool-line" onClick={() => c.detail && setOpen(!open)} aria-expanded={c.detail ? open : undefined} disabled={!c.detail}>
         <Icon size={13} className="tone-muted" aria-hidden />
         <span className={cx('tool-summary', c.tool === 'shell' && 'mono')}>{c.summary}</span>
-        {c.detail && !multiline && <span className="tool-detail">{c.detail}</span>}
+        {c.detail && !multiline && c.detail.length<=120 && <span className="tool-detail">{c.detail}</span>}
         {c.exitCode !== undefined && <span className={cx('exit', c.exitCode === 0 ? 'tone-ok' : 'tone-danger')}>exit {c.exitCode}</span>}
         {c.durationMs !== undefined && <span className="tool-dur">{c.durationMs < 1000 ? `${c.durationMs}ms` : `${(c.durationMs / 1000).toFixed(1)}s`}</span>}
         <ToolStatusIcon status={c.status} />

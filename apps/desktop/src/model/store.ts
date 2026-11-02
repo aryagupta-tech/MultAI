@@ -8,6 +8,7 @@ import type {
   Account, ConnectionState, Decision, InspectorTab, MessageKind, Project, SessionDetail, SessionMode, SessionSummary, TimelineItem,
 } from './types';
 import { DRAFT_LIMIT } from './composer';
+import { composeAttachmentText, type TextAttachment } from '../features/attachments';
 
 export const IS_DEMO = import.meta.env.MODE === 'demo';
 
@@ -36,6 +37,8 @@ export interface Draft {
   requestFor?: string;
   /** One screenshot as a JPEG data URL, sent with the message. undefined removes it. */
   image?: string | undefined;
+  /** Small UTF-8 text files, sent as part of the message text. */
+  files?: TextAttachment[] | undefined;
 }
 
 export type Overlay = null | 'palette' | 'settings' | 'invite' | 'new-project' | 'shortcuts' | 'delete-session' | 'join';
@@ -273,7 +276,7 @@ export const useApp = create<State & Actions>()((set, get) => {
     send: (key, kind, target = key) => {
       const s = get();
       const draft = s.drafts[key];
-      const text = draft?.text.trim() ?? '';
+      const text = composeAttachmentText(draft?.text ?? '', draft?.files).trim();
       if (!text || text.length > DRAFT_LIMIT || !s.account) return false;
       if (s.dataMode === 'live') {
         if (!getBridge()) {
@@ -294,8 +297,8 @@ export const useApp = create<State & Actions>()((set, get) => {
       // While the agent is working, instructions wait in the queue for the next safe boundary.
       const busy = get().details[id]?.status === 'running';
       const queue = kind === 'instruction' ? (busy ? 'pending' as const : 'applied' as const) : undefined;
-      append(id, { id: nextId('t'), type: 'message', kind, authorId: s.account.id, text, ...(queue ? { queue } : {}) });
-      get().setDraft(key, { text: '' });
+      append(id, { id: nextId('t'), type: 'message', kind, authorId: s.account.id, text, ...(draft?.image ? { image: draft.image } : {}), ...(queue ? { queue } : {}) });
+      get().setDraft(key, { text: '', image: undefined, files: undefined });
       set((st) => ({ sessions: st.sessions.map((x) => (x.id === id ? { ...x, updatedAt: now() } : x)) }));
       if (queue === 'applied') simulateTurn(id, text);
       else if (queue === 'pending') get().toast('Queued. The agent will see it at the next safe point.');

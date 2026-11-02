@@ -85,7 +85,7 @@ async function launch() {
 }
 
 function nativeHarness() {
-  const {app, BrowserWindow, dialog, safeStorage} = require('electron');
+  const {app, BrowserWindow, clipboard, dialog, safeStorage} = require('electron');
   const profile = process.env.MULTAI_NATIVE_SMOKE_PROFILE;
   let step = 'initialize';
   let desired;
@@ -129,6 +129,7 @@ function nativeHarness() {
     app.whenReady().then(() => {if (process.platform === 'darwin') app.dock?.hide();});
     app.once('browser-window-created', (_event, window) => {
       const contents = window.webContents;
+      setImmediate(()=>app.emit('open-url',{preventDefault(){}},`multai-dev://join?token=${'A'.repeat(43)}`));
       contents.once('did-fail-load', (_loadEvent, _code, _description, _url, mainFrame) => {if (mainFrame) finish(false, 'renderer_load_failed');});
       contents.once('did-finish-load', () => {
         void (async () => {
@@ -145,7 +146,14 @@ function nativeHarness() {
             await new Promise(resolve => setTimeout(resolve, 25));
           }
           assert(ready, 'compiled_renderer_did_not_mount');
+          let joinShown=false;
+          for(let attempt=0;attempt<100;attempt++){
+            joinShown=await contents.executeJavaScript("Boolean(document.querySelector('[role=dialog]')?.textContent?.includes('Join a session'))");
+            if(joinShown)break;await new Promise(resolve=>setTimeout(resolve,25));
+          }
+          assert(joinShown,'cold_invitation_not_delivered');
           step = 'preload_and_ipc';
+          step='preload_and_ipc';
           const observed = await contents.executeJavaScript(`(async () => {
             const build = await window.multai.getBuildInfo();
             const health = await window.multai.service.health();
@@ -172,6 +180,21 @@ function nativeHarness() {
           assert(observed.authStatus === 'signed-out', 'fresh_profile_must_be_signed_out');
           assert(observed.inferenceDenied && observed.inferenceError === 'signed_out', 'signed_out_inference_boundary');
           assert(observed.reviewDenied&&observed.verificationDenied&&observed.conflictDenied,'signed_out_review_boundaries');
+          step='native_clipboard';
+          assert(typeof clipboard?.readText==='function','clipboard_read_unavailable');
+          assert(typeof clipboard?.writeText==='function','clipboard_write_unavailable');
+          const oldClipboard=await clipboard.readText();
+          const clipboardProbe=`MultAI QA ${crypto.randomUUID()}`;
+          try{
+            step='clipboard_ipc';
+            assert(await contents.executeJavaScript('typeof window.multai.writeClipboard')==='function','clipboard_bridge_missing');
+            const copied=await contents.executeJavaScript(`window.multai.writeClipboard(${JSON.stringify(clipboardProbe)})`);
+            assert(copied.ok===true&&await clipboard.readText()===clipboardProbe,'native_clipboard_roundtrip');
+            step='clipboard_validation';
+            const malformed=await contents.executeJavaScript('window.multai.writeClipboard({invalid:true})');
+            assert(malformed.ok===false,'native_clipboard_validation');
+          }finally{await clipboard.writeText(oldClipboard);}
+
           assert(observed.build.channel === 'development' && typeof observed.build.dirty === 'boolean' && Number.isFinite(Date.parse(observed.build.builtAt)), 'development_build_provenance');
           assert(process.env.MULTAI_NATIVE_SMOKE_COMMIT && observed.build.commit === process.env.MULTAI_NATIVE_SMOKE_COMMIT, 'compiled_commit_mismatch');
           assert(observed.health.reachable === true && observed.health.database === 'ready', 'real_backend_not_ready');
@@ -202,14 +225,14 @@ function nativeHarness() {
             versions: {electron: process.versions.electron, node: process.versions.node, chromium: process.versions.chrome},
             build: observed.build,
             artifacts: {mainSha256: sha256(path.join(appRoot, 'dist', 'electron', 'main.cjs')), preloadSha256: sha256(path.join(appRoot, 'dist', 'electron', 'preload.cjs')), rendererIndexSha256: sha256(path.join(appRoot, 'dist', 'renderer', 'index.html'))},
-            checks: {compiledRendererMounted: true, preloadAndRealIpc: true, isolatedTemporaryProfile: true, sandboxAndContextIsolation: true, rendererNodeUnavailable: true, untrustedWindowIpcRejected: true, signedOutInferenceDenied: true, realBackendDatabaseReady: true},
+            checks: {compiledRendererMounted: true, preloadAndRealIpc: true, isolatedTemporaryProfile: true, sandboxAndContextIsolation: true, rendererNodeUnavailable: true, untrustedWindowIpcRejected: true, signedOutInferenceDenied: true, nativeClipboardRoundTrip:true, coldInvitationDelivered:true, realBackendDatabaseReady: true},
             identityReadiness: observed.health.identity,
             protocol: {intentRecorded: protocolName, osRegistrationPerformed: false},
             osCrypto: {available, backend, approvedBackend, roundTrip},
             liveGoogleSignInVerified: false,
             liveProviderInferenceVerified: false,
           });
-        })().catch(error => finish(false, error instanceof Error && /^[a-z_]{1,80}$/u.test(error.message) ? error.message : 'assertion_failed'));
+        })().catch(error => finish(false, error instanceof Error && /^[a-z_]{1,80}$/u.test(error.message) ? error.message : `assertion_failed_${error instanceof Error?error.name:'unknown'}`));
       });
     });
     step = 'compiled_main_startup';

@@ -99,11 +99,11 @@
 .presence-offline { background: var(--text-3); }
 
 .segmented {
-  display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--r-md);
+  display: inline-flex; flex-shrink: 0; padding: 2px; gap: 2px; border-radius: var(--r-md);
   background: var(--surface-2); border: 1px solid var(--border);
 }
 .segment {
-  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px;
+  display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; white-space: nowrap; gap: 5px; height: 26px; padding: 0 10px;
   border-radius: 6px; color: var(--text-2); font-size: var(--fs-sm); font-weight: 500;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
@@ -114,6 +114,7 @@
 .segmented.is-disabled .segment { cursor: not-allowed; }
 
 .switch-row, .settings-row { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 10px 0; }
+.settings-row > div:first-child { min-width: 0; flex: 1; }
 .switch-label { font-weight: 500; }
 .switch-desc { color: var(--text-3); font-size: var(--fs-sm); margin-top: 2px; }
 .switch { position: relative; width: 34px; height: 20px; flex: none; border-radius: 20px; background: var(--surface-4); border: 1px solid var(--border-strong); transition: background var(--dur) var(--ease); }
@@ -721,7 +722,8 @@ ol.md-list { list-style: decimal; }
 .role-card-title svg { color: var(--accent); }
 .role-card-desc { font-size: var(--fs-xs); color: var(--text-3); }
 .invite-link { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border-radius: var(--r-md); border: 1px solid var(--accent-line); background: var(--accent-soft); animation: pop-in 160ms var(--ease); }
-.invite-link input { flex: 1; border: 0; background: transparent; box-shadow: none !important; padding: 4px 0; font-family: var(--font-mono); font-size: var(--fs-sm); }
+.invite-link input { flex: 1; min-width: 0; border: 0; background: transparent; box-shadow: none !important; padding: 4px 0; font-family: var(--font-mono); font-size: var(--fs-sm); }
+.invite-link .btn { flex-shrink: 0; }
 .folder-pick { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; border-radius: var(--r-md); border: 1px dashed var(--border-strong); color: var(--text-2); text-align: left; font-size: var(--fs-sm); }
 .folder-pick:hover { border-color: var(--accent-line); color: var(--text); }
 .folder-pick.has-value { border-style: solid; color: var(--text); font-family: var(--font-mono); }

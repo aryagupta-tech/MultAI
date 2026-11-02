@@ -27,7 +27,11 @@ const service = {
   onLiveEvents: listen(IPC.liveEvents),
   onLiveStatus: listen(IPC.liveStatus),
   onLivePresence: listen(IPC.livePresence),
-  onJoinLink: listen(IPC.joinLink),
+  onJoinLink:(listener:(token:string)=>void)=>{
+    const stop=listen<string>(IPC.joinLink)(listener);
+    void ipcRenderer.invoke(IPC.joinReady).catch(()=>undefined);
+    return stop;
+  },
 } as unknown as ServiceApi;
 
 const controllerOps = ['createPairing', 'reviewPairing', 'confirmPairing', 'declinePairing', 'revokePairing', 'listPhones', 'audit'] as const;
@@ -37,6 +41,7 @@ const controller = {
 } as unknown as ControllerBridge;
 
 const bridge: DesktopBridge = {
+  writeClipboard:(text)=>ipcRenderer.invoke(IPC.clipboard,text),
   controller: Object.freeze(controller),
   getBuildInfo: () => ipcRenderer.invoke(IPC.buildInfo),
   pickProjectFolder: () => ipcRenderer.invoke(IPC.pickFolder),

@@ -28,23 +28,29 @@ const keyOf=(sessionId:string|null,projectId:string|null)=>sessionId??`project:$
 const FILES_TTL=15_000;
 
 const loadingFiles=new Map<string,Promise<void>>();
+export function resetAssist():void {
+  loadingFiles.clear();
+  useAssist.setState({files:{},skills:{},usage:{},editors:null,compacting:{},locked:{},dialog:null});
+}
 /** Files for @: refreshed at most every 15 seconds per session (or project, before its first chat). */
 export function loadFiles(sessionId:string|null,projectId:string|null):Promise<void>{
+  const owner=useApp.getState().account;
   const key=keyOf(sessionId,projectId);
   const cached=useAssist.getState().files[key];
   if(cached&&Date.now()-cached.at<FILES_TTL)return Promise.resolve();
   const existing=loadingFiles.get(key);if(existing)return existing;
   const request=(async()=>{
     const result=await api()?.listFiles(sessionId,projectId);
-    if(result?.ok)useAssist.setState(state=>({files:{...state.files,[key]:{...result.value,at:Date.now()}}}));
-  })().finally(()=>loadingFiles.delete(key));
+    if(result?.ok&&useApp.getState().account===owner)useAssist.setState(state=>({files:{...state.files,[key]:{...result.value,at:Date.now()}}}));
+  })().catch(()=>undefined).finally(()=>{if(loadingFiles.get(key)===request)loadingFiles.delete(key);});
   loadingFiles.set(key,request);return request;
 }
 export const filesFor=(state:AssistState,sessionId:string|null,projectId:string|null)=>state.files[keyOf(sessionId,projectId)];
 
 export async function loadSkills(sessionId:string|null,projectId:string|null):Promise<void>{
-  const result=await api()?.skills(sessionId,projectId);
-  if(result?.ok)useAssist.setState(state=>({skills:{...state.skills,[keyOf(sessionId,projectId)]:result.value}}));
+  const owner=useApp.getState().account;
+  const result=await api()?.skills(sessionId,projectId).catch(()=>null);
+  if(result?.ok&&useApp.getState().account===owner)useAssist.setState(state=>({skills:{...state.skills,[keyOf(sessionId,projectId)]:result.value}}));
 }
 export const skillsFor=(state:AssistState,sessionId:string|null,projectId:string|null)=>state.skills[keyOf(sessionId,projectId)];
 export async function saveSkill(input:{name:string;description:string;body:string},scope:{sessionId:string|null;projectId:string|null}):Promise<boolean>{
@@ -61,8 +67,9 @@ export async function deleteSkill(name:string,scope:{sessionId:string|null;proje
 }
 
 export async function loadUsage(sessionId:string):Promise<void>{
-  const result=await api()?.contextUsage(sessionId);
-  if(result?.ok)useAssist.setState(state=>({usage:{...state.usage,[sessionId]:result.value}}));
+  const owner=useApp.getState().account;
+  const result=await api()?.contextUsage(sessionId).catch(()=>null);
+  if(result?.ok&&useApp.getState().account===owner)useAssist.setState(state=>({usage:{...state.usage,[sessionId]:result.value}}));
 }
 
 let subscribed=false;

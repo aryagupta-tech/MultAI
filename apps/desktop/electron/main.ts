@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session, shell, powerMonitor, type IpcMainInvokeEvent } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell, powerMonitor, type IpcMainInvokeEvent } from 'electron';
 import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -53,6 +53,7 @@ const origin = serviceOrigin();
 app.setPath('userData',path.join(app.getPath('appData'),isRelease?'dev.multai.desktop':'dev.multai.desktop.development'));
 let mainWindow: BrowserWindow | null = null;
 let pendingJoinToken: string | null = null;
+let joinListenerReady=false;
 
 const send = (channel: string, payload: unknown) => {
   if (mainWindow && !mainWindow.isDestroyed()&&!mainWindow.webContents.isDestroyed()) {
@@ -108,8 +109,9 @@ async function openIn(folder:string,editor:Editor):Promise<void>{
 }
 const account = new Account(origin, (state) => {
   if(state.status!=='signed-in'){
+    terminal.stopAll();
     connections?.invalidate();
-    approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);
+    approvals?.reset();void coordinator?.invalidate().catch(()=>undefined);
     void remote?.stop().catch(()=>undefined);
   }else void remote?.start().catch(()=>undefined);
   send(IPC.authChanged,state);
@@ -148,7 +150,7 @@ function handleDeepLink(raw: string): void {
     const token = url.searchParams.get('token') ?? '';
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return;
     // The renderer asks for confirmation; nothing is sent until the person agrees.
-    if (mainWindow) send(IPC.joinLink, token);
+    if (mainWindow&&joinListenerReady) send(IPC.joinLink, token);
     else pendingJoinToken = token;
   }
   if (mainWindow) {
@@ -158,6 +160,16 @@ function handleDeepLink(raw: string): void {
 }
 
 function registerIpc(): void {
+  ipcMain.handle(IPC.clipboard,async(event,text:unknown)=>{
+    assertTrustedSender(event);
+    if(typeof text!=='string'||Buffer.byteLength(text)>1_000_000)return {ok:false,error:{code:'invalid_request',message:'Clipboard text is too large or invalid.'}};
+    try{await clipboard.writeText(text);return {ok:true,value:null};}
+    catch{return {ok:false,error:{code:'clipboard_unavailable',message:'Couldn’t copy. Select the text and copy it manually.'}};}
+  });
+  ipcMain.handle(IPC.joinReady,event=>{
+    assertTrustedSender(event);joinListenerReady=true;
+    if(pendingJoinToken){const token=pendingJoinToken;pendingJoinToken=null;send(IPC.joinLink,token);}
+  });
   ipcMain.handle(IPC.buildInfo, (event): BuildInfo => {
     assertTrustedSender(event);
     return { ...__BUILD_INFO__, platform: process.platform as BuildInfo['platform'], serviceOrigin: origin };
@@ -187,7 +199,7 @@ function registerIpc(): void {
     if (!isServiceOp(op)) throw new Error('Unknown service operation.');
     if(op==='signOut'){
       connections?.invalidate();terminal.stopAll();mcp.stopAll();
-      approvals?.rejectAll();await coordinator?.invalidate();
+      approvals?.reset();await coordinator?.invalidate();
     }
     const result = await route(account, live, op, args);
     if(op==='createSession'&&coordinator){
@@ -195,7 +207,7 @@ function registerIpc(): void {
       const id=created.ok?created.value?.session?.id:undefined;
       if(id){try{await coordinator.prepareWorkspace(id);}catch{return {ok:false,error:{code:'workspace_unavailable',message:'The session was saved but its private workspace could not be prepared. Retry with the saved draft identity.'}};}}
     }
-    if (op === 'authState' && pendingJoinToken) {
+    if (op === 'authState' && joinListenerReady && pendingJoinToken) {
       // Deliver a join link that launched the app once the renderer is listening.
       const token = pendingJoinToken;
       pendingJoinToken = null;
@@ -250,6 +262,8 @@ function createWindow(): void {
   });
 
   const wc = mainWindow.webContents;
+  joinListenerReady=false;
+  wc.on('did-start-loading',()=>{joinListenerReady=false;});
   wc.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://')) void shell.openExternal(url);
     return { action: 'deny' };
@@ -261,6 +275,7 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => {
+    joinListenerReady=false;
     mainWindow = null;
     live.closeAll();
     connections?.invalidate();

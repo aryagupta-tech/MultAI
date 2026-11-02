@@ -5,6 +5,7 @@ import {routeInference} from './router';
 import {ConnectionError} from './network';
 import type {ConnectionManager} from './connections';
 import type {HostCoordinator} from './coordinator';
+import {TerminalHost} from './terminal';
 
 vi.mock('electron',()=>({app:{getPath:()=>'/tmp/multai-router-unused'},shell:{openExternal:vi.fn()},safeStorage:{isEncryptionAvailable:()=>false}}));
 
@@ -51,5 +52,20 @@ describe('inference IPC validation boundaries',()=>{
     x.coordinator.invalidate.mockRejectedValueOnce(new Error('Synthetic cancellation failure'));
     expect(await x.route('remove',[id])).toMatchObject({ok:false});
     expect(x.manager.remove).not.toHaveBeenCalled();
+  });
+  it('does not start a terminal command if Stop or sign-out happened during preparation',async()=>{
+    for(const stopAll of [false,true]){
+      let prepared!:(root:string)=>void;
+      const root=new Promise<string>(resolve=>{prepared=resolve;});
+      const coordinator={invalidateVerification:vi.fn(async()=>undefined),terminalRoot:vi.fn(()=>root)};
+      const terminal=new TerminalHost(()=>undefined),sessionId=randomUUID();
+      const pending=routeInference({} as ConnectionManager,coordinator as unknown as HostCoordinator,new ApprovalBroker(()=>undefined),'terminalRun',[sessionId,'echo should-not-run'],{
+        projects:{} as never,terminal,editors:async()=>[],openIn:async()=>undefined,mcp:{} as never,
+      });
+      await vi.waitFor(()=>expect(coordinator.terminalRoot).toHaveBeenCalled());
+      if(stopAll)terminal.stopAll();else terminal.stop(sessionId);
+      prepared('/multai-canceled-command');
+      expect(await pending).toEqual({ok:false,error:{code:'TERMINAL_STOPPED',message:'The command was canceled before it started.'}});
+    }
   });
 });

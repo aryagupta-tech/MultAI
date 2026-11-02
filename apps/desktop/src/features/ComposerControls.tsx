@@ -6,6 +6,7 @@ import { getBridge } from '../bridge/client';
 import type { AccessLevel } from '../bridge/execution';
 import type { InferenceModel } from '../bridge/inference';
 import { useApp } from '../model/store';
+import { DRAFT_LIMIT } from '../model/composer';
 import * as execution from '../live/execution';
 import { Button, Dialog, IconButton, Menu, cx } from '../ui/primitives';
 
@@ -25,27 +26,32 @@ function useExecutionState<T>(read: () => T): T {
 
 /* ---------------------------------------------------------------- Model */
 
-const modelCache = new Map<string, InferenceModel[]>();
-
 export function ModelPicker() {
+  const accountId = useApp((s) => s.account?.id);
   const selection = useExecutionState(execution.getSelection);
   const connections = useExecutionState(execution.getConnections);
-  const [models, setModels] = useState<Record<string, InferenceModel[]>>(() => Object.fromEntries(modelCache));
+  const [models, setModels] = useState<Record<string, InferenceModel[]>>({});
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
   const app = useApp.getState();
   useEffect(() => {
     const inference = getBridge()?.inference;
+    setModels({});
+    setFailed(false);
+    setLoading(Boolean(inference && connections.length));
     if (!inference) return;
     let current = true;
-    for (const connection of connections) {
-      if (modelCache.has(connection.id)) continue;
-      void inference.models(connection.id).then((r) => {
-        if (!r.ok || !current) return;
-        modelCache.set(connection.id, r.value);
-        setModels(Object.fromEntries(modelCache));
-      });
-    }
+    void Promise.all(connections.map(async (connection) => {
+      try {
+        const result = await inference.models(connection.id);
+        if (!current || useApp.getState().account?.id !== accountId) return;
+        if (!result.ok) { setFailed(true); return; }
+        setModels((previous) => ({ ...previous, [connection.id]: result.value }));
+      } catch { if (current && useApp.getState().account?.id === accountId) setFailed(true); }
+    })).finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [connections.map((c) => c.id).join()]);
+  }, [connections.map((c) => c.id).join(), accountId, retry]);
 
   const label = selection ? prettyModel(selection.modelName ?? selection.model) : 'Choose model';
   const items = connections.flatMap((connection) => [
@@ -65,11 +71,13 @@ export function ModelPicker() {
       width={260}
       items={[
         ...items,
+        ...(loading ? [{ id: 'loading', label: 'Loading models…', disabled: 'Models are loading' }] : []),
+        ...(failed ? [{ id: 'retry', label: 'Retry loading models', onSelect: () => setRetry((value) => value + 1) }] : []),
         ...(items.length ? [{ id: 'sep', separator: true as const }] : []),
         { id: 'manage', label: connections.length ? 'Manage AI connections…' : 'Connect an AI provider…', icon: Settings2, onSelect: () => app.openOverlay('settings', 'models') },
       ]}
       trigger={(t) => (
-        <button type="button" {...t} className={cx('composer-pick', !selection && 'is-empty')} data-tip="Model" data-tip-side="top">
+        <button type="button" {...t} aria-label={`Model: ${label}`} className={cx('composer-pick composer-model-pick', !selection && 'is-empty')} data-tip="Model" data-tip-side="top">
           {selection && /muse/i.test(selection.model) && <InfinityIcon className="meta-mark" size={16} strokeWidth={2} aria-hidden />}
           <span className="truncate">{label}</span>
           <ChevronDown size={13} aria-hidden />
@@ -109,7 +117,7 @@ export function EffortPicker() {
         onSelect: () => execution.setEffort(id),
       }))}
       trigger={(t) => (
-        <button type="button" {...t} className="composer-pick" data-tip="Reasoning" data-tip-side="top">
+        <button type="button" {...t} aria-label={`Reasoning: ${EFFORT[effort].label}`} className="composer-pick composer-effort-pick" data-tip="Reasoning" data-tip-side="top">
           <Gauge size={14} strokeWidth={1.8} aria-hidden />
           <span>{EFFORT[effort].label}</span>
           <ChevronDown size={13} aria-hidden />
@@ -155,7 +163,7 @@ export function AccessPicker({ sessionId }: { sessionId: string | null }) {
         },
       ]}
       trigger={(t) => (
-        <button type="button" {...t} className={cx('composer-pick', level === 'full' && 'is-full')} data-tip="Agent access" data-tip-side="top">
+        <button type="button" {...t} aria-label={`Agent access: ${ACCESS[level].label}`} className={cx('composer-pick composer-access-pick', level === 'full' && 'is-full')} data-tip="Agent access" data-tip-side="top">
           <Icon size={14} strokeWidth={1.8} aria-hidden />
           <span>{ACCESS[level].short}</span>
           <ChevronDown size={13} aria-hidden />
@@ -178,25 +186,27 @@ export function readPrompts(): SavedPrompt[] {
   try {
     const raw = localStorage.getItem(promptsKey());
     const value = raw ? JSON.parse(raw) as unknown : null;
-    return Array.isArray(value) ? value.filter((p): p is SavedPrompt => typeof p?.id === 'string' && typeof p.label === 'string' && typeof p.text === 'string') : STARTER_PROMPTS;
+    return Array.isArray(value) ? value.filter((p): p is SavedPrompt => typeof p?.id === 'string' && typeof p.label === 'string' && typeof p.text === 'string' && p.text.length <= DRAFT_LIMIT).slice(0, 50) : STARTER_PROMPTS;
   } catch { return STARTER_PROMPTS; }
 }
-function writePrompts(prompts: SavedPrompt[]): void {
-  try { localStorage.setItem(promptsKey(), JSON.stringify(prompts.slice(0, 50))); } catch { useApp.getState().toast('Prompts couldn’t be saved on this device.', 'error'); }
+function writePrompts(prompts: SavedPrompt[]): boolean {
+  try { localStorage.setItem(promptsKey(), JSON.stringify(prompts.slice(0, 50))); return true; } catch { useApp.getState().toast('Prompts couldn’t be saved on this device.', 'error'); return false; }
 }
 
 export function SavedPrompts({ text, onInsert }: { text: string; onInsert: (text: string) => void }) {
+  const accountId = useApp((s) => s.account?.id);
   const [prompts, setPrompts] = useState(readPrompts);
   const [managing, setManaging] = useState(false);
+  useEffect(() => { setPrompts(readPrompts()); setManaging(false); }, [accountId]);
   const save = () => {
     const body = text.trim();
     if (!body) return;
+    if (body.length > DRAFT_LIMIT) { useApp.getState().toast('Shorten the draft before saving it as a prompt.', 'error'); return; }
     const label = body.split('\n')[0]!.slice(0, 48) + (body.length > 48 ? '…' : '');
-    const next = [{ id: crypto.randomUUID(), label, text: body }, ...prompts.filter((p) => p.text !== body)];
-    setPrompts(next); writePrompts(next);
-    useApp.getState().toast('Prompt saved.', 'success');
+    const next = [{ id: crypto.randomUUID(), label, text: body }, ...prompts.filter((p) => p.text !== body)].slice(0, 50);
+    if (writePrompts(next)) { setPrompts(next); useApp.getState().toast('Prompt saved.', 'success'); }
   };
-  const remove = (id: string) => { const next = prompts.filter((p) => p.id !== id); setPrompts(next); writePrompts(next); };
+  const remove = (id: string) => { const next = prompts.filter((p) => p.id !== id); if (writePrompts(next)) setPrompts(next); };
   return (
     <>
       <Menu

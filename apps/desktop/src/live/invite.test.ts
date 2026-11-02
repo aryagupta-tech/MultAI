@@ -12,7 +12,7 @@ beforeAll(() => {
 const build = (channel: 'development' | 'demo' | 'production') => ({ version: '0.1.0', commit: 'abc', dirty: false, builtAt: '', channel, platform: 'darwin' as const, serviceOrigin: 'https://api.multai.si' });
 
 describe('invitation links', () => {
-  test('release builds share multai:// links; development builds keep multai-dev://', async () => {
+  test('release and development invitations target their registered desktop protocol', async () => {
     const { useApp } = await import('../model/store');
     const { inviteLink } = await import('./controller');
     useApp.setState({ build: build('production') });
@@ -27,6 +27,9 @@ describe('invitation links', () => {
     expect(parseInvite(`multai://join?token=${token}`)).toBe(token);
     expect(parseInvite(`  multai-dev://join?token=${token}  `)).toBe(token);
     expect(parseInvite(token)).toBe(token);
+    expect(parseInvite(`https://api.multai.si/app/#join=${token}`)).toBe(token);
+    expect(parseInvite(`https://example.com/?token=${token}`)).toBeNull();
+    expect(parseInvite(`javascript:alert(1)?token=${token}`)).toBeNull();
     for (const junk of ['', 'short', 'AbC_-123456789012345', `${token}x`, 'multai://join?token=<script>', 'multai://join', `${token} extra`]) expect(parseInvite(junk)).toBeNull();
   });
 });
