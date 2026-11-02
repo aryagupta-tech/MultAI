@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   ArrowUp, BookMarked, BookOpen, CircleHelp, FileCode2, FileText, FlaskConical, Folder, GitCompare, GitPullRequestArrow, Hammer,
-  ImagePlus, ListChecks, Loader2, Mic, ScanSearch, Lock, MessageCircle, Minimize2, Plus, SearchCheck, Sparkles, Split, SquareTerminal, Square, Undo2, WandSparkles, X, type LucideIcon,
+  Crosshair, ImagePlus, ListChecks, Loader2, Mic, ScanSearch, Lock, MessageCircle, Minimize2, Plus, SearchCheck, Sparkles, Split, SquareTerminal, Square, Undo2, WandSparkles, X, type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import { DRAFT_LIMIT, applyFormat, draftMeter, resolveEnter, type FormatKind } from '../model/composer';
@@ -17,6 +17,7 @@ import { filesFor, loadFiles, loadSkills, runAppCommand, runShortcutCommand, ski
 import { useWork } from '../live/work';
 import { reportTyping, stopTyping } from '../live/presence';
 import { cancelVoice, toggleVoice, useVoice } from '../live/voice';
+import { MarkProblem } from './MarkProblem';
 
 /** Record a voice instruction; the host's Meta or OpenAI connection turns it into text in the draft. */
 function VoiceButton({ draftKey, disabled }: { draftKey: string; disabled: boolean }) {
@@ -81,6 +82,7 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
   const live = useApp((s) => s.dataMode === 'live');
   const ta = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const [marking, setMarking] = useState(false);
   const image = draft?.image;
   const attach = async (file: Blob) => {
     try { app.setDraft(draftKey, { image: await toScreenshot(file) }); }
@@ -298,8 +300,13 @@ export function Composer({ d, draftKey, autoFocus, team = false }: { d: SessionD
         <div className="composer-attachment">
           <img src={image} alt="Attached screenshot" />
           <button type="button" aria-label="Remove screenshot" onClick={() => app.setDraft(draftKey, { image: undefined })}><X size={12} aria-hidden /></button>
+          {!team && <button type="button" className="mark-open" onClick={() => setMarking(true)}><Crosshair size={12} aria-hidden /> Point at the problem</button>}
         </div>
       )}
+      {image && marking && <MarkProblem image={image} open onClose={() => setMarking(false)} onDone={(marked, note) => {
+        const current = useApp.getState().drafts[draftKey]?.text ?? '';
+        app.setDraft(draftKey, { image: marked, text: current.includes(note) ? current : `${current.replace(/\s+$/u, '')}${current.trim() ? '\n\n' : ''}${note}` });
+      }} />}
       {d && <TypingIndicator d={d} />}
       {suggesting && (
         <ComposerSuggest

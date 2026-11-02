@@ -55,6 +55,9 @@ export interface HostExecutionApi {
   contextUsage(sessionId:string):Promise<Result<ContextUsage|null>>;
   /** Speech to text with the host's Meta (Muse Voice Transcribe) or OpenAI connection. `audio` is base64 24 kHz mono PCM16. */
   transcribe(audio:string):Promise<Result<{text:string;provider:'meta'|'openai'}>>;
+  /** SAM 3.1 on the host's Meta connection: the bounds of the element at this pixel of a screenshot. */
+  segment(image:string,point:{x:number;y:number;width:number;height:number}):Promise<Result<{x1:number;y1:number;x2:number;y2:number}|null>>;
+  segmentAvailable():Promise<Result<boolean>>;
   undoPreview(sessionId:string):Promise<Result<UndoPreview|null>>;
   undo(sessionId:string):Promise<Result<{checkpoint:Checkpoint;files:string[]}>>;
   editors():Promise<Result<Editor[]>>;

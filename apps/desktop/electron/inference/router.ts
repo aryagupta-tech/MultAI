@@ -13,6 +13,7 @@ import {McpError,type McpServer} from './mcp';
 import type {AddConnectionInput} from '../../src/bridge/inference';
 import {MAX_PCM_BYTES,VoiceError,chooseVoiceConnection,transcribeMeta,transcribeOpenAI} from './voice';
 import {publicProviderFetch} from './network';
+import {SegmentError,metaConnection,segmentPoint,type Point} from './segment';
 
 /** Speech to text with the host's own Meta or OpenAI connection. */
 async function transcribe(manager:ConnectionManager,coordinator:HostCoordinator,audio:string):Promise<{text:string;provider:'meta'|'openai'}>{
@@ -38,6 +39,8 @@ const schemas={
   terminalRun:z.tuple([z.uuid(),z.string().min(1).max(8000)]),terminalStop:z.tuple([z.uuid()]),run:z.tuple([z.unknown()]),stop:z.tuple([z.uuid()]),
   listFiles:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),skills:z.tuple([z.uuid().nullable(),z.uuid().nullable()]),
   saveSkill:z.tuple([z.object({name:z.string().min(1).max(48),description:z.string().max(300),body:z.string().min(1).max(32_000)}).strict()]),deleteSkill:z.tuple([z.string().min(1).max(48)]),
+  segment:z.tuple([z.string().min(1).max(12_000_000),z.object({x:z.number().int().min(0),y:z.number().int().min(0),width:z.number().int().min(1).max(20_000),height:z.number().int().min(1).max(20_000)}).strict()]),
+  segmentAvailable:z.tuple([]),
   transcribe:z.tuple([z.string().min(1).max(Math.ceil(MAX_PCM_BYTES/3)*4).regex(/^[A-Za-z0-9+/]+={0,2}$/u)]),
   compact:z.tuple([z.unknown()]),contextUsage:z.tuple([z.uuid()]),undoPreview:z.tuple([z.uuid()]),undo:z.tuple([z.uuid()]),
   editors:z.tuple([]),mcpServers:z.tuple([]),mcpDelete:z.tuple([z.uuid()]),mcpTest:z.tuple([z.uuid()]),
@@ -90,6 +93,14 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'compact':value=await coordinator.compact(values[0]);break;
       case 'contextUsage':value=await coordinator.contextUsage(values[0] as string);break;
       case 'transcribe':value=await transcribe(manager,coordinator,values[0] as string);break;
+      case 'segmentAvailable':value=Boolean(metaConnection(await manager.list(),null));break;
+      case 'segment':{
+        const connection=metaConnection(await manager.list(),(await coordinator.selection())?.connectionId??null);
+        if(!connection)throw new SegmentError('SEGMENT_UNAVAILABLE','Outlining with SAM 3.1 needs a Meta connection. Drag a box around the problem instead.');
+        const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),45_000);timer.unref();
+        try{value=await segmentPoint(await manager.resolve(connection.id),values[0] as string,values[1] as Point,publicProviderFetch,controller.signal);}finally{clearTimeout(timer);}
+        break;
+      }
       case 'undoPreview':value=await coordinator.undoPreview(values[0] as string);break;
       case 'undo':value=await coordinator.undo(values[0] as string);break;
       case 'editors':value=await host.editors();break;
@@ -103,7 +114,7 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
     }
     return {ok:true,value};
   }catch(error){
-    if(error instanceof ConnectionError||error instanceof ProviderError||error instanceof RuntimeError||error instanceof ProjectError||error instanceof SkillError||error instanceof McpError||error instanceof VoiceError)return {ok:false,error:{code:error.code,message:error.message}};
+    if(error instanceof ConnectionError||error instanceof ProviderError||error instanceof RuntimeError||error instanceof ProjectError||error instanceof SkillError||error instanceof McpError||error instanceof VoiceError||error instanceof SegmentError)return {ok:false,error:{code:error.code,message:error.message}};
     return {ok:false,error:toError(error)};
   }
 }
