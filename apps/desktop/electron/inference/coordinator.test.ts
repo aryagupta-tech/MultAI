@@ -386,6 +386,30 @@ describe('parallel agents', () => {
     expect(heard[2]!.join('\n')).toMatch(/keep it small/u);
   }, 15000);
 
+  test('an agent that stops before changing its files is asked once to finish, and its summary is its last paragraph', async () => {
+    const x = await fixture();
+    const {root} = await project(x);
+    x.state.instruction = '/split Two parts';
+    const asked: string[][] = [];
+    runtime.run.mockImplementation(async (options: RunAgentOptions) => {
+      if (options.system === PLAN_SYSTEM) return {text: '{"parts":[{"title":"A","task":"a","files":["a.js"]},{"title":"B","task":"b","files":["b.js"]}]}', iterations: 1};
+      const lane = Number(/You are agent (\d) of 2/u.exec(String(options.messages.find(message => /You are agent/u.test(String(message.content)))?.content))?.[1]);
+      (asked[lane] ??= []).push(userText(options));
+      if (lane === 2 && asked[2]!.length === 1) return {text: 'Reading the files first.', iterations: 1};
+      await options.executeTool!(write(lane === 1 ? 'a.js' : 'b.js', `// ${lane}\n`), options.signal);
+      return {text: `Step one done.\n\nWrote ${lane === 1 ? 'a.js' : 'b.js'} and checked it.`, iterations: 2};
+    });
+    await x.host.run(x.input); await x.terminal();
+    expect(asked[1]).toHaveLength(1);
+    expect(asked[2]).toHaveLength(2);
+    expect(asked[2]![1]).toMatch(/Your part isn't done yet: none of b\.js changed/u);
+    expect(await readFile(join(root, 'b.js'), 'utf8')).toBe('// 2\n');
+    const report = events(x).find(event => event.type === 'agent.completed')!.payload.text as string;
+    expect(report).toMatch(/Wrote b\.js and checked it\./u);
+    expect(report).not.toMatch(/Step one done/u);
+    expect(events(x).find(event => event.payload.tool === 'merge')?.payload.summary).toBe('Merged 2 agents’ work into this chat');
+  });
+
   test('needs a project, Build mode and a task', async () => {
     for (const [setup, code] of [['private', 'SPLIT_NEEDS_PROJECT'], ['plan', 'SPLIT_NEEDS_BUILD'], ['empty', 'SPLIT_NEEDS_TASK']] as const) {
       const x = await fixture();

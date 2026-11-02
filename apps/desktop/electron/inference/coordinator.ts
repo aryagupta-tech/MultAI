@@ -700,13 +700,20 @@ export class HostCoordinator {
         const laneRun:Running={...running,lane:{index:lane.index,title:lane.title}};
         const workspace=await ControlledWorkspace.open(lane.root);
         try{
-          const result=await runAgent({credentials,model,signal,fetch:providerFetch(credentials),system:input.system,steer:steerFor(lane),beforeRequest:()=>this.assertLive(running,true),
-            messages:[...input.history,{role:'user',content:`Instruction from participant ${input.authorId}, split across ${lanes.length} agents working at the same time:\n${task}\n\nYou are agent ${lane.index} of ${lanes.length}. Your part, “${lane.title}”:\n${lane.task}\n\n${lane.files.length?`Change only these files: ${lane.files.join(', ')}. `:''}The other parts are being built right now by ${others(lane)||'no one else'}, each in their own copy; don't build them yourself. When you're done, reply with a short summary of what you changed and how you checked it.`}],
+          const ask=`Instruction from participant ${input.authorId}, split across ${lanes.length} agents working at the same time:\n${task}\n\nYou are agent ${lane.index} of ${lanes.length}. Your part, “${lane.title}”:\n${lane.task}\n\n${lane.files.length?`Change only these files: ${lane.files.join(', ')}. `:''}The other parts are being built right now by ${others(lane)||'no one else'}, each in their own copy; don't build them yourself. When you're done, reply with a short summary of what you changed and how you checked it.`;
+          const attempt=(messages:ContextMessage[])=>runAgent({credentials,model,signal,fetch:providerFetch(credentials),system:input.system,steer:steerFor(lane),beforeRequest:()=>this.assertLive(running,true),messages,
             tools:[...readDefinitions.filter(tool=>tool.name!=='codebase_search'),...(input.skills.length?[skillDefinition]:[]),...effectDefinitions],
             ...(reasoning?{reasoningEffort:reasoning}:{}),limits,
             executeTool:(call,callSignal)=>this.tool(laneRun,workspace,call,callSignal),
             onEvent:event=>{if(event.type==='usage')addUsage(event.usage);}});
-          const summary=redactText(result.text,running.secrets).trim();
+          let result=await attempt([...input.history,{role:'user',content:ask}]);
+          // An agent that stopped before changing anything it was meant to gets one nudge to finish its part.
+          if(lane.files.length&&!(await laneResult(lane,base))){
+            await this.publish(laneRun,'activity.completed',{summary:'Stopped before changing its files; asked to finish its part'});
+            result=await attempt([...input.history,{role:'user',content:ask},{role:'assistant',content:result.text.slice(-8000)||'(no reply)'},{role:'user',content:`Your part isn't done yet: none of ${lane.files.join(', ')} changed. Make the change now with write_file (read each file first), check it, then reply with a short summary.`}]);
+          }
+          // The model's last paragraph is its summary; earlier ones narrate its steps.
+          const summary=redactText(result.text,running.secrets).trim().split(/\n\s*\n/u).filter(Boolean).at(-1)??'';
           await this.publish(laneRun,'activity.completed',{tool:'lane',state:'done',summary:`Finished: ${lane.title}`,detail:summary.slice(0,4000)});
           return {lane,ok:true as const,summary};
         }catch(error){
@@ -721,7 +728,7 @@ export class HostCoordinator {
       const current=await captureWork(root,base,'MultAI: before merging parallel agents');
       const merge=await mergeLanes(root,base,current,results);
       const changed=await applyCommit(root,current,merge.commit);
-      if(results.length)await this.publish(running,'activity.completed',{tool:'merge',summary:merge.conflicts.length?`Merged ${merge.merged.length} of ${results.length} agents’ work; ${merge.conflicts.length} conflicted`:`Merged ${merge.merged.length} agents’ work into this chat`,files:changed.slice(0,50)});
+      if(results.length)await this.publish(running,'activity.completed',{tool:'merge',summary:merge.conflicts.length?`Merged ${merge.merged.length} of ${results.length} agents’ work; ${merge.conflicts.length} conflicted`:merge.merged.length===1?'Merged 1 agent’s work into this chat':`Merged ${merge.merged.length} agents’ work into this chat`,files:changed.slice(0,50)});
       // 5. A conflicting part is applied by one more pass in the chat's worktree, with the usual approvals.
       const resolved:number[]=[];
       if(merge.conflicts.length){
