@@ -215,6 +215,7 @@ export async function complete(input: CompleteInput): Promise<Completion> {
   let text = '';
   let textBytes = 0;
   let output: Record<string, unknown>[] = [];
+  let textPart: string | null = null;
   // The ChatGPT plan backend delivers finished items only as they stream and sends an empty final output list.
   const finishedItems: Record<string, unknown>[] = [];
   let calls: ToolCall[] = [];
@@ -250,7 +251,13 @@ export async function complete(input: CompleteInput): Promise<Completion> {
       throw new ProviderError(code ?? 'provider_stream_failed', safeFailureMessage(code, 'The provider reported an error during inference.'));
     }
     if (state.protocol === 'responses') {
-      if (event.type === 'response.output_text.delta') await emitText(event.delta);
+      if (event.type === 'response.output_text.delta') {
+        // Separate text blocks in one turn (Muse writes a line between searches) are separate paragraphs.
+        const at = `${String(event.output_index ?? '')}:${String(event.content_index ?? '')}`;
+        if (text && textPart !== null && at !== textPart && !/\s$/u.test(text)) await emitText('\n\n');
+        textPart = at;
+        await emitText(event.delta);
+      }
       else if (event.type === 'response.output_item.done') {
         if (finishedItems.length >= 256) throw new ProviderError('output_limit', 'The provider returned too many output items.');
         const item = record(event.item);

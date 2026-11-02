@@ -61,47 +61,62 @@ export async function transcribeOpenAI(credentials:{apiKey:string; baseUrl?:stri
   return text;
 }
 
-export type SocketFactory = (url:string, headers:Record<string, string>) => WebSocket;
-const defaultSocket:SocketFactory = (url, headers) => new WebSocket(url, {headers, handshakeTimeout: 10_000, maxPayload: 1024 * 1024});
+export type SocketFactory = (url:string) => WebSocket;
+const defaultSocket:SocketFactory = url => new WebSocket(url, {handshakeTimeout: 10_000, maxPayload: 1024 * 1024});
+/** 80 ms of 24 kHz PCM16, the frame size Meta's examples use. */
+const FRAME_BYTES = 3_840;
 
 /**
- * Meta: Muse Voice Transcribe is realtime only, so the recording is streamed over Meta's realtime
- * WebSocket in chunks, committed, and the finished transcript is read back.
+ * Meta: Muse Voice Transcribe is realtime only (wss://api.meta.ai/v1/asr/realtime). The key goes in a JSON
+ * handshake, the recording follows as binary PCM frames at twice real time, then `endStream`; the final
+ * transcript events arrive before the server closes normally.
  */
-export function transcribeMeta(credentials:{apiKey:string}, pcm:Buffer, signal:AbortSignal, socketFactory:SocketFactory = defaultSocket, timeoutMs = 45_000):Promise<string> {
+export function transcribeMeta(credentials:{apiKey:string}, pcm:Buffer, signal:AbortSignal, socketFactory:SocketFactory = defaultSocket, timeoutMs = 45_000, frameMs = 40):Promise<string> {
   checkAudio(pcm);
   return new Promise((resolve, reject) => {
-    const url = `wss://api.meta.ai/v1/realtime?model=${encodeURIComponent(META_TRANSCRIBE_MODEL)}&intent=transcription`;
-    const socket = socketFactory(url, {authorization: `Bearer ${credentials.apiKey}`, 'openai-beta': 'realtime=v1'});
+    const socket = socketFactory('wss://api.meta.ai/v1/asr/realtime');
+    const finals:string[] = [];
     let partial = '';
-    let settled = false;
+    let settled = false, streaming = false;
+    let pacer:ReturnType<typeof setTimeout> | null = null;
+    const heard = () => clean(finals.join(' ')) || clean(partial);
     const finish = (error:Error | null, text = '') => {
       if (settled) return; settled = true;
-      clearTimeout(timer); signal.removeEventListener('abort', abort);
+      clearTimeout(timer); if (pacer) clearTimeout(pacer); signal.removeEventListener('abort', abort);
       try {socket.close();} catch {/* already closed */}
       if (error) reject(error); else resolve(text);
     };
     const abort = () => finish(new VoiceError('VOICE_CANCELED', 'Transcription was canceled.'));
-    const timer = setTimeout(() => finish(partial ? null : new VoiceError('VOICE_TIMEOUT', 'Muse Voice Transcribe didn’t answer in time. Try again.'), partial), timeoutMs);
+    const timer = setTimeout(() => {const text = heard(); finish(text ? null : new VoiceError('VOICE_TIMEOUT', 'Muse Voice Transcribe didn’t answer in time. Try again.'), text);}, timeoutMs);
     signal.addEventListener('abort', abort, {once: true});
+    const stream = (offset:number) => {
+      if (settled) return;
+      if (offset >= pcm.length) {socket.send(JSON.stringify({type: 'endStream'})); return;}
+      socket.send(pcm.subarray(offset, offset + FRAME_BYTES));
+      pacer = setTimeout(() => stream(offset + FRAME_BYTES), frameMs);
+    };
     socket.on('open', () => {
-      socket.send(JSON.stringify({type: 'transcription_session.update', session: {input_audio_format: 'pcm16', input_audio_transcription: {model: META_TRANSCRIBE_MODEL}, turn_detection: null}}));
-      for (let offset = 0; offset < pcm.length; offset += 48_000) socket.send(JSON.stringify({type: 'input_audio_buffer.append', audio: pcm.subarray(offset, offset + 48_000).toString('base64')}));
-      socket.send(JSON.stringify({type: 'input_audio_buffer.commit'}));
+      socket.send(JSON.stringify({authorization: {accessToken: `Bearer ${credentials.apiKey}`}, audioEncoding: 'PCM_24KHZ', model: META_TRANSCRIBE_MODEL, mode: 'PUSH_TO_TALK'}));
     });
-    socket.on('message', data => {
-      let event:{type?:string; delta?:unknown; transcript?:unknown; error?:{message?:unknown}};
+    socket.on('message', (data, binary) => {
+      if (binary) return;
+      let event:{type?:string; sessionId?:unknown; transcript?:unknown; final?:unknown; message?:unknown};
       try {event = JSON.parse(String(data));} catch {return;}
-      if (event.type === 'conversation.item.input_audio_transcription.delta' && typeof event.delta === 'string') partial += event.delta;
-      else if (event.type === 'conversation.item.input_audio_transcription.completed') {
-        const text = clean(event.transcript) || clean(partial);
-        finish(text ? null : new VoiceError('VOICE_EMPTY', 'No speech was heard. Try again a little closer to the microphone.'), text);
-      } else if (event.type === 'error' || event.type === 'conversation.item.input_audio_transcription.failed') {
+      if (!streaming && event.type === undefined && typeof event.sessionId === 'string') {streaming = true; stream(0); return;}
+      if (event.type === 'transcript' && typeof event.transcript === 'string') {
+        if (event.final === true) {finals.push(event.transcript); partial = '';} else partial = event.transcript;
+      } else if (event.type === 'error') {
         finish(new VoiceError('VOICE_FAILED', 'Muse Voice Transcribe couldn’t transcribe that. Try again.'));
       }
     });
-    socket.on('unexpected-response', (_request, response) => finish(new VoiceError(response.statusCode === 401 ? 'provider_credentials_invalid' : 'VOICE_FAILED', response.statusCode === 401 ? 'This Meta key was refused. Check it in Settings.' : `Meta’s realtime transcription refused the connection (HTTP ${response.statusCode ?? '?'}).`)));
+    socket.on('unexpected-response', (_request, response) => finish(new VoiceError('VOICE_FAILED', `Meta’s realtime transcription refused the connection (HTTP ${response.statusCode ?? '?'}).`)));
     socket.on('error', () => finish(new VoiceError('VOICE_FAILED', 'Couldn’t reach Muse Voice Transcribe. Check your connection.')));
-    socket.on('close', () => finish(partial ? null : new VoiceError('VOICE_FAILED', 'Muse Voice Transcribe closed the connection before answering.'), clean(partial)));
+    socket.on('close', code => {
+      const text = heard();
+      if (code === 1000) finish(text ? null : new VoiceError('VOICE_EMPTY', 'No speech was heard. Try again a little closer to the microphone.'), text);
+      else if (text) finish(null, text);
+      else finish(new VoiceError(code === 1008 && !streaming ? 'provider_credentials_invalid' : code === 1013 ? 'provider_rate_limited' : 'VOICE_FAILED',
+        code === 1008 && !streaming ? 'Meta refused the transcription request. Check the Meta key in Settings.' : code === 1013 ? 'Meta is rate limiting transcription. Wait a moment and try again.' : 'Muse Voice Transcribe closed the connection before answering.'));
+    });
   });
 }

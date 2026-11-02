@@ -451,3 +451,14 @@ test('a local model is reached over Chat Completions on this computer only', asy
   // Other providers still refuse plain http and localhost.
   await assert.rejects(runAgent({credentials: {kind: 'compatible', apiKey: 'x', baseUrl: 'http://localhost:11434/v1'}, model: 'm', messages: [{role: 'user', content: 'hi'}], signal: signal(), fetch: local}), /HTTPS/u);
 });
+
+test('separate text blocks in one Responses turn become separate paragraphs', async () => {
+  const fetcher: typeof fetch = async () => stream([
+    {type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'I will search.'},
+    {type: 'response.output_text.delta', output_index: 2, content_index: 0, delta: 'Found '},
+    {type: 'response.output_text.delta', output_index: 2, content_index: 0, delta: 'it.'},
+    {type: 'response.completed', response: {status: 'completed', output: []}},
+  ]);
+  const answer = await runAgent({credentials, model: 'synthetic', messages: [{role: 'user', content: 'x'}], signal: signal(), fetch: fetcher});
+  assert.equal(answer.text, 'I will search.\n\nFound it.');
+});

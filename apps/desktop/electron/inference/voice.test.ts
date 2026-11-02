@@ -7,12 +7,14 @@ import {META_TRANSCRIBE_MODEL,OPENAI_TRANSCRIBE_MODEL,SAMPLE_RATE,chooseVoiceCon
 const second=Buffer.alloc(SAMPLE_RATE*2);
 const connection=(id:string,provider:ConnectionSummary['provider'],status:ConnectionSummary['status']='ready'):ConnectionSummary=>({id,name:id,provider,status,baseUrl:''});
 
-class FakeSocket extends EventEmitter {sent:Record<string,unknown>[]=[];closed=false;send(data:string){this.sent.push(JSON.parse(data));}close(){this.closed=true;}}
+class FakeSocket extends EventEmitter {sent:(Record<string,unknown>|Buffer)[]=[];closed=false;send(data:string|Buffer){this.sent.push(typeof data==='string'?JSON.parse(data):Buffer.from(data));}close(){this.closed=true;}}
 function meta(){
-  const socket=new FakeSocket();const urls:string[]=[];const headers:Record<string,string>[]=[];
-  const factory=(url:string,h:Record<string,string>)=>{urls.push(url);headers.push(h);return socket as unknown as WebSocket;};
-  return {socket,urls,headers,factory};
+  const socket=new FakeSocket();const urls:string[]=[];
+  const factory=(url:string)=>{urls.push(url);return socket as unknown as WebSocket;};
+  return {socket,urls,factory};
 }
+const say=(socket:FakeSocket,event:unknown)=>socket.emit('message',Buffer.from(JSON.stringify(event)),false);
+const streamed=async(socket:FakeSocket)=>vi.waitFor(()=>expect(socket.sent.at(-1)).toEqual({type:'endStream'}),{timeout:3000});
 
 describe('voice instructions',()=>{
   it('uses the selected connection when it can transcribe, else Meta, else OpenAI; never Claude, Kimi or a ChatGPT plan',()=>{
@@ -55,51 +57,58 @@ describe('voice instructions',()=>{
     await expect(transcribeOpenAI({apiKey:'k'},second,silent as typeof fetch,new AbortController().signal)).rejects.toMatchObject({code:'VOICE_EMPTY'});
   });
 
-  it('streams the recording to Muse Voice Transcribe, commits it and reads the transcript',async()=>{
+  it('hands Muse Voice Transcribe the key in its handshake, streams binary PCM frames, ends the stream and joins the final transcripts',async()=>{
     const x=meta();
-    const pcm=Buffer.alloc(SAMPLE_RATE*2*3);
-    const result=transcribeMeta({apiKey:'meta-key'},pcm,new AbortController().signal,x.factory);
-    expect(x.urls[0]).toBe(`wss://api.meta.ai/v1/realtime?model=${META_TRANSCRIBE_MODEL}&intent=transcription`);
-    expect(x.headers[0]?.authorization).toBe('Bearer meta-key');
+    const pcm=Buffer.alloc(SAMPLE_RATE*2);
+    const result=transcribeMeta({apiKey:'meta-key'},pcm,new AbortController().signal,x.factory,5000,0);
+    expect(x.urls[0]).toBe('wss://api.meta.ai/v1/asr/realtime');
     x.socket.emit('open');
-    expect(x.socket.sent[0]).toMatchObject({type:'transcription_session.update',session:{input_audio_format:'pcm16',input_audio_transcription:{model:META_TRANSCRIBE_MODEL},turn_detection:null}});
-    const appended=x.socket.sent.filter(item=>item.type==='input_audio_buffer.append');
-    expect(appended.reduce((sum,item)=>sum+Buffer.from(String(item.audio),'base64').length,0)).toBe(pcm.length);
-    expect(x.socket.sent.at(-1)).toEqual({type:'input_audio_buffer.commit'});
-    x.socket.emit('message',Buffer.from('not json'));
-    x.socket.emit('message',Buffer.from(JSON.stringify({type:'conversation.item.input_audio_transcription.delta',delta:'agent 2: '})));
-    x.socket.emit('message',Buffer.from(JSON.stringify({type:'conversation.item.input_audio_transcription.completed',transcript:'agent 2: use cents'})));
-    await expect(result).resolves.toBe('agent 2: use cents');
-    expect(x.socket.closed).toBe(true);
+    expect(x.socket.sent[0]).toEqual({authorization:{accessToken:'Bearer meta-key'},audioEncoding:'PCM_24KHZ',model:META_TRANSCRIBE_MODEL,mode:'PUSH_TO_TALK'});
+    expect(x.socket.sent).toHaveLength(1); // nothing is streamed before the handshake is accepted
+    say(x.socket,{sessionId:'s1'});
+    await streamed(x.socket);
+    const frames=x.socket.sent.filter((item):item is Buffer=>Buffer.isBuffer(item));
+    expect(frames.every(frame=>frame.length<=3840)).toBe(true);
+    expect(frames.reduce((sum,frame)=>sum+frame.length,0)).toBe(pcm.length);
+    say(x.socket,{type:'transcript',transcript:'agent two',final:false});
+    say(x.socket,{type:'transcript',transcript:'Agent two,',final:true});
+    say(x.socket,{type:'transcript',transcript:'use cents instead of floats.',final:true});
+    x.socket.emit('close',1000);
+    await expect(result).resolves.toBe('Agent two, use cents instead of floats.');
   });
 
-  it('reports Meta errors, a refused key, cancellation and silence, and keeps what it heard on a timeout',async()=>{
+  it('reports Meta errors, a refused handshake, rate limits, cancellation and silence, and keeps what it heard',async()=>{
     const failing=meta();
-    const failed=transcribeMeta({apiKey:'k'},second,new AbortController().signal,failing.factory);
-    failing.socket.emit('message',Buffer.from(JSON.stringify({type:'error',error:{message:'bad audio'}})));
+    const failed=transcribeMeta({apiKey:'k'},second,new AbortController().signal,failing.factory,5000,0);
+    say(failing.socket,{type:'error',message:'bad audio'});
     await expect(failed).rejects.toMatchObject({code:'VOICE_FAILED'});
 
     const refused=meta();
-    const denied=transcribeMeta({apiKey:'k'},second,new AbortController().signal,refused.factory);
-    refused.socket.emit('unexpected-response',{},{statusCode:401});
+    const denied=transcribeMeta({apiKey:'k'},second,new AbortController().signal,refused.factory,5000,0);
+    refused.socket.emit('open');refused.socket.emit('close',1008);
     await expect(denied).rejects.toMatchObject({code:'provider_credentials_invalid'});
 
+    const limited=meta();
+    const busy=transcribeMeta({apiKey:'k'},second,new AbortController().signal,limited.factory,5000,0);
+    limited.socket.emit('close',1013);
+    await expect(busy).rejects.toMatchObject({code:'provider_rate_limited'});
+
     const canceled=meta();const controller=new AbortController();
-    const stopped=transcribeMeta({apiKey:'k'},second,controller.signal,canceled.factory);
+    const stopped=transcribeMeta({apiKey:'k'},second,controller.signal,canceled.factory,5000,0);
     controller.abort();
     await expect(stopped).rejects.toMatchObject({code:'VOICE_CANCELED'});
 
     const silent=meta();
-    const empty=transcribeMeta({apiKey:'k'},second,new AbortController().signal,silent.factory);
-    silent.socket.emit('message',Buffer.from(JSON.stringify({type:'conversation.item.input_audio_transcription.completed',transcript:'  '})));
+    const empty=transcribeMeta({apiKey:'k'},second,new AbortController().signal,silent.factory,5000,0);
+    say(silent.socket,{sessionId:'s'});await streamed(silent.socket);silent.socket.emit('close',1000);
     await expect(empty).rejects.toMatchObject({code:'VOICE_EMPTY'});
 
-    const slow=meta();
-    const partial=transcribeMeta({apiKey:'k'},second,new AbortController().signal,slow.factory,50);
-    slow.socket.emit('message',Buffer.from(JSON.stringify({type:'conversation.item.input_audio_transcription.delta',delta:'half a sentence'})));
+    const dropped=meta();
+    const partial=transcribeMeta({apiKey:'k'},second,new AbortController().signal,dropped.factory,5000,0);
+    say(dropped.socket,{sessionId:'s'});say(dropped.socket,{type:'transcript',transcript:'half a sentence',final:false});dropped.socket.emit('close',1011);
     await expect(partial).resolves.toBe('half a sentence');
 
     const quiet=meta();
-    await expect(transcribeMeta({apiKey:'k'},second,new AbortController().signal,quiet.factory,30)).rejects.toMatchObject({code:'VOICE_TIMEOUT'});
+    await expect(transcribeMeta({apiKey:'k'},second,new AbortController().signal,quiet.factory,30,0)).rejects.toMatchObject({code:'VOICE_TIMEOUT'});
   });
 });

@@ -493,9 +493,18 @@ export class HostCoordinator {
       this.freshStart(operation,identity);this.active=running;this.starting=null;activated=true;
       this.emit({sessionId:body.sessionId,status:'running'});
       // Parallel agents take turns on approvals, so a split gets twice the time.
-      const deadline=setTimeout(()=>controller.abort(new Error('Run deadline exceeded')),effortLimits(body.effort??'medium',credentials).runMs*(split===null?1:2));deadline.unref();
-      let heartbeatBusy=false;
-      const timer=setInterval(()=>{if(heartbeatBusy)return;heartbeatBusy=true;void this.assertLive(running).catch(()=>controller.abort()).finally(()=>{heartbeatBusy=false;});},8000);timer.unref();
+      const deadline=setTimeout(()=>controller.abort(new RuntimeError('RUN_DEADLINE','The run reached its time limit.')),effortLimits(body.effort??'medium',credentials).runMs*(split===null?1:2));deadline.unref();
+      // The lease lasts 30 seconds and is renewed every 8, so one failed renewal is survivable: the run
+      // stops on a definite refusal, or on a second failure in a row.
+      let heartbeatBusy=false;let heartbeatFailures=0;
+      const timer=setInterval(()=>{
+        if(heartbeatBusy)return;heartbeatBusy=true;
+        void this.assertLive(running).then(()=>{heartbeatFailures=0;},(error:unknown)=>{
+          const failure=this.error(error);
+          const definite=['stale_execution','execution_denied','lease_expired','STALE_ACCOUNT','signed_out','session_expired'].includes(failure.code);
+          if(definite||++heartbeatFailures>=2){console.error('[inference] lease lost:',failure.code);controller.abort(new RuntimeError('LEASE_LOST',`The connection to the service was lost (${failure.code}).`));}
+        }).finally(()=>{heartbeatBusy=false;});
+      },8000);timer.unref();
       running.finished=(async()=>{
         let pending='';let lastFlush=Date.now();const messageId=randomUUID();
         const flush=async(final=false)=>{if(!pending)return;lastFlush=Date.now();const cutoff=safePrefixLength(pending,running.secrets,final);if(!cutoff)return;const text=redactText(pending.slice(0,cutoff),running.secrets);pending=pending.slice(cutoff);for(const chunk of textChunks(text))await this.publish(running,'agent.delta',{messageId,text:chunk,model:body.model});};
@@ -582,8 +591,12 @@ export class HostCoordinator {
           await this.publish(running,'agent.completed',{messageId,text:`${final[0]??''}${truncated?'\n[Final context text truncated by the sharing limit.]':''}`,model:body.model,truncated});
           await this.request(running,'/finish',{status:'completed'});if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:'completed'});
         }catch(error){
-          journal.invalidateSession(body.sessionId);const stopped=controller.signal.aborted;
-          if(!stopped){const failure=this.error(error);await this.publish(running,'activity.failed',{summary:failure.message,code:failure.code}).catch(()=>undefined);}
+          journal.invalidateSession(body.sessionId);
+          // Stopped by the host (Stop, sign-out, sleep, quit) is quiet; anything else that ended the run says why.
+          const reason=controller.signal.aborted?controller.signal.reason:null;
+          const stopped=controller.signal.aborted&&!(reason instanceof RuntimeError&&['LEASE_LOST','RUN_DEADLINE'].includes(reason.code));
+          if(controller.signal.aborted)console.error('[inference] run ended:',reason instanceof RuntimeError?reason.code:'stopped');
+          if(!stopped){const failure=this.error(controller.signal.aborted?reason:error);await this.publish(running,'activity.failed',{summary:failure.message,code:failure.code}).catch(()=>undefined);}
           await this.finishFailedIfCurrent(running,stopped);
           if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:stopped?'stopped':'failed',...(!stopped?{error:this.error(error)}:{})});
         }finally{clearTimeout(deadline);clearInterval(timer);if(this.active===running)this.active=null;}
@@ -662,6 +675,9 @@ export class HostCoordinator {
     const parts=parsePlan(redactText(planned.text,running.secrets));
     await this.publish(running,'activity.completed',{tool:'split',summary:parts.length===1?'This task doesn’t split cleanly, so one agent builds it':`Split into ${parts.length} agents working at the same time`,
       lanes:parts.map((part,index)=>({index:index+1,title:part.title,files:part.files.slice(0,20)}))});
+    // Every agent's model turns add up to one usage report at the end, not a row per turn.
+    const usage={inputTokens:0,outputTokens:0};
+    const addUsage=(value:unknown)=>{const item=value as {inputTokens?:unknown;outputTokens?:unknown};if(Number.isSafeInteger(item.inputTokens))usage.inputTokens+=item.inputTokens as number;if(Number.isSafeInteger(item.outputTokens))usage.outputTokens+=item.outputTokens as number;};
     // 2. A worktree per part, from the chat's work as it was when the run started.
     const lanes=await createLanes(root,base,parts);
     try{
@@ -689,7 +705,7 @@ export class HostCoordinator {
             tools:[...readDefinitions.filter(tool=>tool.name!=='codebase_search'),...(input.skills.length?[skillDefinition]:[]),...effectDefinitions],
             ...(reasoning?{reasoningEffort:reasoning}:{}),limits,
             executeTool:(call,callSignal)=>this.tool(laneRun,workspace,call,callSignal),
-            onEvent:async event=>{if(event.type==='usage')await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}});
+            onEvent:event=>{if(event.type==='usage')addUsage(event.usage);}});
           const summary=redactText(result.text,running.secrets).trim();
           await this.publish(laneRun,'activity.completed',{tool:'lane',state:'done',summary:`Finished: ${lane.title}`,detail:summary.slice(0,4000)});
           return {lane,ok:true as const,summary};
@@ -720,11 +736,12 @@ export class HostCoordinator {
             messages:[...input.history,{role:'user',content:`Parallel agents built parts of this task:\n${task}\n\nAgent ${lane.index} (“${lane.title}”) made the changes below in its own copy, but they overlap work that is already merged into this worktree, in ${conflict.files.join(', ')}. Apply what agent ${lane.index} meant on top of the current files here. Keep the merged work; read each file first and write its complete new content. Then reply with one or two sentences on what you did.\n\n\`\`\`diff\n${diff.slice(0,60_000)}\n\`\`\``}],
             tools:[...readDefinitions.filter(tool=>tool.name!=='codebase_search'),...effectDefinitions],...(reasoning?{reasoningEffort:reasoning}:{}),limits,
             executeTool:(call,callSignal)=>this.tool(resolver,workspace,call,callSignal),
-            onEvent:async event=>{if(event.type==='usage')await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}});
+            onEvent:event=>{if(event.type==='usage')addUsage(event.usage);}});
           resolved.push(lane.index);
           await this.publish(resolver,'activity.completed',{tool:'lane',state:'done',summary:'Its changes are now applied on top'});
         }
       }
+      if(usage.inputTokens||usage.outputTokens)await this.publish(running,'usage.reported',{usage:usage as unknown as JsonValue});
       // 6. One report for everyone.
       const lines=outcomes.map(outcome=>{
         const result=results.find(item=>item.lane===outcome.lane);

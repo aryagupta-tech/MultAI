@@ -254,7 +254,9 @@ export class ConnectionManager {
       if (record.connections.find(item => item.id === id)?.provider !== 'meta') return listed;
       if (!listed.length) return META_DOCUMENTED_MODELS.map(model => ({...model}));
       // Meta's catalog also lists SAM, image and voice models, which can't drive a chat agent; Muse Spark leads.
-      return listed.filter(model => /^muse-(spark|wonder)-/u.test(model.id)).sort((a, b) => Number(b.id.startsWith('muse-spark-1.3')) - Number(a.id.startsWith('muse-spark-1.3')));
+      // Contributor variants let Meta train on prompts and replies, so they come last and are never the default.
+      const rank = (id: string) => (id.includes('-contributor') ? 2 : 0) + (id.startsWith('muse-spark-1.3') ? 0 : 1);
+      return listed.filter(model => /^muse-(spark|wonder)-/u.test(model.id)).sort((a, b) => rank(a.id) - rank(b.id));
       } finally {this.requests.delete(controller);}
     });
   }
