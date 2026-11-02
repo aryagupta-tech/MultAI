@@ -123,6 +123,10 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
     case 'decision.saved': return typeof p.id === 'string' && typeof p.text === 'string' ? {...base,type:'decision',decisionId:p.id} : null;
     case 'activity.completed':
     case 'activity.failed': {
+      // The agent looked at the app: a small shared copy of its screenshot.
+      if (e.type === 'activity.completed' && p.tool === 'look_at_app' && typeof p.image === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/u.test(p.image) && p.image.length <= 20_000) {
+        return {...base,type:'look',page:typeof p.page === 'string' ? p.page.slice(0,500) : '',summary:typeof p.summary === 'string' ? p.summary.slice(0,1000) : 'Looked at the app',image:p.image,...(typeof p.detail === 'string' && p.detail ? {detail:p.detail.slice(0,3000)} : {})};
+      }
       const kinds:Record<string,ToolCall['tool']>={read:'read',read_file:'read',search:'search',search_text:'search',list:'list',list_files:'list',list_directory:'list',codebase_search:'search',write:'write',write_file:'write',shell:'shell',run_shell:'shell',diff:'diff'};
       const tool = typeof p.tool === 'string' ? kinds[p.tool] : undefined;
       const detail = typeof p.detail === 'string' ? p.detail.slice(0,32_000) : typeof p.output === 'string' ? p.output.slice(0,32_000) : undefined;

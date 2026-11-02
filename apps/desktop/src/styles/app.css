@@ -1208,3 +1208,12 @@ body.is-resizing .app { transition: none; }
 .conn-presets { display: flex; gap: 6px; flex-wrap: wrap; }
 .conn-preset { height: 28px; padding: 0 12px; border-radius: var(--r-pill); border: 1px solid var(--border-strong); font-size: var(--fs-sm); color: var(--text-2); }
 .conn-preset:hover, .conn-preset.is-on { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); }
+
+/* ---------------------------------------------------------------- The agent looked at the app */
+.look-card { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 2px 40px; }
+.look-head { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); min-width: 0; }
+.look-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.look-problems { flex: none; background: none; border: 0; padding: 0 4px; font: inherit; color: var(--danger); cursor: pointer; }
+.look-shot { align-self: flex-start; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface-2); overflow: hidden; cursor: zoom-in; line-height: 0; max-width: min(100%, 360px); }
+.look-shot img { display: block; width: 100%; height: auto; }
+.look-shot.is-large { max-width: min(100%, 720px); cursor: zoom-out; }

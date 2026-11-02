@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowDown, Bookmark, Check, ChevronRight, CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX,
+  AlertTriangle, ArrowDown, Bookmark, Check, ChevronRight, Eye, CircleAlert, CircleCheck, CircleDashed, CircleHelp, CircleX,
   FileText, FolderTree, GitMerge, Info, Loader2, PenLine, Search, ShieldCheck, Sparkles, Split, TerminalSquare, Users, Wrench,
 } from 'lucide-react';
 import { useApp } from '../model/store';
@@ -101,6 +101,7 @@ function TimelineRow({ item, d, people, decisions, grouped }: {
     case 'plan': return <PlanCard item={item} />;
     case 'lanes': return <LanesCard item={item} />;
     case 'brief': return <BriefCard item={item} />;
+    case 'look': return <LookCard item={item} />;
     case 'decision': return <DecisionRow decision={decisions.get(item.decisionId)} people={people} />;
     case 'conflict': return <ConflictCard item={item} d={d} people={people} />;
     case 'question': return <QuestionCard item={item} d={d} />;
@@ -202,6 +203,25 @@ function BriefCard({ item }: { item: Item<'brief'> }) {
         <div className="msg-text"><Markdown text={item.text} streaming={false} /></div>
       </div>
     </article>
+  );
+}
+
+/** The agent's screenshot of the app it's changing. Click to see it larger. */
+function LookCard({ item }: { item: Item<'look'> }) {
+  const [large, setLarge] = useState(false);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="look-card">
+      <div className="look-head">
+        <Eye size={13} className="tone-muted" aria-hidden />
+        <span className="look-summary">{item.summary}</span>
+        {item.detail && <button type="button" className="look-problems" onClick={() => setOpen(!open)} aria-expanded={open}>{item.detail.split('\n').length} problem{item.detail.split('\n').length === 1 ? '' : 's'}</button>}
+      </div>
+      <button type="button" className={cx('look-shot', large && 'is-large')} onClick={() => setLarge(!large)} aria-label={large ? 'Show the screenshot smaller' : 'Show the screenshot larger'}>
+        <img src={item.image} alt={`What the agent saw at ${item.page}`} loading="lazy" />
+      </button>
+      {open && item.detail && <pre className="tool-output">{item.detail}</pre>}
+    </div>
   );
 }
 

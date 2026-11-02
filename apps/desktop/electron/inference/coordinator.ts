@@ -16,6 +16,8 @@ import {anchorsFor,applyCompaction,attachMentions,autoCompactCut,contextBytes,ex
 import {CodeIndex,type CodeChunk} from './codeindex';
 import {McpError,type McpHost} from './mcp';
 import {PROJECT_SKILL_FOLDERS,deletePersonalSkill,loadSkills,savePersonalSkill,type Skill} from './skills';
+import {LookError,type LookAtPage} from './look';
+import {metaConnection,segmentConcept} from './segment';
 import {PLAN_SYSTEM,SplitError,applyCommit,captureWork,createLanes,laneResult,mergeLanes,parsePlan,removeLanes,routeDirection,splitTask,type Lane,type LaneResult} from './split';
 
 const selectionSchema=z.object({connectionId:z.uuid(),model:z.string().min(1).max(200),modelName:z.string().max(200).optional()}).strict();
@@ -37,6 +39,8 @@ interface Running {
   serial:<T>(task:()=>Promise<T>)=>Promise<T>;
   /** Set on the copy a parallel agent uses, so its events say which agent they're from. */
   lane?:{index:number;title:string};
+  /** Screenshots a tool call took, handed to the model once with that call's result. */
+  images:Map<string,string[]>;
 }
 /** Runs tasks one after another, in the order they were queued. */
 function serialQueue():<T>(task:()=>Promise<T>)=>Promise<T>{
@@ -47,11 +51,13 @@ interface Slot {lifecycle:number;accountGeneration:number;finished:Promise<void>
 interface StartSlot extends Slot {sessionId:string;controller:AbortController}
 interface ClaimedRun {id:string;sessionId:string;lease:string;snapshot:{userId:string;deviceId:string;generation:number}}
 interface CoordinatorOptions {
-  account:Pick<Account,'origin'|'accountGeneration'|'identitySnapshot'|'request'>;connections:Pick<ConnectionManager,'models'|'resolve'>;dataDirectory:()=>string;
+  account:Pick<Account,'origin'|'accountGeneration'|'identitySnapshot'|'request'>;connections:Pick<ConnectionManager,'models'|'resolve'>&Partial<Pick<ConnectionManager,'list'>>;dataDirectory:()=>string;
   confirm:(descriptor:ActionDescriptor,hash:string,signal:AbortSignal,preview?:string)=>Promise<boolean>;
   emit:(change:HostRunChange)=>void;
   projects:ProjectRegistry;
   mcp:McpHost;
+  /** Opens a page of the workspace in a hidden window and screenshots it; absent where there's no browser. */
+  look?:LookAtPage;
 }
 function slot(lifecycle:number,accountGeneration:number):Slot {
   let settle=()=>{};
@@ -91,6 +97,10 @@ const readDefinitions:ToolDefinition[]=[
   {name:'update_plan',description:'Show everyone in the session your plan as a checklist. Call it with all steps when you start multi-step work, then again with updated states as steps start and finish. At most 12 short steps; exactly one should be active while you work.',
     parameters:properties({steps:{type:'array',maxItems:12,items:properties({text:{type:'string'},state:{type:'string',enum:['todo','active','done']}})}})},
 ];
+const lookDefinition:ToolDefinition={name:'look_at_app',description:'See the app you are changing. Opens a page in a hidden browser and returns a screenshot (as an image after the result), the page text, console errors and failed requests. page is an HTML file of the workspace (for example "index.html" or "public/cart.html") or a http://localhost:PORT URL of a dev server the host is running. Set find to a short noun phrase ("checkout button", "error banner") and SAM 3.1 outlines and numbers every match and returns their exact pixel boxes; otherwise null. Look before changing UI, and look again after to check your change.',
+  parameters:{type:'object',properties:{page:{type:'string'},find:{type:['string','null']}},required:['page','find'],additionalProperties:false}};
+/** Providers whose models take images; others don't get the look tool. */
+const SEES_IMAGES=new Set(['meta','openai','chatgpt','anthropic']);
 const skillDefinition:ToolDefinition={name:'use_skill',description:'Load the full instructions of one of the listed skills by name, then follow them.',parameters:properties({name:{type:'string'}})};
 const effectDefinitions:ToolDefinition[]=[
   {name:'write_file',description:'Write at most 16,000 characters of UTF-8 text after the original host reviews the complete proposed file content. expectedHash is null for a new file, or the hash returned by read_file.',parameters:properties({path:{type:'string'},content:{type:'string'},expectedHash:{type:['string','null']}})},
@@ -591,7 +601,7 @@ export class HostCoordinator {
       if(claimed.run.sessionId!==body.sessionId||claimed.run.connectionId!==body.connectionId||claimed.run.model!==body.model||claimed.selectedInstruction.id!==body.instructionId||claimed.run.generation<=snapshot.session.runtimeGeneration)throw new RuntimeError('STALE_EXECUTION','The service claim does not match this exact instruction, model and connection.');
       const controller=operation.controller;
       const authority:Authority={actorId:identity.userId,actorDeviceId:identity.deviceId,role:'owner',sessionId:body.sessionId,originalOwnerId:identity.userId,originalDeviceId:identity.deviceId,accountGeneration:identity.generation,sessionGeneration:claimed.run.generation,runtimeGeneration:claimed.run.generation,connectionId:body.connectionId,payerId:identity.userId,mode:claimed.run.mode,connected:true};
-      const running:Running={...claim!,generation:claimed.run.generation,connectionId:body.connectionId,controller,journal,authority,secrets:[credentials.apiKey],finished:Promise.resolve(),skills,codebase:null,mcp:new Map(),cwd:workspace.root,aliveAt:Date.now(),serial:serialQueue()};
+      const running:Running={...claim!,generation:claimed.run.generation,connectionId:body.connectionId,controller,journal,authority,secrets:[credentials.apiKey],finished:Promise.resolve(),skills,codebase:null,mcp:new Map(),cwd:workspace.root,aliveAt:Date.now(),serial:serialQueue(),images:new Map()};
       running.codebase=this.codebaseFor(directory,body.sessionId,workspace.root,running.secrets);
       this.freshStart(operation,identity);this.active=running;this.starting=null;activated=true;
       this.emit({sessionId:body.sessionId,status:'running'});
@@ -687,7 +697,8 @@ export class HostCoordinator {
             steer,
             // The provider runs these searches; the host allowed them for this chat.
             ...(body.webSearch&&['meta','openai','chatgpt','anthropic'].includes(credentials.kind)?{hostedSearch:true}:{}),
-            tools:[...readDefinitions,...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:[...effectDefinitions,...mcpDefinitions])],signal:controller.signal,beforeRequest:()=>this.assertLive(running,true),fetch:providerFetch(credentials),
+            tools:[...readDefinitions,...(this.options.look&&SEES_IMAGES.has(credentials.kind)?[lookDefinition]:[]),...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:[...effectDefinitions,...mcpDefinitions])],signal:controller.signal,
+            takeToolImages:id=>{const images=running.images.get(id);running.images.delete(id);return images;},beforeRequest:()=>this.assertLive(running,true),fetch:providerFetch(credentials),
             limits:(({runMs:_runMs,...limits})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...limits}))(effortLimits(body.effort??'medium',credentials)),
             ...(nativeEffort(body.effort??'medium',credentials)?{reasoningEffort:nativeEffort(body.effort??'medium',credentials)!}:{}),
             executeTool:async(call,signal)=>{await shared();return this.tool(running,workspace,call,signal);},
@@ -900,6 +911,7 @@ export class HostCoordinator {
       await this.publish(run,'activity.completed',{tool:'update_plan',summary:`Plan: ${done} of ${steps.length} done`,plan:{steps}});
       return {ok:true,message:'The plan is shown to everyone in the session.'};
     }
+    if(call.name==='look_at_app')return this.look(run,workspace,call,signal);
     if(call.name==='use_skill'){
       const {name}=z.object({name:z.string().min(1).max(64)}).strict().parse(call.arguments);
       const skill=run.skills.find(item=>item.name===name.replace(/^\//u,'').toLowerCase());
@@ -933,6 +945,31 @@ export class HostCoordinator {
       operation={kind:'external',tool:`${target.server}.${target.tool}`.slice(0,512),transport:'stdio',arguments:args as JsonValue};
     }else throw new RuntimeError('UNSUPPORTED_TOOL','The model requested an unavailable tool.');
     return run.serial(()=>this.dispatch(run,workspace,call,signal,operation,write));
+  }
+  /** Screenshots a page for the model, and shares a small copy with everyone in the session. */
+  private async look(run:Running,workspace:ControlledWorkspace,call:ToolCall,signal:AbortSignal):Promise<JsonValue>{
+    const {page,find}=z.object({page:z.string().trim().min(1).max(2000),find:z.string().trim().max(100).nullable().optional()}).strict().parse(call.arguments);
+    const query=find?.replace(/\s+/gu,' ').trim()||undefined;
+    // SAM 3.1 needs the host's Meta connection; without one the agent still gets the screenshot.
+    const meta=query&&this.options.connections.list?metaConnection(await this.options.connections.list(),run.connectionId):null;
+    const locate=meta?async(png:string,text:string,lookSignal:AbortSignal)=>segmentConcept(await this.options.connections.resolve(meta.id),png,text,publicProviderFetch,lookSignal):undefined;
+    let shot:Awaited<ReturnType<LookAtPage>>;
+    try{shot=await this.options.look!({root:workspace.root,page,...(query?{find:query}:{}),...(locate?{locate}:{}),signal});}
+    catch(error){
+      if(!(error instanceof LookError))throw error;
+      await this.publish(run,'activity.failed',{tool:'look_at_app',summary:`Couldn’t look at ${page.slice(0,200)}: ${error.message}`});
+      return {error:error.code,message:error.message};
+    }
+    run.images.set(call.id,[shot.image]);
+    const boxes=shot.found?.boxes??[];
+    const found=shot.found?` · SAM 3.1 found ${boxes.length} “${shot.found.query}”`:'';
+    const problems=[...shot.consoleErrors.map(line=>`Console error: ${line}`),...shot.failedRequests.map(line=>`Request: ${line}`)];
+    await this.publish(run,'activity.completed',{tool:'look_at_app',summary:`Looked at ${shot.url.slice(0,200)}${found}`,image:shot.thumbnail,page:shot.url.slice(0,500),
+      ...(problems.length?{detail:problems.join('\n').slice(0,3000)}:{}),...(shot.found?{find:shot.found.query,matches:boxes.length}:{})});
+    return redacted({page:shot.url,title:shot.title,viewport:shot.viewport,text:shot.text,consoleErrors:shot.consoleErrors,failedRequests:shot.failedRequests,
+      ...(shot.found?{found:{query:shot.found.query,matches:boxes.map((box,index)=>({number:index+1,x:box.x1,y:box.y1,width:box.x2-box.x1+1,height:box.y2-box.y1+1}))}}:{}),
+      ...(query&&!locate?{note:'Finding elements needs the host’s Meta connection (SAM 3.1); look at the screenshot instead.'}:{}),
+      screenshot:'Attached as an image after this result, at the viewport size above.'},run.secrets);
   }
   /** Approval, then the effect. Runs inside the run's serial queue, so parallel agents take turns. */
   private async dispatch(run:Running,workspace:ControlledWorkspace,call:ToolCall,signal:AbortSignal,operation:ActionDescriptor['operation'],write:{path:string;content:string;expectedHash:string|null}|undefined):Promise<JsonValue>{

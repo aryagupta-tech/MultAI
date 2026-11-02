@@ -17,6 +17,7 @@ import {ProjectError,ProjectRegistry,git} from './inference/projects';
 import {TerminalHost} from './inference/terminal';
 import {McpError,McpHost,newServerId,validServer,type McpServer} from './inference/mcp';
 import {SecureConnectionStore} from './inference/secure-store';
+import {electronLook} from './inference/look';
 
 // Injected by scripts/build-electron.mjs.
 declare const __BUILD_INFO__: Omit<BuildInfo, 'platform' | 'serviceOrigin'>;
@@ -285,7 +286,7 @@ if (!app.requestSingleInstanceLock()) {
     connections=new ConnectionManager({account,onChange:(items)=>send(INFERENCE_IPC.connections,items)});
     approvals=new ApprovalBroker(pending=>send(INFERENCE_IPC.approvals,pending));
     // Approvals appear as cards in the session; the host's access level decides what runs unasked.
-    coordinator=new HostCoordinator({account,connections,projects,mcp,dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
+    coordinator=new HostCoordinator({account,connections,projects,mcp,look:electronLook(),dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
       confirm:(descriptor,_hash,signal,preview)=>!mainWindow||mainWindow.isDestroyed()?Promise.resolve(false):approvals!.request(descriptor,signal,preview)});
     powerMonitor.on('suspend',()=>{connections?.invalidate();live.suspend();approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);void account.suspend().catch(()=>undefined);});
     // Forget worktrees whose folders are gone (deleted by hand, or left by a crash).

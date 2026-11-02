@@ -128,6 +128,7 @@ export type TimelineItem =
   | (TimelineBase & { type: 'lanes'; lanes: AgentLane[]; merge?: string })
   | (TimelineBase & { type: 'decision'; decisionId: string })
   | (TimelineBase & { type: 'brief'; text: string; model: string })
+  | (TimelineBase & { type: 'look'; page: string; summary: string; image: string; detail?: string })
   | (TimelineBase & { type: 'conflict'; instructionIds: [string, string]; resolved: boolean })
   | (TimelineBase & { type: 'question'; prompt: string; options: string[]; answer?: string })
   | (TimelineBase & {type:'browser-review';name:string;text:string;screenshotId?:string;region?:{x:number;y:number;width:number;height:number}})

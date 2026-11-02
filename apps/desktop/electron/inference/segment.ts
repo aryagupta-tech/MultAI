@@ -82,6 +82,14 @@ async function ask(credentials:{apiKey:string}, image:string, prompt:string, fet
   return parseBoxes(outputText(await response.text(), response.headers.get('content-type') ?? ''));
 }
 
+/** Every instance of a short noun phrase ("checkout button") on the screenshot, top to bottom. */
+export async function segmentConcept(credentials:{apiKey:string}, image:string, concept:string, fetcher:typeof fetch, signal:AbortSignal):Promise<Box[]> {
+  const text = concept.replace(/[<>|]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, 100);
+  if (!text) throw new SegmentError('SEGMENT_INVALID', 'Say what to find, in a few words.');
+  if (!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/u.test(image) || image.length > 12_000_000) throw new SegmentError('SEGMENT_INVALID', 'That screenshot can’t be read.');
+  return (await ask(credentials, image, text, fetcher, signal)).sort((a, b) => a.y1 - b.y1 || a.x1 - b.x1);
+}
+
 /** Concepts SAM is asked to find on an app screenshot, so a click on a label outlines its whole control. */
 export const UI_CONCEPTS = ['button'];
 

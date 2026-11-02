@@ -27,6 +27,11 @@ export interface RunAgentOptions {
   steer?: (signal: AbortSignal) => Promise<string[]>;
   /** The provider's own web search, for Responses and Messages providers. Ignored by Chat Completions. */
   hostedSearch?: boolean;
+  /**
+   * Images a tool call produced (a screenshot), taken once after its result. The model sees them in the next
+   * request; only the latest round's images are kept, older ones are replaced by a note to save context.
+   */
+  takeToolImages?: (callId: string) => string[] | undefined;
 }
 
 export interface AgentResult {text: string; iterations: number; usage?: Usage}
@@ -77,6 +82,8 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   if (Buffer.byteLength(system) > 32_768) throw new ProviderError('input_limit', 'The agent instructions exceeded their byte limit.');
   const onEvent = options.onEvent ?? (() => undefined);
   const seenCalls = new Set<string>();
+  /** Content arrays holding tool images, so older screenshots can be dropped when new ones arrive. */
+  const imageTurns: {turn: unknown[]; added: unknown[]}[] = [];
   let totalText = '';
   let totalUsage: Usage | undefined;
   let inputKnown = true;
@@ -167,6 +174,19 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     if (protocol === 'responses') state.items.push(...results.map(({call, result}) => ({type: 'function_call_output', call_id: call.id, output: canonicalJson(result)})));
     else if (protocol === 'anthropic') state.items.push({role: 'user', content: results.map(({call, result}) => ({type: 'tool_result', tool_use_id: call.id, content: canonicalJson(result)}))});
     else state.items.push(...results.map(({call, result}) => ({role: 'tool', tool_call_id: call.id, content: canonicalJson(result)})));
+    const shown = results.flatMap(({call}) => (options.takeToolImages?.(call.id) ?? []).map(image => ({call, image}))).filter(({image}) => typeof image === 'string' && image.length <= 2_000_000 && IMAGE.test(image)).slice(0, 4);
+    if (shown.length) {
+      // Only the newest images stay in the conversation; each older set becomes a one-line note.
+      for (const {turn, added} of imageTurns.splice(0)) {
+        const kept = turn.filter(part => !added.includes(part));
+        turn.splice(0, turn.length, ...kept, withImages(protocol, '(Images from an earlier tool call were removed to save context.)', [])[0]);
+      }
+      const text = `Image${shown.length === 1 ? '' : 's'} from ${[...new Set(shown.map(({call}) => call.name))].join(', ')} (call ${[...new Set(shown.map(({call}) => call.id))].join(', ')}):`;
+      const parts = withImages(protocol, text, shown.map(({image}) => image));
+      // Anthropic wants the images in the same user turn as the tool results; the others take a new user item.
+      if (protocol === 'anthropic') {const turn = (state.items.at(-1) as {content: unknown[]}).content; turn.push(...parts); imageTurns.push({turn, added: parts});}
+      else {const turn = [...parts]; state.items.push({role: 'user', content: turn}); imageTurns.push({turn, added: parts});}
+    }
     const steered = await directions(iteration);
     if (!steered.length) continue;
     // Anthropic wants one user turn: the directions join the tool results; the others take a new user item.

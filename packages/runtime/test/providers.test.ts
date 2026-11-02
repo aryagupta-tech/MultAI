@@ -362,6 +362,48 @@ test('directions sent while the agent works reach the next turn in each protocol
   }
 });
 
+test('images a tool produced reach the next request in each protocol, and only the newest are kept', async () => {
+  const data = (n: number) => Buffer.from(`shot-${n}`).toString('base64');
+  const png = (n: number) => `data:image/png;base64,${data(n)}`;
+  const call = (n: number): Record<string, unknown[]> => ({
+    chat: [{choices: [{delta: {tool_calls: [{index: 0, id: `call_${n}`, function: {name: 'read_file', arguments: '{"path":"index.html"}'}}]}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'tool_calls'}]}, '[DONE]'],
+    responses: [{type: 'response.completed', response: {status: 'completed', output: [{type: 'function_call', call_id: `call_${n}`, name: 'read_file', arguments: '{"path":"index.html"}'}]}}],
+    anthropic: [{type: 'message_start', message: {usage: {input_tokens: 1}}}, {type: 'content_block_start', index: 0, content_block: {type: 'tool_use', id: `call_${n}`, name: 'read_file', input: {}}}, {type: 'content_block_delta', index: 0, delta: {type: 'input_json_delta', partial_json: '{"path":"index.html"}'}}, {type: 'content_block_stop', index: 0}, {type: 'message_delta', delta: {stop_reason: 'tool_use'}, usage: {output_tokens: 1}}, {type: 'message_stop'}],
+  });
+  const answer: Record<string, unknown[]> = {
+    chat: [{choices: [{delta: {content: 'Looks right.'}, finish_reason: 'stop'}]}, '[DONE]'],
+    responses: [done('Looks right.')],
+    anthropic: [{type: 'message_start', message: {usage: {input_tokens: 1}}}, {type: 'content_block_start', index: 0, content_block: {type: 'text', text: ''}}, {type: 'content_block_delta', index: 0, delta: {type: 'text_delta', text: 'Looks right.'}}, {type: 'content_block_stop', index: 0}, {type: 'message_delta', delta: {stop_reason: 'end_turn'}, usage: {output_tokens: 1}}, {type: 'message_stop'}],
+  };
+  const kinds: [string, ProviderCredentials, string][] = [
+    ['chat', {kind: 'compatible', apiKey: 'synthetic', baseUrl: 'https://api.meta.ai/v1'}, 'image_url'],
+    ['responses', credentials, 'input_image'],
+    ['anthropic', {kind: 'anthropic', apiKey: 'synthetic-claude'}, 'image'],
+  ];
+  for (const [protocol, creds, imageType] of kinds) {
+    const bodies: string[] = [];
+    const fakeFetch: typeof fetch = async (_url, init) => {bodies.push(String(init?.body)); return stream(bodies.length <= 2 ? call(bodies.length)[protocol]! : answer[protocol]!);};
+    const images = new Map([['call_1', [png(1)]], ['call_2', [png(2), 'data:text/html;base64,AAAA']]]);
+    const result = await runAgent({credentials: creds, model: 'synthetic', messages: [{role: 'user', content: 'Check the page'}], tools: [...tools], executeTool: async () => ({title: 'Shop'}), signal: signal(), fetch: fakeFetch,
+      takeToolImages: id => {const value = images.get(id); images.delete(id); return value;}});
+    assert.equal(result.text, 'Looks right.', protocol);
+    assert.equal(bodies.length, 3, protocol);
+    const count = (body: string, text: string) => body.split(text).length - 1;
+    // The first screenshot reaches the second request; by the third only the newest remains, and the non-image is dropped.
+    assert.equal(count(bodies[1]!, data(1)), 1, protocol);
+    assert.equal(count(bodies[2]!, data(1)), 0, protocol);
+    assert.equal(count(bodies[2]!, data(2)), 1, protocol);
+    assert.equal(count(bodies[2]!, 'data:text/html'), 0, protocol);
+    assert.match(bodies[2]!, /removed to save context/u, protocol);
+    assert.equal(count(bodies[2]!, `"type":"${imageType}"`), 1, protocol);
+    if (protocol === 'anthropic') {
+      // The screenshot sits in the same user turn as its tool result.
+      const last = (JSON.parse(bodies[1]!).messages as {role: string; content: {type: string}[]}[]).at(-1)!;
+      assert.deepEqual(last.content.map(part => part.type), ['tool_result', 'text', 'image']);
+    }
+  }
+});
+
 test('the provider\'s own web search is requested only when allowed, reported, and kept for the next turn', async () => {
   // Responses: a hosted web_search_call before the answer.
   const bodies: Record<string, unknown>[] = [];

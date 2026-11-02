@@ -12,6 +12,7 @@ import {writeFile} from 'node:fs/promises';
 import {ProjectRegistry} from './projects';
 import {McpHost} from './mcp';
 import {publicProviderFetch} from './network';
+import {LookError, type LookInput, type Shot} from './look';
 import type {HostRunChange} from '../../src/bridge/execution';
 
 const runtime = vi.hoisted(() => ({run: vi.fn()}));
@@ -35,7 +36,7 @@ function deferred<T>() {
   return {promise, resolve};
 }
 
-async function fixture() {
+async function fixture(extra: Partial<ConstructorParameters<typeof HostCoordinator>[0]> = {}) {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'multai-coordinator-')));
   const state = {generation: 1, userId: randomUUID(), deviceId: randomUUID(), mode: 'build' as 'plan' | 'build', instruction: 'Synthetic selected instruction'};
   const input = {sessionId: randomUUID(), instructionId: randomUUID(), connectionId: randomUUID(), model: 'synthetic-model'};
@@ -71,7 +72,7 @@ async function fixture() {
   const changes: HostRunChange[] = [];
   const confirm = vi.fn(async (_descriptor: ActionDescriptor, _hash: string, _signal: AbortSignal, _preview?: string) => true);
   const projects = new ProjectRegistry(() => join(directory, 'projects.json'));
-  const host = new HostCoordinator({account, connections, projects, mcp: new McpHost(async () => []), dataDirectory: () => directory, confirm, emit: change => {changes.push(change);}});
+  const host = new HostCoordinator({account, connections, projects, mcp: new McpHost(async () => []), dataDirectory: () => directory, confirm, emit: change => {changes.push(change);}, ...extra});
   cleanup.push(async () => {await host.invalidate(); await rm(directory, {recursive: true, force: true});});
   const terminal = async (timeout=5000) => {await vi.waitFor(() => expect(changes.at(-1)?.status).toMatch(/^(?:completed|failed|stopped)$/u), {timeout});};
   const scopeDirectory = async () => join(directory, 'runtime-v1', (await readdir(join(directory, 'runtime-v1')))[0]!);
@@ -590,4 +591,60 @@ describe('team verification uses actual host checks and a separate read-only rev
     expect(JSON.stringify(shared)).toContain('No AI review is claimed');expect(JSON.stringify(shared)).not.toContain('private error details');
   });
 
+
+  test('the agent looks at the app: a screenshot for the model, SAM boxes from the Meta connection, a small copy for the team', async () => {
+    const image = `data:image/jpeg;base64,${'A'.repeat(4000)}`, thumbnail = `data:image/jpeg;base64,${'B'.repeat(400)}`;
+    const looks: LookInput[] = [];
+    const look = vi.fn(async (input: LookInput): Promise<Shot> => {
+      looks.push(input);
+      const boxes = input.locate ? await input.locate('data:image/png;base64,AAAA', input.find!, input.signal) : [];
+      return {image, thumbnail, title: 'Shop', url: '/index.html', text: 'Cart total $10', viewport: {width: 1280, height: 800}, consoleErrors: ['Uncaught TypeError: x is undefined (/cart.js:3)'], failedRequests: [], ...(input.find ? {found: {query: input.find, boxes}} : {})};
+    });
+    const meta = {id: randomUUID(), name: 'Meta', provider: 'meta' as const, status: 'ready' as const, baseUrl: ''};
+    const x = await fixture({look});
+    Object.assign(x.connections, {list: vi.fn(async () => [meta])});
+    const sam = vi.spyOn(await import('./segment'), 'segmentConcept').mockResolvedValue([{x1: 10, y1: 20, x2: 109, y2: 59}]);
+    const seen: {result: unknown; images: string[] | undefined}[] = [];
+    runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
+      expect(options.tools?.some(tool => tool.name === 'look_at_app')).toBe(true);
+      for (const [id, args] of [['call_look', {page: 'index.html', find: 'checkout button'}], ['call_plain', {page: 'index.html', find: null}]] as const) {
+        const result = await options.executeTool!({id, name: 'look_at_app', arguments: args} as ToolCall, options.signal);
+        seen.push({result, images: options.takeToolImages?.(id)});
+      }
+      expect(options.takeToolImages?.('call_look')).toBeUndefined(); // handed over once
+      return {text: 'Checked it.', iterations: 2};
+    });
+    await x.host.run(x.input); await x.terminal();
+    expect(x.changes.at(-1)?.status).toBe('completed');
+    expect(looks[0]).toMatchObject({page: 'index.html', find: 'checkout button', root: await x.workspace()});
+    expect(sam).toHaveBeenCalledWith(x.credentials, 'data:image/png;base64,AAAA', 'checkout button', publicProviderFetch, expect.any(AbortSignal));
+    expect(looks[1]!.find).toBeUndefined();
+    expect(seen[0]!.images).toEqual([image]);
+    expect(seen[0]!.result).toMatchObject({title: 'Shop', found: {query: 'checkout button', matches: [{number: 1, x: 10, y: 20, width: 100, height: 40}]}});
+    const events = x.requests.filter(request => request.route.endsWith('/events') && (request.body?.payload as {tool?: string})?.tool === 'look_at_app').map(request => request.body as {type: string; payload: Record<string, unknown>});
+    expect(events).toHaveLength(2);
+    expect(events[0]!.payload).toMatchObject({summary: 'Looked at /index.html · SAM 3.1 found 1 “checkout button”', image: thumbnail, matches: 1});
+    expect(events[0]!.payload.detail).toMatch(/Console error: Uncaught TypeError/u);
+    // The full screenshot never leaves this computer except to the model.
+    expect(JSON.stringify(x.requests)).not.toContain(image);
+  });
+
+  test('a page that can\'t be opened is an answer the agent can act on, and models without image input never get the tool', async () => {
+    const look = vi.fn(async (): Promise<Shot> => {throw new LookError('LOOK_UNREACHABLE', 'Nothing is running at http://localhost:5173.');});
+    const x = await fixture({look});
+    let answer: unknown;
+    runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
+      answer = await options.executeTool!({id: 'call_1', name: 'look_at_app', arguments: {page: 'http://localhost:5173', find: 'cart'}} as ToolCall, options.signal);
+      return {text: 'The dev server is not running.', iterations: 1};
+    });
+    await x.host.run(x.input); await x.terminal();
+    expect(answer).toEqual({error: 'LOOK_UNREACHABLE', message: 'Nothing is running at http://localhost:5173.'});
+    expect(x.changes.at(-1)?.status).toBe('completed');
+    expect(x.requests.some(request => request.body?.type === 'activity.failed' && /Couldn’t look at http:\/\/localhost:5173/u.test(String((request.body.payload as {summary?: string}).summary)))).toBe(true);
+
+    const local = await fixture({look});
+    local.connections.resolve.mockResolvedValue({kind: 'compatible', apiKey: 'k', baseUrl: 'https://models.example/v1'} as ProviderCredentials);
+    await local.host.run(local.input); await local.terminal();
+    expect((runtime.run.mock.calls.at(-1)![0] as RunAgentOptions).tools?.some(tool => tool.name === 'look_at_app')).toBe(false);
+  });
 });
