@@ -8,7 +8,7 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test:browser": "node test/browser.mjs"
+    "test:browser": "node --import tsx test/e2e.ts"
   },
   "dependencies": {"@multai/companion-core": "0.1.0", "@multai/companion-ui": "0.1.0", "react": "19.3.1", "react-dom": "19.3.1"},
   "devDependencies": {"@types/react": "19.3.0", "@types/react-dom": "19.3.0", "@vitejs/plugin-react": "6.1.2", "vite": "8.3.5", "playwright": "1.64.1"}
