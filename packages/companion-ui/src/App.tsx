@@ -1,10 +1,11 @@
 // The MultAI companion. Three separate ways in, never mixed: an ordinary sign-in (your sessions, as
 // collaborator, viewer or owner-on-another-device), owner pairing (this phone asks the desktop to act)
 // and a guest review invitation.
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {Account, ApiClient, ApiError, Controller, type AccountState, type ControllerState} from '@multai/companion-core';
 import type {CompanionPlatform, Links} from './platform';
 import {parseInvitation} from './platform';
+import {JoinIntent} from './join-intent';
 import {Banner, Button, Field, Header, cx, errorText} from './ui';
 import {useOnline} from './hooks';
 import {ParticipantSession, SessionList} from './Participant';
@@ -43,7 +44,8 @@ function useNavigation(initial: Screen) {
 
 export function CompanionApp({platform}: {platform: CompanionPlatform}) {
   const api = useMemo(() => new ApiClient({origin: platform.origin, mode: platform.kind === 'web' ? 'web' : 'app'}), [platform]);
-  const account = useMemo(() => new Account(api, platform.account), [api, platform]);
+  const joinIntent=useMemo(()=>new JoinIntent(platform.account.flows,platform.origin),[platform]);
+  const account = useMemo(() => new Account(api, {...platform.account,openSignIn:async url=>{joinIntent.bindFlow();await platform.account.openSignIn(url);}}), [api, platform,joinIntent]);
   const controller = useMemo(() => new Controller(api, platform.controller), [api, platform]);
   const [links] = useState<Links>(() => platform.initialLinks());
   const [accountState, setAccountState] = useState<AccountState>(account.current);
@@ -51,21 +53,32 @@ export function CompanionApp({platform}: {platform: CompanionPlatform}) {
   const [notice, setNotice] = useState<{tone: 'info' | 'warn' | 'error'; text: string} | null>(null);
   const [resume, setResume] = useState(0);
   const online = useOnline();
-  const initial: Screen = links.review ? {name: 'review', token: links.review} : links.pair ? {name: 'pair', code: links.pair} : links.join ? {name: 'join', token: links.join} : {name: 'home'};
-  const {screen, go, back} = useNavigation(initial);
+  const [initial]=useState<Screen>(()=>{const token=links.join??(!links.signin?joinIntent.resume():null);return links.review?{name:'review',token:links.review}:links.pair?{name:'pair',code:links.pair}:token?{name:'join',token}:{name:'home'};});
+  const {screen,go:navigate,back}=useNavigation(initial);
+  const go=useCallback((next:Screen,replace=false)=>{
+    if(next.name==='join'&&next.token)joinIntent.remember(next.token);else joinIntent.clear();
+    navigate(next,replace);
+  },[joinIntent,navigate]);
+  const completing=useRef<{fragment:string;promise:Promise<void>}|null>(null);
 
   useEffect(() => account.subscribe(setAccountState), [account]);
   useEffect(() => controller.subscribe(setControllerState), [controller]);
   useEffect(() => platform.onResume(() => setResume(value => value + 1)), [platform]);
 
-  const completeSignIn = useCallback(async (fragment: string) => {
-    try {await account.completeSignIn(fragment); go({name: 'sessions'}, true);}
-    catch (failure) {setNotice({tone: 'error', text: errorText(failure)});}
-  }, [account, go]);
+  const completeSignIn=useCallback((fragment:string):Promise<void>=>{
+    if(completing.current?.fragment===fragment)return completing.current.promise;
+    const promise=(async()=>{
+      try{await account.completeSignIn(fragment);const token=joinIntent.afterSignIn(fragment);go(token?{name:'join',token}:{name:'sessions'},true);}
+      catch(failure){setNotice({tone:'error',text:errorText(failure)});}
+    })();
+    completing.current={fragment,promise};return promise;
+  },[account,go,joinIntent]);
 
   // Restore saved sign-in and pairing after a reload, resume or process death.
   useEffect(() => {
     platform.clearLinks();
+    if(links.join)joinIntent.remember(links.join);
+    else if(links.review||links.pair)joinIntent.clear();
     if (links.signin) void completeSignIn(links.signin);
     else void account.restore().catch(failure => {if (failure instanceof ApiError && failure.uncertain) setNotice({tone: 'warn', text: 'Offline: your sign-in is kept and will be checked when the connection returns.'});});
     void controller.refresh().catch(() => undefined);
@@ -106,7 +119,7 @@ export function CompanionApp({platform}: {platform: CompanionPlatform}) {
     case 'owner': body = paired ? <><Header title="Owner control" /><OwnerSessions controller={controller} open={id => go({name: 'owner-session', id})} resume={resume} /></> : <><Header title="Owner control" back={back} /><main className="c-main c-narrow"><p>This phone isn’t paired.</p><Button variant="primary" onClick={() => go({name: 'pair'})}>Pair as owner</Button></main></>; break;
     case 'owner-session': body = <OwnerSession controller={controller} api={api} sessionId={screen.id} back={back} resume={resume} />; break;
     case 'review': body = <GuestReview api={api} invitation={screen.token} back={() => go({name: 'home'}, true)} />; break;
-    case 'join': body = <Join api={api} account={account} signedIn={Boolean(signedIn)} token={screen.token} go={go} />; break;
+    case 'join': body = <Join key={screen.token??'empty'} api={api} account={account} signedIn={Boolean(signedIn)} restoring={accountState.status==='restoring'} token={screen.token} go={go} remember={token=>joinIntent.remember(token)} clear={()=>joinIntent.clear()} />; break;
   }
   return (
     <div className="c-app">
@@ -171,7 +184,7 @@ function Home({platform, account, accountState, controllerState, go}: {platform:
         <section className="c-card" aria-labelledby="home-link">
           <h2 className="c-h2" id="home-link">Have a link?</h2>
           <form className="c-form" onSubmit={event => {event.preventDefault(); openLink();}}>
-            <Field id="home-invite" label="Invitation or review link" hint="A desktop invitation (multai://join…) or a browser review link from the host.">
+            <Field id="home-invite" label="Invitation or review link" hint="Paste the invitation link or complete code from the host.">
               <input id="home-invite" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={link} onChange={event => setLink(event.target.value)} />
             </Field>
             <Button disabled={!link.trim()} onClick={openLink}>Open link</Button>
@@ -183,31 +196,44 @@ function Home({platform, account, accountState, controllerState, go}: {platform:
   );
 }
 
-function Join({api, account, signedIn, token, go}: {api: ApiClient; account: Account; signedIn: boolean; token?: string | undefined; go: (screen: Screen) => void}) {
-  const [state, setState] = useState<'ready' | 'busy' | 'pending' | 'admitted'>('ready');
-  const [problem, setProblem] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const join = async () => {
-    if (!token) return;
-    setState('busy'); setProblem(null);
-    try {
-      const result = await account.authorized(bearer => api.request<{sessionId: string; status: 'pending' | 'admitted'}>('POST', '/v1/invitations/join', {auth: {type: 'bearer', token: bearer}, body: {token}}));
-      setSessionId(result.sessionId); setState(result.status);
-    } catch (failure) {setProblem(errorText(failure)); setState('ready');}
+function Join({api,account,signedIn,restoring,token,go,remember,clear}:{api:ApiClient;account:Account;signedIn:boolean;restoring:boolean;token?:string|undefined;go:(screen:Screen)=>void;remember:(token:string)=>boolean;clear:()=>void}) {
+  const [state,setState]=useState<'ready'|'busy'|'pending'|'admitted'>('ready');
+  const [problem,setProblem]=useState<string|null>(null);
+  const [sessionId,setSessionId]=useState<string|null>(null);
+  const busy=useRef(false),mounted=useRef(true);
+  const identity=account.current;
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  useEffect(()=>{busy.current=false;setState('ready');setProblem(null);setSessionId(null);},[identity]);
+  const signIn=async()=>{
+    if(!token||busy.current)return;busy.current=true;setState('busy');setProblem(null);
+    try{if(!remember(token))throw new Error('Allow browser session storage to keep this invitation during sign-in.');await account.beginSignIn();}
+    catch(failure){if(mounted.current)setProblem(errorText(failure));}
+    finally{busy.current=false;if(mounted.current)setState('ready');}
   };
-  return (
-    <>
-      <Header title="Join a session" back={() => go({name: 'home'})} />
-      <main className="c-main c-narrow" id="main">
-        {!token ? <p>Open the invitation link from the host.</p> : !signedIn ? <><p>Sign in first, then open the invitation again.</p><Button variant="primary" onClick={() => go({name: 'home'})}>Sign in</Button></> : (
-          <>
-            {problem && <Banner tone="error" title={problem} />}
-            {state === 'pending' ? <Banner title="Requested">The host admits you as a collaborator or viewer. You’ll find the session under Sessions once admitted.</Banner>
-              : state === 'admitted' && sessionId ? <><Banner tone="ok" title="You’re in" /><Button variant="primary" onClick={() => go({name: 'session', id: sessionId})}>Open session</Button></>
-              : <><p>Ask the host to admit you to this session. The host chooses whether you can send instructions or only watch.</p><Button variant="primary" busy={state === 'busy'} onClick={() => void join()}>Ask to join</Button></>}
-          </>
-        )}
-      </main>
-    </>
-  );
+  const join=async()=>{
+    if(!token||busy.current)return;busy.current=true;setState('busy');setProblem(null);
+    try{
+      const result=await account.authorized(bearer=>api.request<{sessionId:string;status:'pending'|'admitted'}>('POST','/v1/invitations/join',{auth:{type:'bearer',token:bearer},body:{token}}));
+      if(!mounted.current||account.current!==identity)return;clear();setSessionId(result.sessionId);setState(result.status);
+    }catch(failure){if(mounted.current&&account.current===identity){setProblem(errorText(failure));setState('ready');}}
+    finally{if(account.current===identity)busy.current=false;}
+  };
+  return <>
+    <Header title="Join a session" back={()=>go({name:'home'})}/>
+    <main className="c-main c-narrow" id="main">
+      {problem&&<Banner tone="error" title={problem}/>}
+      {!token?<p>Open the invitation link from the host.</p>:restoring?<p>Checking your sign-in…</p>:!signedIn?<>
+        <p>Join this session in your browser. Sign in with Google to continue; no app download is needed.</p>
+        <Button variant="primary" busy={state==='busy'} onClick={()=>void signIn()}>Sign in with Google</Button>
+      </>:state==='pending'?<>
+        <Banner title="Request sent">The host will admit you as a collaborator or viewer.</Banner>
+        <Button variant="primary" onClick={()=>go({name:'sessions'})}>View sessions</Button>
+      </>:state==='admitted'&&sessionId?<>
+        <Banner tone="ok" title="You’re in"/><Button variant="primary" onClick={()=>go({name:'session',id:sessionId})}>Open session</Button>
+      </>:<>
+        <p>Ask the host to admit you to this session. The host chooses whether you can send instructions or only watch.</p>
+        <Button variant="primary" busy={state==='busy'} onClick={()=>void join()}>Ask to join</Button>
+      </>}
+    </main>
+  </>;
 }

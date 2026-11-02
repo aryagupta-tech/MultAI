@@ -12,13 +12,18 @@ beforeAll(() => {
 const build = (channel: 'development' | 'demo' | 'production') => ({ version: '0.1.0', commit: 'abc', dirty: false, builtAt: '', channel, platform: 'darwin' as const, serviceOrigin: 'https://api.multai.si' });
 
 describe('invitation links', () => {
-  test('release and development invitations target their registered desktop protocol', async () => {
+  test('share standard HTTPS links on the configured service with tokens only in fragments', async () => {
     const { useApp } = await import('../model/store');
     const { inviteLink } = await import('./controller');
     useApp.setState({ build: build('production') });
-    expect(inviteLink('tok_abcdefghijklmnop')).toBe('multai://join?token=tok_abcdefghijklmnop');
+    expect(inviteLink('tok_abcdefghijklmnop')).toBe('https://api.multai.si/app/#join=tok_abcdefghijklmnop');
     useApp.setState({ build: build('development') });
-    expect(inviteLink('tok_abcdefghijklmnop')).toBe('multai-dev://join?token=tok_abcdefghijklmnop');
+    expect(inviteLink('tok_abcdefghijklmnop')).toBe('https://api.multai.si/app/#join=tok_abcdefghijklmnop');
+    useApp.setState({build:{...build('development'),serviceOrigin:'http://127.0.0.1:4310'}});
+    const local=new URL(inviteLink('tok_abcdefghijklmnop'));
+    expect(local.origin).toBe('http://127.0.0.1:4310');
+    expect(local.search).toBe('');
+    expect(local.hash).toBe('#join=tok_abcdefghijklmnop');
   });
 
   test('either link form, or a bare code, yields the same token; junk yields nothing', async () => {

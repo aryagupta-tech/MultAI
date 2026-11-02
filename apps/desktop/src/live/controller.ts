@@ -459,10 +459,12 @@ export async function createInvitation(id: string, expiresInSeconds: number): Pr
 /** Invitation tokens are exactly 43 base64url characters, matching the service. */
 export const INVITE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
-/** Desktop invitation; browser companion links are accepted when pasted too. */
+/** Standard HTTPS invitations can be tapped in messaging apps and joined in a browser. */
 export function inviteLink(token:string):string {
-  const scheme=useApp.getState().build?.channel==='production'?'multai':'multai-dev';
-  return `${scheme}://join?token=${token}`;
+  const origin=useApp.getState().build?.serviceOrigin??'https://api.multai.si';
+  const url=new URL('/app/',origin);
+  url.hash=new URLSearchParams({join:token}).toString();
+  return url.href;
 }
 
 /** Accept current browser invitations, legacy native links, or the complete invitation code. */
