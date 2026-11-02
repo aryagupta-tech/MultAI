@@ -51,6 +51,22 @@ interface Flow {
 /** How long a refresh whose response was lost can be retried with the same token. */
 const REFRESH_GRACE_MS = 120_000;
 
+/**
+ * Who started a sign-in. Every client uses the same Google redirect; the service then hands the
+ * one-time completion to that client's own fixed callback. Companion sign-ins are ordinary accounts on
+ * a new device: they never carry original-host or owner-controller authority.
+ */
+export type ClientKind = 'desktop' | 'web' | 'android';
+export interface SignInClient {kind: ClientKind; clientId: string; callbackUri: string}
+export function signInClients(config: Config): SignInClient[] {
+  const production = config.environment === 'production';
+  return [
+    {kind: 'desktop', clientId: config.desktopClientId, callbackUri: config.desktopCallbackUri},
+    {kind: 'web', clientId: production ? 'multai-companion-web' : 'multai-companion-web-development', callbackUri: `${config.publicOrigin}/app/`},
+    {kind: 'android', clientId: production ? 'multai-companion-android' : 'multai-companion-android-development', callbackUri: production ? 'multai-companion://auth/callback' : 'multai-companion-dev://auth/callback'},
+  ];
+}
+
 export class AuthService {
   private resolvedOidc: OidcClient | undefined;
   constructor(private readonly db: Database, private readonly config: Config, private readonly oidc?: OidcClient) {}
@@ -66,7 +82,15 @@ export class AuthService {
     return this.config.googleRedirectUri;
   }
 
-  async start(codeChallenge: string): Promise<{ flowId: string; authorizationUrl: string; expiresAt: string }> {
+  private client(kind: ClientKind): SignInClient {
+    return signInClients(this.config).find(client => client.kind === kind)!;
+  }
+  private clientOf(flow: {desktop_client_id: string; desktop_callback_uri: string}): SignInClient | undefined {
+    return signInClients(this.config).find(client => client.clientId === flow.desktop_client_id && client.callbackUri === flow.desktop_callback_uri);
+  }
+
+  async start(codeChallenge: string, kind: ClientKind = 'desktop'): Promise<{ flowId: string; authorizationUrl: string; expiresAt: string }> {
+    const client = this.client(kind);
     const provider = this.provider();
     const state = secret();
     const nonce = secret();
@@ -79,25 +103,31 @@ export class AuthService {
       `INSERT INTO oauth_flows(id,state_hash,nonce,desktop_challenge,provider_verifier,expires_at,
          desktop_client_id,desktop_callback_uri,provider_redirect_uri,provider_client_id)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, hash(state), nonce, codeChallenge, verifier, expiresAt, this.config.desktopClientId,
-        this.config.desktopCallbackUri, this.redirectUri(), this.config.googleClientId ?? null],
+      [id, hash(state), nonce, codeChallenge, verifier, expiresAt, client.clientId,
+        client.callbackUri, this.redirectUri(), this.config.googleClientId ?? null],
     );
     return { flowId: id, authorizationUrl, expiresAt: expiresAt.toISOString() };
   }
 
   async callback(state: string, code: string): Promise<string> {
+    return (await this.complete(state, code)).url;
+  }
+
+  async complete(state: string, code: string): Promise<{url: string; kind: ClientKind}> {
     // Consume the browser state BEFORE network I/O; a failed callback cannot be
     // replayed. The desktop proof is separately required at one-time exchange.
+    const clients = signInClients(this.config);
     const claimed = await this.db.query<Flow>(
       `UPDATE oauth_flows SET state_consumed_at=now()
        WHERE state_hash=$1 AND state_consumed_at IS NULL AND expires_at>now()
-         AND desktop_client_id=$2 AND desktop_callback_uri=$3 AND provider_redirect_uri=$4
+         AND (desktop_client_id,desktop_callback_uri) IN (SELECT * FROM unnest($2::text[],$3::text[])) AND provider_redirect_uri=$4
          AND provider_client_id IS NOT DISTINCT FROM $5
-       RETURNING *`, [hash(state), this.config.desktopClientId, this.config.desktopCallbackUri,
+       RETURNING *`, [hash(state), clients.map(client => client.clientId), clients.map(client => client.callbackUri),
         this.redirectUri(), this.config.googleClientId ?? null],
     );
     const flow = claimed.rows[0];
-    if (!flow?.provider_verifier) throw new ApiError(401, 'invalid_flow', 'Sign-in flow expired or was already used.');
+    const client = flow ? this.clientOf(flow) : undefined;
+    if (!flow?.provider_verifier || !client) throw new ApiError(401, 'invalid_flow', 'Sign-in flow expired or was already used.');
     let identity: OidcIdentity;
     try {
       identity = await this.provider().exchange({
@@ -113,10 +143,14 @@ export class AuthService {
       [hash(completionCode), identity, flow.id],
     );
     if (result.rowCount !== 1) throw new ApiError(401, 'invalid_flow', 'Sign-in flow expired. Start again.');
+    if (client.kind !== 'desktop') {
+      // Companions read the one-time completion from the fragment, which is never sent to a server.
+      return {url: `${client.callbackUri}#signin=${flow.id}.${completionCode}`, kind: client.kind};
+    }
     const callback = new URL(flow.desktop_callback_uri);
     callback.searchParams.set('flowId', flow.id);
     callback.searchParams.set('completionCode', completionCode);
-    return callback.toString();
+    return {url: callback.toString(), kind: client.kind};
   }
 
   private async issueTokens(client: PoolClient, authSessionId: string, deviceId: string): Promise<TokenBundle> {
@@ -134,15 +168,16 @@ export class AuthService {
     return { accessToken, refreshToken, tokenType: 'Bearer', expiresIn: 900, deviceId };
   }
 
-  async exchange(input: { flowId: string; completionCode: string; codeVerifier: string; deviceName: string; deviceId?: string | undefined; deviceSecret?: string | undefined }): Promise<TokenBundle> {
+  async exchange(input: { flowId: string; completionCode: string; codeVerifier: string; deviceName: string; deviceId?: string | undefined; deviceSecret?: string | undefined }, kinds: readonly ClientKind[] = ['desktop', 'android']): Promise<TokenBundle> {
     if (Boolean(input.deviceId) !== Boolean(input.deviceSecret)) {
       throw new ApiError(400, 'invalid_device_proof', 'Device identity and proof must be supplied together.');
     }
     return transaction(this.db, async (client) => {
       const result = await client.query<Flow>('SELECT * FROM oauth_flows WHERE id=$1 FOR UPDATE', [input.flowId]);
       const flow = result.rows[0];
+      const signInClient = flow ? this.clientOf(flow) : undefined;
       if (!flow || flow.consumed_at || flow.expires_at.getTime() <= Date.now() || !flow.completion_hash || !flow.identity ||
-          flow.desktop_client_id !== this.config.desktopClientId || flow.desktop_callback_uri !== this.config.desktopCallbackUri ||
+          !signInClient || !kinds.includes(signInClient.kind) ||
           flow.provider_redirect_uri !== this.config.googleRedirectUri || flow.provider_client_id !== (this.config.googleClientId ?? null) ||
           !equal(flow.completion_hash, hash(input.completionCode)) || !equal(flow.desktop_challenge, pkceChallenge(input.codeVerifier))) {
         throw new ApiError(401, 'invalid_flow', 'Sign-in proof is invalid, expired, or already used.');
@@ -252,6 +287,10 @@ export class AuthService {
     return { userId: row.user_id, deviceId: row.device_id, authSessionId: row.id };
   }
 
+  async revokeByRefresh(refreshToken: string): Promise<void> {
+    await this.db.query('UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE id=(SELECT auth_session_id FROM refresh_tokens WHERE token_hash=$1)', [hash(refreshToken)]);
+  }
+
   async logout(actor: Actor): Promise<void> {
     await this.db.query('UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1 AND user_id=$2', [actor.authSessionId, actor.userId]);
   }
@@ -292,10 +331,69 @@ export class AuthService {
   }
 }
 
-export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService): Promise<void> {
-  app.post('/v1/auth/google/start', async (request) => {
+const WEB_REFRESH_COOKIE = 'multai_web_refresh';
+const WEB_REFRESH_PATH = '/v1/web/auth';
+
+/**
+ * The browser companion keeps its refresh token only in an HttpOnly, SameSite=Strict cookie scoped to
+ * these routes, and its short access token only in memory. Each route requires this origin's own page
+ * and a custom header, so another site can neither read nor forge these calls.
+ */
+function registerWebAuthRoutes(app: FastifyInstance, auth: AuthService, publicOrigin: string) {
+  const guard = (request: FastifyRequest) => {
+    if (request.headers.origin !== publicOrigin || request.headers['x-multai-client'] !== 'web') throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
+  };
+  const cookie = (request: FastifyRequest) => {
+    for (const part of (request.headers.cookie ?? '').split(';')) {
+      const [key, ...value] = part.trim().split('=');
+      if (key === WEB_REFRESH_COOKIE) return value.join('=');
+    }
+    return undefined;
+  };
+  const setCookie = (reply: import('fastify').FastifyReply, value: string, maxAge: number) => reply.header('set-cookie',
+    `${WEB_REFRESH_COOKIE}=${value}; Path=${WEB_REFRESH_PATH}; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${publicOrigin.startsWith('https:') ? '; Secure' : ''}`);
+  const session = (tokens: TokenBundle) => ({accessToken: tokens.accessToken, tokenType: tokens.tokenType, expiresIn: tokens.expiresIn, deviceId: tokens.deviceId});
+  app.post('/v1/web/auth/start', async (request) => {
+    guard(request);
     const body = z.object({ codeChallenge: opaqueSecret }).strict().parse(request.body);
-    return auth.start(body.codeChallenge);
+    return auth.start(body.codeChallenge, 'web');
+  });
+  app.post('/v1/web/auth/exchange', async (request, reply) => {
+    guard(request);
+    const body = z.object({flowId: z.uuid(), completionCode: opaqueSecret, codeVerifier: verifierSchema, deviceName: z.string().trim().min(1).max(120)}).strict().parse(request.body);
+    const tokens = await auth.exchange(body, ['web']);
+    setCookie(reply, tokens.refreshToken, 30 * 86_400);
+    return session(tokens);
+  });
+  app.post('/v1/web/auth/refresh', async (request, reply) => {
+    guard(request);
+    const token = cookie(request);
+    if (!token || !/^[A-Za-z0-9_-]{43}$/u.test(token)) throw invalidCredentials();
+    try {
+      const tokens = await auth.refresh(token);
+      setCookie(reply, tokens.refreshToken, 30 * 86_400);
+      return session(tokens);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'invalid_credentials') setCookie(reply, '', 0);
+      throw error;
+    }
+  });
+  app.post('/v1/web/auth/logout', async (request, reply) => {
+    guard(request);
+    // Signing out works even when the access token already expired: the cookie names the sign-in.
+    try {await auth.logout(await auth.authenticateRequest(request));} catch {/* already signed out */}
+    const token = cookie(request);
+    if (token && /^[A-Za-z0-9_-]{43}$/u.test(token)) await auth.revokeByRefresh(token);
+    setCookie(reply, '', 0);
+    return reply.code(204).send();
+  });
+}
+
+export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService, publicOrigin?: string): Promise<void> {
+  if (publicOrigin) registerWebAuthRoutes(app, auth, publicOrigin);
+  app.post('/v1/auth/google/start', async (request) => {
+    const body = z.object({ codeChallenge: opaqueSecret, client: z.enum(['desktop', 'android']).optional() }).strict().parse(request.body);
+    return auth.start(body.codeChallenge, body.client);
   });
   app.get('/v1/auth/google/callback', async (request, reply) => {
     // This is a browser tab, so every outcome is a page, never raw JSON. Success answers with a
@@ -312,7 +410,9 @@ export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService
     const query = z.object({ state: opaqueSecret, code: z.string().min(1).max(4_096), scope: z.string().optional(), authuser: z.string().optional(), prompt: z.string().optional(), iss: z.string().optional(), hd: z.string().optional() }).safeParse(raw);
     if (!query.success) return page(400, signInProblemPage('invalid'));
     try {
-      return page(200, signInCompletePage(await auth.callback(query.data.state, query.data.code)));
+      const done = await auth.complete(query.data.state, query.data.code);
+      if (done.kind === 'web') return reply.code(303).header('cache-control', 'no-store').header('referrer-policy', 'no-referrer').header('location', done.url).send();
+      return page(200, signInCompletePage(done.url, done.kind === 'android' ? 'MultAI Companion' : 'MultAI'));
     } catch (error) {
       if (!(error instanceof ApiError)) throw error;
       return page(error.statusCode, signInProblemPage(error.code === 'invalid_flow' ? 'expired' : 'failed'));
@@ -370,11 +470,11 @@ ${body}
 `;
 }
 
-export function signInCompletePage(deepLink: string): string {
+export function signInCompletePage(deepLink: string, app = 'MultAI'): string {
   const href = escapeHtml(deepLink);
   return signInPage('Signed in to MultAI', `  <h1>You’re signed in</h1>
-  <p>MultAI is opening. You can close this tab.</p>
-  <a href="${href}">Open MultAI</a>
+  <p>${app} is opening. You can close this tab.</p>
+  <a href="${href}">Open ${app}</a>
   <small>Didn’t open? Use the button above.</small>`, `<meta http-equiv="refresh" content="0;url=${href}">\n`);
 }
 

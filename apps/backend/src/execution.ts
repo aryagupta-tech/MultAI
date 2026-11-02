@@ -23,7 +23,7 @@ const equal = (a: string,b: string) => a.length === b.length && timingSafeEqual(
 export function redact(value: string): string {
   return value.replace(/\b(?:sk-(?:ant-)?[A-Za-z0-9_-]{12,}|AKIA[A-Z0-9]{16}|Bearer\s+[A-Za-z0-9._~-]{12,})\b/gu, '[REDACTED]');
 }
-interface PendingDirection {id:string;authorId:string;authorName:string;text:string;revision:number}
+export interface PendingDirection {id:string;authorId:string;authorName:string;text:string;revision:number}
 interface RunRow {
   id: string; session_id: string; request_id: string; fingerprint: string; owner_id: string; device_id: string;
   auth_session_id: string; instruction_id: string; connection_id: string; model: string; generation: number;
@@ -64,6 +64,26 @@ function validateActionDescriptor(descriptor:z.infer<typeof descriptorSchema>,se
   }
 }
 
+export async function pendingDirections(client:PoolClient,sessionId:string):Promise<PendingDirection[]>{
+  const result=await client.query<{id:string;author_id:string;author_name:string;text:string;revision:number}>(`SELECT q.id,q.author_id,u.display_name AS author_name,e.payload->>'text' AS text,q.revision
+    FROM instruction_queue q JOIN shared_events e ON e.id=q.event_id JOIN users u ON u.id=q.author_id
+    WHERE q.session_id=$1 AND q.status='pending' ORDER BY q.created_at,q.id`,[sessionId]);
+  return result.rows.map(row=>({id:row.id,authorId:row.author_id,authorName:row.author_name,text:row.text,revision:row.revision}));
+}
+export function directionFingerprint(sessionId:string,pending:PendingDirection[]):string {
+  return hash({sessionId,pending:pending.map(({id,authorId,revision})=>({id,authorId,revision}))});
+}
+export async function priorSteeringConflict(client:PoolClient,sessionId:string){
+  const prior=await client.query<{id:string;author_id:string;author_name:string;text:string}>(`SELECT q.id,COALESCE(d.actor_id,q.author_id) AS author_id,u.display_name AS author_name,COALESCE(d.payload->>'text',e.payload->>'text') AS text
+    FROM execution_runs r JOIN instruction_queue q ON q.id=r.instruction_id AND q.session_id=r.session_id JOIN shared_events e ON e.id=q.event_id
+    LEFT JOIN shared_events d ON d.session_id=r.session_id AND d.type='decision.saved' AND d.payload->>'source'='instruction_resolution' AND d.payload->>'runId'=r.id::text
+    JOIN users u ON u.id=COALESCE(d.actor_id,q.author_id)
+    WHERE r.session_id=$1 ORDER BY r.created_at DESC,r.id DESC LIMIT 1`,[sessionId]);
+  const previous=prior.rows[0];if(!previous)return undefined;
+  const different=await client.query("SELECT 1 FROM instruction_queue WHERE session_id=$1 AND status='pending' AND steer AND author_id<>$2 LIMIT 1",[sessionId,previous.author_id]);
+  return different.rowCount?{id:previous.id,authorId:previous.author_id,authorName:previous.author_name,text:previous.text}:undefined;
+}
+
 /** Holds authority only; provider credentials and all actual effects remain on the original host. */
 export class ExecutionService extends CollaborationService {
   private readonly epoch = randomUUID();
@@ -98,6 +118,8 @@ export class ExecutionService extends CollaborationService {
     const uncertain=await client.query("SELECT 1 FROM execution_actions a JOIN execution_runs r ON r.id=a.run_id WHERE r.session_id=$1 AND a.status IN ('consumed','uncertain') LIMIT 1",[session.id]);
     await client.query("UPDATE execution_actions SET status=CASE WHEN status='consumed' THEN 'uncertain' ELSE 'canceled' END WHERE run_id IN (SELECT id FROM execution_runs WHERE session_id=$1 AND status='running') AND status IN ('pending','approved','consumed')",[session.id]);
     await client.query("UPDATE execution_runs SET status=$2,finished_at=now() WHERE session_id=$1 AND status='running'",[session.id,status]);
+    // Stop invalidates what a paired phone asked for but the host has not acknowledged yet.
+    await client.query("UPDATE control_requests SET status='canceled',result_code='run_stopped' WHERE session_id=$1 AND status IN ('pending','delivered')",[session.id]);
     session.runtime_generation++;
     session.status=status==='uncertain'||uncertain.rowCount?'paused':'inactive';
     await client.query('UPDATE sessions SET status=$2,runtime_generation=$3 WHERE id=$1',[session.id,session.status,session.runtime_generation]);
@@ -116,33 +138,14 @@ export class ExecutionService extends CollaborationService {
     if(run.lease_expires_at.getTime()<=Date.now()) throw new ApiError(409,'lease_expired','The host lease expired. Resume explicitly after reviewing interrupted work.');
     return {session,run};
   }
-  private async pendingDirections(client:PoolClient,sessionId:string):Promise<PendingDirection[]>{
-    const result=await client.query<{id:string;author_id:string;author_name:string;text:string;revision:number}>(`SELECT q.id,q.author_id,u.display_name AS author_name,e.payload->>'text' AS text,q.revision
-      FROM instruction_queue q JOIN shared_events e ON e.id=q.event_id JOIN users u ON u.id=q.author_id
-      WHERE q.session_id=$1 AND q.status='pending' ORDER BY q.created_at,q.id`,[sessionId]);
-    return result.rows.map(row=>({id:row.id,authorId:row.author_id,authorName:row.author_name,text:row.text,revision:row.revision}));
-  }
-  private directionFingerprint(sessionId:string,pending:PendingDirection[]):string {
-    return hash({sessionId,pending:pending.map(({id,authorId,revision})=>({id,authorId,revision}))});
-  }
-  private async priorSteeringConflict(client:PoolClient,sessionId:string){
-    const prior=await client.query<{id:string;author_id:string;author_name:string;text:string}>(`SELECT q.id,COALESCE(d.actor_id,q.author_id) AS author_id,u.display_name AS author_name,COALESCE(d.payload->>'text',e.payload->>'text') AS text
-      FROM execution_runs r JOIN instruction_queue q ON q.id=r.instruction_id AND q.session_id=r.session_id JOIN shared_events e ON e.id=q.event_id
-      LEFT JOIN shared_events d ON d.session_id=r.session_id AND d.type='decision.saved' AND d.payload->>'source'='instruction_resolution' AND d.payload->>'runId'=r.id::text
-      JOIN users u ON u.id=COALESCE(d.actor_id,q.author_id)
-      WHERE r.session_id=$1 ORDER BY r.created_at DESC,r.id DESC LIMIT 1`,[sessionId]);
-    const previous=prior.rows[0];if(!previous)return undefined;
-    const different=await client.query("SELECT 1 FROM instruction_queue WHERE session_id=$1 AND status='pending' AND steer AND author_id<>$2 LIMIT 1",[sessionId,previous.author_id]);
-    return different.rowCount?{id:previous.id,authorId:previous.author_id,authorName:previous.author_name,text:previous.text}:undefined;
-  }
   /** Read the complete queue under the same authority lock used when the host commits a decision. */
   async conflictContext(actor:Actor,sessionId:string){
     return transaction(this.db,async client=>{
       const session=await this.host(client,actor,sessionId);
-      const pending=await this.pendingDirections(client,session.id);
+      const pending=await pendingDirections(client,session.id);
       if(pending.length>100||pending.reduce((sum,row)=>sum+Buffer.byteLength(row.text),0)>160_000)throw new ApiError(409,'conflict_context_capacity','Review or remove queued directions before comparing them; no direction can be silently omitted.');
-      const previousDirection=await this.priorSteeringConflict(client,session.id);
-      return {fingerprint:this.directionFingerprint(session.id,pending),pending,requiresReview:new Set(pending.map(row=>row.authorId)).size>1||Boolean(previousDirection),...(previousDirection?{previousDirection}:{})};
+      const previousDirection=await priorSteeringConflict(client,session.id);
+      return {fingerprint:directionFingerprint(session.id,pending),pending,requiresReview:new Set(pending.map(row=>row.authorId)).size>1||Boolean(previousDirection),...(previousDirection?{previousDirection}:{})};
     });
   }
   async startRun(actor:Actor,sessionId:string,input:unknown){
@@ -163,13 +166,13 @@ export class ExecutionService extends CollaborationService {
         await this.fence(client,session,'uncertain');
       }
       if(session.status==='paused'&&!body.resume) throw new ApiError(409,'resume_required','Review interrupted work and explicitly Resume.');
-      const pending=await this.pendingDirections(client,session.id);
+      const pending=await pendingDirections(client,session.id);
       if(!pending.some(row=>row.id===body.instructionId)) throw new ApiError(409,'instruction_unavailable','Choose a pending instruction. Completed instructions are never replayed.');
       const authors=new Set(pending.map(row=>row.authorId));
-      if((authors.size>1||await this.priorSteeringConflict(client,session.id)) && !body.resolution) throw new ApiError(409,'instruction_conflict','Several authors have pending directions. Record an owner decision before continuing.');
+      if((authors.size>1||await priorSteeringConflict(client,session.id)) && !body.resolution) throw new ApiError(409,'instruction_conflict','Several authors have pending directions. Record an owner decision before continuing.');
       const id=randomUUID();
       if(body.resolution){
-        if(body.resolutionFingerprint!==this.directionFingerprint(session.id,pending))throw new ApiError(409,'stale_resolution','The pending directions changed. Review them again before deciding.');
+        if(body.resolutionFingerprint!==directionFingerprint(session.id,pending))throw new ApiError(409,'stale_resolution','The pending directions changed. Review them again before deciding.');
         await client.query("UPDATE acceptance_criteria SET version=version+1,updated_at=now() WHERE session_id=$1 AND state='approved'",[session.id]);
         const decisionId=randomUUID();
         await client.query('INSERT INTO decisions(id,session_id,author_id,text) VALUES($1,$2,$3,$4)',[decisionId,session.id,actor.userId,redact(body.resolution)]);

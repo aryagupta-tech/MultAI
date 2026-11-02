@@ -441,6 +441,11 @@ export class CollaborationService {
       await client.query('DELETE FROM acceptance_requests WHERE session_id=$1', [sessionId]);
       await client.query('DELETE FROM browser_review_invitations WHERE session_id=$1', [sessionId]);
       await client.query('DELETE FROM browser_review_screenshots WHERE session_id=$1', [sessionId]);
+      // Paired phones lose a deleted session; a pairing for nothing else is revoked.
+      await client.query('DELETE FROM control_requests WHERE session_id=$1', [sessionId]);
+      await client.query('DELETE FROM host_control_state WHERE session_id=$1', [sessionId]);
+      await client.query("UPDATE controller_pairings SET status='revoked',revoked_at=now(),revoked_by='host',token_hash=NULL WHERE session_ids=ARRAY[$1]::uuid[] AND status<>'revoked'", [sessionId]);
+      await client.query('UPDATE controller_pairings SET session_ids=array_remove(session_ids,$1::uuid) WHERE $1::uuid=ANY(session_ids) AND cardinality(session_ids)>1', [sessionId]);
       await client.query('UPDATE request_results SET response=NULL WHERE session_id=$1', [sessionId]);
       await client.query("UPDATE sessions SET deleted_at=now(),title=NULL,mode='plan',status='inactive',runtime_generation=runtime_generation+1,updated_at=now() WHERE id=$1", [sessionId]);
       return { deleted: true, sessionId };

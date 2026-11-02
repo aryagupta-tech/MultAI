@@ -14,6 +14,12 @@ export interface Config {
   environment: 'development' | 'test' | 'production';
   /** Private proxy addresses whose X-Forwarded-For is believed (per-client rate limits). */
   trustedProxies: string[];
+  /** Built browser companion served at /app/; absent means the route answers 404. */
+  companionDirectory?: string;
+  /** Origins of the packaged companion app, allowed header-authenticated cross-origin calls. */
+  companionOrigins?: string[];
+  /** SHA-256 signing-certificate fingerprints published for Android App Links. */
+  androidCertificates?: string[];
 }
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -27,7 +33,14 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     GOOGLE_CLIENT_ID: z.string().min(1).optional(),
     GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
     TRUST_PROXY: z.string().optional(),
+    COMPANION_DIR: z.string().min(1).optional(),
+    COMPANION_APP_ORIGINS: z.string().optional(),
+    ANDROID_CERT_SHA256: z.string().optional(),
   }).parse(env);
+  const companionOrigins = (values.COMPANION_APP_ORIGINS ?? 'https://localhost').split(',').map(entry => entry.trim()).filter(Boolean);
+  if (companionOrigins.some(entry => {try {const url = new URL(entry); return url.origin !== entry || url.protocol !== 'https:';} catch {return true;}})) throw new Error('COMPANION_APP_ORIGINS accepts only HTTPS origins.');
+  const androidCertificates = (values.ANDROID_CERT_SHA256 ?? '').split(',').map(entry => entry.trim().toUpperCase()).filter(Boolean);
+  if (androidCertificates.some(entry => !/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/u.test(entry))) throw new Error('ANDROID_CERT_SHA256 must be colon-separated SHA-256 fingerprints.');
   const origin = new URL(values.PUBLIC_ORIGIN);
   if (!['http:', 'https:'].includes(origin.protocol) || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== '/') {
     throw new Error('PUBLIC_ORIGIN must be an HTTP(S) origin without a path or credentials.');
@@ -65,6 +78,9 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     desktopClientId: production ? 'multai-desktop' : 'multai-desktop-development',
     environment: values.NODE_ENV,
     trustedProxies,
+    companionOrigins,
+    androidCertificates,
+    ...(values.COMPANION_DIR ? {companionDirectory: values.COMPANION_DIR} : {}),
     ...(values.GOOGLE_CLIENT_ID ? {
       googleClientId: values.GOOGLE_CLIENT_ID,
       googleClientSecret: values.GOOGLE_CLIENT_SECRET!,

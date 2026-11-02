@@ -1,0 +1,14 @@
+{
+  "name": "@multai/companion-core",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Shared API contracts, validation, signed owner-control requests and client logic for the MultAI companions",
+  "exports": {".": "./src/index.ts"},
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {"zod": "4.6.7"}
+}

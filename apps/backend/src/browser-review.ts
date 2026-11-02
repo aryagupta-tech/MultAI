@@ -148,8 +148,8 @@ export class BrowserReviewService extends CollaborationService {
         WHERE e.session_id=$1 AND e.sequence>$2 ORDER BY e.sequence LIMIT 100`,[session.id,after]);
       const events=rows.rows.filter(row=>!row.removed).map(row=>{
         if(row.type==='reviewer.comment'){
-          const p=row.payload as {text:string;reviewerName:string;region?:unknown;screenshotId?:string};
-          return {sequence:row.sequence,at:row.created_at.toISOString(),type:row.type,who:`${p.reviewerName} · Browser reviewer`,data:{text:p.text,...(p.screenshotId?{screenshotId:p.screenshotId,region:p.region}:{})}} as ReplayEvent;
+          const p=row.payload as {text:string;reviewerName:string;reviewerKind?:string;region?:unknown;screenshotId?:string};
+          return {sequence:row.sequence,at:row.created_at.toISOString(),type:row.type,who:p.reviewerKind==='participant'?p.reviewerName:`${p.reviewerName} · Browser reviewer`,data:{text:p.text,...(p.screenshotId?{screenshotId:p.screenshotId,region:p.region}:{})}} as ReplayEvent;
         }
         return replayEvent(row,id=>id?labels.get(id)??'Former teammate':null);
       }).filter((event):event is ReplayEvent=>event!==null);
@@ -187,6 +187,34 @@ export class BrowserReviewService extends CollaborationService {
       return reviewAcceptanceEvidence(client,session,{id:reviewer.id,name:reviewer.name,kind:'browser'},input);
     });
   }
+  /** Admitted participants see the screenshots the host chose to share, and can mark a region on them. */
+  async participantScreenshots(actor:Actor,sessionId:string){
+    return transaction(this.db,async client=>{
+      await assertActor(client,actor);
+      const {session}=await this.authorize(client,actor,uuid.parse(sessionId));
+      return {screenshots:await this.screenshots(client,session.id)};
+    });
+  }
+  async participantComment(actor:Actor,sessionId:string,input:unknown){
+    const body=z.object({requestId:uuid,text:text(4000),screenshotId:uuid,region:regionSchema}).strict().parse(input);
+    return transaction(this.db,async client=>{
+      await assertActor(client,actor);
+      const {session,role}=await this.authorize(client,actor,uuid.parse(sessionId));
+      if(role==='viewer')throw new ApiError(403,'read_only','Viewers cannot comment.');
+      const previous=await client.query<{sequence:number;payload:{text:string;screenshotId:string;region:unknown}}>("SELECT sequence,payload FROM shared_events WHERE session_id=$1 AND type='reviewer.comment' AND actor_id=$2 AND payload->>'requestId'=$3",[session.id,actor.userId,body.requestId]);
+      if(previous.rows[0]){
+        const p=previous.rows[0].payload;
+        if(p.text!==redact(body.text)||p.screenshotId!==body.screenshotId||JSON.stringify(p.region)!==JSON.stringify(body.region))throw new ApiError(409,'idempotency_conflict','This comment retry changed.');
+        return {sequence:previous.rows[0].sequence};
+      }
+      const image=await client.query('SELECT 1 FROM browser_review_screenshots WHERE id=$1 AND session_id=$2 AND revoked_at IS NULL',[body.screenshotId,session.id]);
+      if(!image.rowCount)throw new ApiError(409,'screenshot_unavailable','That screenshot is no longer shared.');
+      // The same generic label everyone else sees; display names stay private.
+      const name=actor.userId===session.owner_id?'Host':`Teammate ${actor.userId.replace(/-/gu,'').slice(0,4).toUpperCase()}`;
+      const event=await this.append(client,session,actor,'reviewer.comment',{requestId:body.requestId,text:redact(body.text),reviewerName:name,reviewerKind:'participant',screenshotId:body.screenshotId,region:body.region});
+      return {sequence:event.sequence};
+    });
+  }
   private async screenshots(client:PoolClient,sessionId:string){
     const rows=await client.query<{id:string;label:string;image:string;created_at:Date}>('SELECT id,label,image,created_at FROM browser_review_screenshots WHERE session_id=$1 AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 5',[sessionId]);
     return rows.rows.map(row=>({id:row.id,label:row.label,image:row.image,createdAt:row.created_at.toISOString()}));
@@ -214,7 +242,7 @@ export class BrowserReviewService extends CollaborationService {
 }
 
 const CSP="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-export async function registerBrowserReviewRoutes(app:FastifyInstance,service:BrowserReviewService,authenticate:(request:FastifyRequest)=>Promise<Actor>,publicOrigin:string){
+export async function registerBrowserReviewRoutes(app:FastifyInstance,service:BrowserReviewService,authenticate:(request:FastifyRequest)=>Promise<Actor>,publicOrigin:string,appOrigins:string[]=[]){
   const params=(request:FastifyRequest)=>z.object({sessionId:uuid,id:uuid.optional()}).parse(request.params);
   app.get('/v1/sessions/:sessionId/reviewers',async request=>service.list(await authenticate(request),params(request).sessionId));
   app.post('/v1/sessions/:sessionId/reviewer-invitations',async(request,reply)=>reply.code(201).send(await service.createReviewInvitation(await authenticate(request),params(request).sessionId,request.body)));
@@ -222,8 +250,11 @@ export async function registerBrowserReviewRoutes(app:FastifyInstance,service:Br
   app.post('/v1/sessions/:sessionId/reviewers/:id',async request=>{const p=params(request);return service.decideReviewer(await authenticate(request),p.sessionId,p.id!,request.body);});
   app.post('/v1/sessions/:sessionId/reviewer-screenshots',{bodyLimit:120000},async(request,reply)=>reply.code(201).send(await service.shareScreenshot(await authenticate(request),params(request).sessionId,request.body)));
   app.delete('/v1/sessions/:sessionId/reviewer-screenshots/:id',async request=>{const p=params(request);return service.revokeScreenshot(await authenticate(request),p.sessionId,p.id!);});
+  app.get('/v1/sessions/:sessionId/shared-screenshots',async request=>service.participantScreenshots(await authenticate(request),params(request).sessionId));
+  app.post('/v1/sessions/:sessionId/screenshot-comments',async(request,reply)=>reply.code(201).send(await service.participantComment(await authenticate(request),params(request).sessionId,request.body)));
   const checkOrigin=(request:FastifyRequest)=>{
-    if(request.headers.origin!==publicOrigin)throw new ApiError(403,'review_origin_denied','Open the review invitation on this service.');
+    // The served page, the browser companion (same origin) or the packaged companion app.
+    if(request.headers.origin!==publicOrigin&&!appOrigins.includes(request.headers.origin??''))throw new ApiError(403,'review_origin_denied','Open the review invitation on this service.');
   };
   const credential=(request:FastifyRequest)=>{
     checkOrigin(request);
