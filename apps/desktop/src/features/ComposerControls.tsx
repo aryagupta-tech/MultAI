@@ -149,7 +149,7 @@ export function AccessPicker({ sessionId }: { sessionId: string | null }) {
         { id: 'sep', separator: true as const },
         {
           id: 'web', label: 'Allow web search', icon: Globe, checked: web && webSupported,
-          description: webSupported ? 'The model’s provider searches the web itself, so searches aren’t approved one by one. Replies cite their sources.' : 'Muse models don’t offer web search. Choose a GPT or Claude model to use it.',
+          description: webSupported ? 'The model’s provider searches the web itself, so searches aren’t approved one by one. Replies cite their sources.' : 'This provider doesn’t offer its own web search. Choose Muse, GPT or Claude to use it.',
           disabled: (webSupported ? false : 'Not available for this model') as string | false,
           onSelect: () => execution.setWebSearch(sessionId, !web),
         },

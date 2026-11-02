@@ -44,6 +44,9 @@ function validImages(message: AgentMessage): boolean {
   if (message.images === undefined) return true;
   return message.role === 'user' && Array.isArray(message.images) && message.images.length <= 4 && message.images.every(image => typeof image === 'string' && image.length <= 2_000_000 && IMAGE.test(image));
 }
+/** Meta models whose Responses endpoint refused a request in this process; they use Chat Completions. */
+const chatOnly = new Set<string>();
+
 /** Each protocol's own multimodal content parts, text first. */
 function withImages(protocol: ConversationState['protocol'], text: string, images: string[]): unknown[] {
   if (protocol === 'anthropic') return [{type: 'text', text}, ...images.map(image => {const [, media_type, data] = IMAGE.exec(image)!; return {type: 'image', source: {type: 'base64', media_type, data}};})];
@@ -67,8 +70,9 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     canonicalJson(tool.parameters);
   }
   if (tools.length && !options.executeTool) throw new ProviderError('tool_callback_required', 'An authority-checked host callback is required for tools.');
-  const protocol = options.credentials.kind === 'anthropic' ? 'anthropic' : options.credentials.kind === 'compatible' ? 'chat' : 'responses';
-  const state: ConversationState = {protocol, items: options.messages.map(message => ({role: message.role, content: message.images?.length ? withImages(protocol, message.content, message.images) : message.content}))};
+  let protocol: ConversationState['protocol'] = options.credentials.kind === 'anthropic' ? 'anthropic' : options.credentials.kind === 'compatible' || (options.credentials.kind === 'meta' && chatOnly.has(options.model)) ? 'chat' : 'responses';
+  const initialItems = () => options.messages.map(message => ({role: message.role, content: message.images?.length ? withImages(protocol, message.content, message.images) : message.content}));
+  let state: ConversationState = {protocol, items: initialItems()};
   const system = options.system ?? DEFAULT_SYSTEM;
   if (Buffer.byteLength(system) > 32_768) throw new ProviderError('input_limit', 'The agent instructions exceeded their byte limit.');
   const onEvent = options.onEvent ?? (() => undefined);
@@ -97,13 +101,24 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
       if (event.type === 'text.delta' && !separated) {separated = true; await onEvent({type: 'text.delta', text: separator});}
       await onEvent(event);
     };
-    const completion = await complete({
+    const request = () => complete({
       credentials: options.credentials, model: options.model, system, state, tools, maxOutputTokens,
       ...(options.reasoningEffort ? {reasoningEffort: options.reasoningEffort} : {}),
       ...(options.hostedSearch && protocol !== 'chat' ? {hostedSearch: true} : {}),
       signal: options.signal, onEvent: iterationEvent,
       ...(options.limits ? {limits: options.limits} : {}), ...(options.fetch ? {fetch: options.fetch} : {}),
     });
+    let completion: Awaited<ReturnType<typeof complete>>;
+    try {completion = await request();}
+    catch (error) {
+      // Meta speaks Responses and Chat Completions. If its Responses endpoint refuses the first request
+      // for this model, the run (and later runs) continue over Chat Completions instead.
+      if (!(iteration === 1 && protocol === 'responses' && options.credentials.kind === 'meta' && error instanceof ProviderError && [400, 404, 422].includes(error.status ?? 0))) throw error;
+      chatOnly.add(options.model);
+      protocol = 'chat';
+      state = {protocol, items: initialItems()};
+      completion = await request();
+    }
     options.signal.throwIfAborted();
     if (completion.text) totalText += (separated ? separator : '') + completion.text;
     if (Buffer.byteLength(totalText) > 1_048_576) throw new ProviderError('output_limit', 'The agent output exceeded its total byte limit.');

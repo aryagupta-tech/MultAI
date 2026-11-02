@@ -540,8 +540,8 @@ export class HostCoordinator {
           this.usage.set(body.sessionId,{used:contextBytes(system,[...history,instruction]),limit:MAX_INPUT_BYTES});
           const result=await runAgent({credentials,model:body.model,messages:[...history,instruction],system,
             steer,
-            // The provider runs these searches; the host allowed them for this chat. Muse has no such tool.
-            ...(body.webSearch&&['openai','chatgpt','anthropic'].includes(credentials.kind)?{hostedSearch:true}:{}),
+            // The provider runs these searches; the host allowed them for this chat.
+            ...(body.webSearch&&['meta','openai','chatgpt','anthropic'].includes(credentials.kind)?{hostedSearch:true}:{}),
             tools:[...readDefinitions,...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:[...effectDefinitions,...mcpDefinitions])],signal:controller.signal,beforeRequest:()=>this.assertLive(running,true),fetch:publicProviderFetch,
             limits:(({runMs:_runMs,...limits})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...limits}))(effortLimits(body.effort??'medium',credentials)),
             ...(nativeEffort(body.effort??'medium',credentials)?{reasoningEffort:nativeEffort(body.effort??'medium',credentials)!}:{}),

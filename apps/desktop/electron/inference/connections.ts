@@ -12,7 +12,7 @@ export interface ConnectionAccount {
   identitySnapshot(): Promise<{userId: string; deviceId: string; generation: number}>;
 }
 export interface ProviderCredentials {
-  kind: 'openai' | 'anthropic' | 'compatible' | 'chatgpt';
+  kind: 'openai' | 'anthropic' | 'compatible' | 'chatgpt' | 'meta';
   apiKey: string;
   baseUrl?: string;
   accountId?: string;
@@ -166,8 +166,8 @@ export class ConnectionManager {
     this.fresh(scope);
     if (connection.provider !== 'chatgpt') {
       if (!connection.apiKey) throw new ConnectionError('connection_not_found', 'This AI connection is incomplete.');
-      // Meta's Model API and Kimi speak OpenAI Chat Completions at their own fixed endpoints.
-      return {kind: connection.provider === 'kimi' || connection.provider === 'meta' ? 'compatible' : connection.provider, apiKey: connection.apiKey, baseUrl: connection.baseUrl};
+      // Meta's Model API speaks the Responses API (with its own web search); Kimi speaks Chat Completions.
+      return {kind: connection.provider === 'kimi' ? 'compatible' : connection.provider, apiKey: connection.apiKey, baseUrl: connection.baseUrl};
     }
     let registration = connection.registration;
     if (!registration?.accessToken || registration.reauthorizationRequired) throw new ConnectionError('chatgpt_sign_in_required', 'Sign in to this ChatGPT connection again.');

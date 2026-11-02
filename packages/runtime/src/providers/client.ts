@@ -19,7 +19,7 @@ const number = (value: unknown) => typeof value === 'number' && Number.isSafeInt
 
 export function providerBase(credentials: ProviderCredentials): URL {
   if (!credentials.apiKey || credentials.apiKey.length > 16_384 || /[\r\n\0]/u.test(credentials.apiKey)) throw new ProviderError('invalid_credentials', 'Connect an inference account or API key first.');
-  const expected = credentials.kind === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1';
+  const expected = credentials.kind === 'anthropic' ? 'https://api.anthropic.com/v1' : credentials.kind === 'meta' ? 'https://api.meta.ai/v1' : 'https://api.openai.com/v1';
   const selected = credentials.baseUrl ?? expected;
   let url: URL;
   try {url = new URL(selected);} catch {throw new ProviderError('invalid_endpoint', 'Provider endpoint must be an HTTPS API base URL.');}
@@ -182,7 +182,9 @@ export async function complete(input: CompleteInput): Promise<Completion> {
   let path: string;
   if (state.protocol === 'responses') {
     path = 'responses';
-    body = {model, input: state.items, store: false, stream: true, instructions: system, include: ['reasoning.encrypted_content']};
+    body = {model, input: state.items, store: false, stream: true, instructions: system};
+    // Meta's Responses API doesn't document encrypted reasoning; its reasoning items aren't carried over (below).
+    if (credentials.kind !== 'meta') body.include = ['reasoning.encrypted_content'];
     if (credentials.kind !== 'chatgpt') body.max_output_tokens = maxOutputTokens;
     if (input.reasoningEffort) body.reasoning = {effort: input.reasoningEffort};
     if (functions.length) body.tools = credentials.kind === 'chatgpt' ? [{type: 'namespace', name: 'multai', description: 'App-controlled workspace tools. Every effect requires host authority.', tools: functions}] : functions;
@@ -257,6 +259,8 @@ export async function complete(input: CompleteInput): Promise<Completion> {
         if (completed.status !== undefined && completed.status !== 'completed') throw new ProviderError('provider_incomplete', 'The inference provider did not complete this response.');
         const listed = array(completed.output).map(record);
         output = listed.length ? listed : finishedItems;
+        // Without stored or encrypted reasoning, a reasoning item can't be sent back on the next turn.
+        if (credentials.kind === 'meta') output = output.filter(item => item.type !== 'reasoning');
         calls = output.filter(item => item.type === 'function_call').map(item => parseCall(item.call_id, item.name, item.arguments, item.namespace));
         if (output.some(item => item.type !== 'message' && item.type !== 'function_call' && item.type !== 'reasoning' && !(item.type === 'web_search_call' && input.hostedSearch))) throw new ProviderError('unsupported_tool', 'The provider returned an unsupported hosted tool or output type.');
         usage = usageFrom(completed.usage, 'responses');

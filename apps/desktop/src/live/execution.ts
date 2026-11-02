@@ -52,7 +52,7 @@ export function setEffort(effort:Effort):void {
  */
 export function webSearchSupported():boolean {
   const connection=getSelectedConnection();
-  return Boolean(connection&&['openai','chatgpt','anthropic'].includes(connection.provider));
+  return Boolean(connection&&['meta','openai','chatgpt','anthropic'].includes(connection.provider));
 }
 const webSearchKey=(user:string|null)=>`multai.web-search.v1:${user??'signed-out'}`;
 function storedWebSearch():Record<string,boolean>{

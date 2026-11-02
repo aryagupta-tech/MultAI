@@ -1,7 +1,7 @@
 import type {JsonValue} from '../policy.js';
 
 export interface ProviderCredentials {
-  kind: 'openai' | 'anthropic' | 'compatible' | 'chatgpt';
+  kind: 'openai' | 'anthropic' | 'compatible' | 'chatgpt' | 'meta';
   apiKey: string;
   baseUrl?: string;
   accountId?: string;

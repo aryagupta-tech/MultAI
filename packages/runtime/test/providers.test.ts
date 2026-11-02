@@ -353,9 +353,9 @@ test('the provider\'s own web search is requested only when allowed, reported, a
   assert.deepEqual(searched, ['node 24 release date']);
   // Without permission the same hosted item is refused.
   await assert.rejects(runAgent({credentials, model: 'synthetic', messages: [{role: 'user', content: 'x'}], signal: signal(), fetch: responsesFetch}), /unsupported hosted tool/u);
-  // Chat Completions providers (Muse) never get it.
+  // Chat Completions providers never get it.
   let chatBody: Record<string, unknown> | undefined;
-  await runAgent({credentials: {kind: 'compatible', apiKey: 'synthetic-meta', baseUrl: 'https://api.meta.ai/v1'}, model: 'muse-spark-1.3', messages: [{role: 'user', content: 'x'}], hostedSearch: true, signal: signal(),
+  await runAgent({credentials: {kind: 'compatible', apiKey: 'synthetic-compatible', baseUrl: 'https://api.example.com/v1'}, model: 'synthetic', messages: [{role: 'user', content: 'x'}], hostedSearch: true, signal: signal(),
     fetch: async (_url, init) => {chatBody = JSON.parse(String(init?.body)); return stream([{choices: [{delta: {content: 'ok'}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'stop'}]}, '[DONE]']);}});
   assert.equal(chatBody?.tools, undefined);
 
@@ -393,4 +393,48 @@ test('the provider\'s own web search is requested only when allowed, reported, a
   assert.equal(resent.role, 'assistant');
   assert.deepEqual(resent.content.map(block => block.type), ['server_tool_use', 'web_search_tool_result']);
   assert.deepEqual(resent.content[0]?.input, {query: 'vitest 5 release'});
+});
+
+test('Muse runs on Meta\'s Responses API with its web search, and falls back to Chat Completions if refused', async () => {
+  const meta: ProviderCredentials = {kind: 'meta', apiKey: 'synthetic-meta'};
+  const urls: string[] = [];
+  const bodies: Record<string, unknown>[] = [];
+  const reasoning = {type: 'reasoning', id: 'rs_1', summary: []};
+  const call = {type: 'function_call', call_id: 'c1', name: 'read_file', arguments: '{"path":"a.txt"}'};
+  let turn = 0;
+  const responses: typeof fetch = async (url, init) => {
+    urls.push(String(url)); bodies.push(JSON.parse(String(init?.body)));
+    if (++turn === 1) return stream([{type: 'response.completed', response: {status: 'completed', output: [reasoning, call]}}]);
+    const search = {type: 'web_search_call', id: 'ws_1', status: 'completed', action: {type: 'search', query: 'muse spark'}};
+    return stream([{type: 'response.output_item.done', item: search}, done('Found it.')]);
+  };
+  const searched: string[] = [];
+  const answer = await runAgent({credentials: meta, model: 'muse-spark-1.3', messages: [{role: 'user', content: 'Look it up'}], tools, hostedSearch: true, signal: signal(), fetch: responses,
+    executeTool: async () => ({text: 'hello'}), onEvent: event => {if (event.type === 'web.search') searched.push(event.query);}});
+  assert.equal(answer.text, 'Found it.');
+  assert.equal(urls[0], 'https://api.meta.ai/v1/responses');
+  assert.equal(bodies[0]?.include, undefined, 'encrypted reasoning is not asked of Meta');
+  assert.deepEqual((bodies[0]?.tools as {type: string}[]).map(tool => tool.type), ['function', 'web_search']);
+  // The reasoning item is not sent back; the call and its result are.
+  const carried = bodies[1]?.input as {type?: string}[];
+  assert.equal(carried.some(item => item.type === 'reasoning'), false);
+  assert.deepEqual(carried.filter(item => item.type).map(item => item.type), ['function_call', 'function_call_output']);
+  assert.deepEqual(searched, ['muse spark']);
+  // Another endpoint is refused for Meta credentials.
+  await assert.rejects(runAgent({credentials: {...meta, baseUrl: 'https://api.example.com/v1'}, model: 'muse-spark-1.3', messages: [{role: 'user', content: 'x'}], signal: signal(), fetch: responses}), /fixed official API endpoint/u);
+
+  // A refused Responses request: this run and later ones use Chat Completions.
+  const fallbackUrls: string[] = [];
+  const fallback: typeof fetch = async url => {
+    fallbackUrls.push(String(url));
+    if (String(url).endsWith('/responses')) return new Response(JSON.stringify({error: {message: 'unknown parameter'}}), {status: 400, headers: {'content-type': 'application/json'}});
+    return stream([{choices: [{delta: {content: 'ok'}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'stop'}]}, '[DONE]']);
+  };
+  const first = await runAgent({credentials: meta, model: 'muse-fallback-test', messages: [{role: 'user', content: 'x'}], signal: signal(), fetch: fallback});
+  assert.equal(first.text, 'ok');
+  await runAgent({credentials: meta, model: 'muse-fallback-test', messages: [{role: 'user', content: 'y'}], signal: signal(), fetch: fallback});
+  assert.deepEqual(fallbackUrls, ['https://api.meta.ai/v1/responses', 'https://api.meta.ai/v1/chat/completions', 'https://api.meta.ai/v1/chat/completions']);
+  // Credentials and rate limits are not protocol problems: no fallback.
+  await assert.rejects(runAgent({credentials: meta, model: 'muse-auth-test', messages: [{role: 'user', content: 'x'}], signal: signal(),
+    fetch: async () => new Response('{}', {status: 401, headers: {'content-type': 'application/json'}})}), (error: unknown) => error instanceof ProviderError && error.status === 401);
 });
