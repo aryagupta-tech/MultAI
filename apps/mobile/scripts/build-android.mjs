@@ -45,7 +45,7 @@ const sha256 = createHash('sha256').update(readFileSync(target)).digest('hex');
 const manifest = {
   product: 'MultAI Companion', applicationId: release ? 'si.multai.companion' : 'si.multai.companion.test', versionName, versionCode: Number(versionCode),
   service: origin, file: name, sha256, signingCertificateSha256: certificate.toUpperCase().match(/../gu).join(':'),
-  sourceCommit: git('rev-parse', 'HEAD'), sourceDirty: git('status', '--porcelain', '--', '.', '../../packages').length > 0, builtAt: new Date().toISOString(),
+  sourceCommit: git('rev-parse', 'HEAD'), sourceDirty: git('status', '--porcelain', '--', '.', ':!release', ':!build-test', '../../packages').length > 0, builtAt: new Date().toISOString(),
 };
 writeFileSync(path.join(outDir, `${name}.json`), `${JSON.stringify(manifest, null, 2)}\n`);
 writeFileSync(path.join(outDir, `${name}.sha256`), `${sha256}  ${name}\n`);
