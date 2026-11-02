@@ -438,3 +438,16 @@ test('Muse runs on Meta\'s Responses API with its web search, and falls back to 
   await assert.rejects(runAgent({credentials: meta, model: 'muse-auth-test', messages: [{role: 'user', content: 'x'}], signal: signal(),
     fetch: async () => new Response('{}', {status: 401, headers: {'content-type': 'application/json'}})}), (error: unknown) => error instanceof ProviderError && error.status === 401);
 });
+
+test('a local model is reached over Chat Completions on this computer only', async () => {
+  const urls: string[] = [];
+  const local: typeof fetch = async url => {urls.push(String(url)); return stream([{choices: [{delta: {content: 'hi from glimmer'}, finish_reason: null}]}, {choices: [{delta: {}, finish_reason: 'stop'}]}, '[DONE]']);};
+  const answer = await runAgent({credentials: {kind: 'local', apiKey: 'not-needed', baseUrl: 'http://localhost:11434/v1'}, model: 'muse-glimmer', messages: [{role: 'user', content: 'hi'}], signal: signal(), fetch: local});
+  assert.equal(answer.text, 'hi from glimmer');
+  assert.deepEqual(urls, ['http://localhost:11434/v1/chat/completions']);
+  for (const baseUrl of ['http://192.168.1.5:11434/v1', 'http://example.com/v1', 'ftp://localhost/v1', 'http://user:pw@localhost:1234/v1']) {
+    await assert.rejects(runAgent({credentials: {kind: 'local', apiKey: 'x', baseUrl}, model: 'm', messages: [{role: 'user', content: 'hi'}], signal: signal(), fetch: local}), /served on this computer/u, baseUrl);
+  }
+  // Other providers still refuse plain http and localhost.
+  await assert.rejects(runAgent({credentials: {kind: 'compatible', apiKey: 'x', baseUrl: 'http://localhost:11434/v1'}, model: 'm', messages: [{role: 'user', content: 'hi'}], signal: signal(), fetch: local}), /HTTPS/u);
+});

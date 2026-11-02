@@ -1205,3 +1205,6 @@ body.is-resizing .app { transition: none; }
 .mark-box { position: absolute; border: 2px solid #ff2d55; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28); border-radius: 3px; pointer-events: none; }
 .mark-box.is-sam { border-color: #ff2d55; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.38), 0 0 12px rgba(255, 45, 85, 0.7); }
 .mark-busy { position: absolute; left: 10px; bottom: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--r-pill); background: var(--surface-1); font-size: var(--fs-xs); }
+.conn-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.conn-preset { height: 28px; padding: 0 12px; border-radius: var(--r-pill); border: 1px solid var(--border-strong); font-size: var(--fs-sm); color: var(--text-2); }
+.conn-preset:hover, .conn-preset.is-on { color: var(--text); border-color: var(--accent-line); background: var(--accent-soft); }

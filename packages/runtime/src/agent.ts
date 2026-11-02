@@ -70,7 +70,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     canonicalJson(tool.parameters);
   }
   if (tools.length && !options.executeTool) throw new ProviderError('tool_callback_required', 'An authority-checked host callback is required for tools.');
-  let protocol: ConversationState['protocol'] = options.credentials.kind === 'anthropic' ? 'anthropic' : options.credentials.kind === 'compatible' || (options.credentials.kind === 'meta' && chatOnly.has(options.model)) ? 'chat' : 'responses';
+  let protocol: ConversationState['protocol'] = options.credentials.kind === 'anthropic' ? 'anthropic' : options.credentials.kind === 'compatible' || options.credentials.kind === 'local' || (options.credentials.kind === 'meta' && chatOnly.has(options.model)) ? 'chat' : 'responses';
   const initialItems = () => options.messages.map(message => ({role: message.role, content: message.images?.length ? withImages(protocol, message.content, message.images) : message.content}));
   let state: ConversationState = {protocol, items: initialItems()};
   const system = options.system ?? DEFAULT_SYSTEM;

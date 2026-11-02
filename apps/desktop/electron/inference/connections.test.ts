@@ -5,7 +5,8 @@ import path from 'node:path';
 import {createCipheriv, createDecipheriv, randomBytes} from 'node:crypto';
 import {ConnectionManager, type ConnectionAccount, type ConnectionRecord} from './connections';
 import {SecureConnectionStore, type Encryption} from './secure-store';
-import {isPublicAddress, publicProviderFetch, validateBaseUrl} from './network';
+import {isPublicAddress, loopbackFetch, publicProviderFetch, validateBaseUrl, validateLocalUrl} from './network';
+import {createServer} from 'node:http';
 
 vi.mock('electron', () => ({app:{getPath:()=>'/tmp/multai-synthetic-unused'}, safeStorage:{isEncryptionAvailable:()=>false,getSelectedStorageBackend:()=> 'basic_text'},shell:{openExternal:vi.fn()}}));
 const directories: string[] = [];
@@ -133,5 +134,40 @@ describe('OS-encrypted connection storage', () => {
     const store=new SecureConnectionStore('https://service.example\nalice',()=>({key:''}),unavailable,directory);
     await expect(store.save({key:'synthetic-key'})).rejects.toHaveProperty('code','secure_storage_unavailable');
     await expect(readFile(store.filename)).rejects.toHaveProperty('code','ENOENT');
+  });
+});
+
+describe('local models (Muse Glimmer, Ollama, LM Studio)', () => {
+  it('connects to a server on this computer without a key and lists its models',async () => {
+    const seen:string[]=[];
+    const server=createServer((request,response)=>{seen.push(`${request.url} ${request.headers.authorization}`);response.setHeader('content-type','application/json');response.end(JSON.stringify({object:'list',data:[{id:'muse-glimmer:30b'},{id:'qwen3:8b'}]}));});
+    await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+    try{
+      const port=(server.address() as {port:number}).port;
+      const manager=new ConnectionManager({account:account().value,storeFactory:memory().factory});
+      const local=await manager.add({provider:'local',baseUrl:`http://127.0.0.1:${port}/v1/`});
+      expect(local).toMatchObject({provider:'local',name:'Local model',baseUrl:`http://127.0.0.1:${port}/v1`,status:'ready'});
+      expect(await manager.resolve(local.id)).toMatchObject({kind:'local',baseUrl:`http://127.0.0.1:${port}/v1`});
+      expect((await manager.models(local.id)).map(model=>model.id)).toEqual(['muse-glimmer:30b','qwen3:8b']);
+      expect(seen).toEqual(['/v1/models Bearer local-model']);
+    }finally{await new Promise(resolve=>server.close(resolve));}
+  });
+
+  it('refuses anything that is not on this computer, and still wants keys for every other provider',async () => {
+    const manager=new ConnectionManager({account:account().value,storeFactory:memory().factory});
+    for(const baseUrl of ['http://192.168.1.20:11434/v1','http://example.com/v1','http://localhost.example.com/v1','http://user:pw@localhost:1234/v1','file:///etc/passwd',''])await expect(manager.add({provider:'local',baseUrl})).rejects.toHaveProperty('code','invalid_provider_url');
+    expect(()=>manager.add({provider:'openai'})).toThrow(/API key is required/u);
+    expect(validateLocalUrl('http://[::1]:8080/v1/')).toBe('http://[::1]:8080/v1');
+    await expect(loopbackFetch('http://10.0.0.5:11434/v1/models')).rejects.toHaveProperty('code','invalid_provider_url');
+    // The public transport keeps refusing local addresses.
+    expect(()=>validateBaseUrl('http://localhost:11434/v1')).toThrow();
+  });
+
+  it('says plainly when nothing is running at the address',async () => {
+    const server=createServer();await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const port=(server.address() as {port:number}).port;await new Promise(resolve=>server.close(resolve));
+    const manager=new ConnectionManager({account:account().value,storeFactory:memory().factory});
+    const local=await manager.add({provider:'local',baseUrl:`http://localhost:${port}/v1`});
+    await expect(manager.models(local.id)).rejects.toHaveProperty('code','local_unreachable');
   });
 });

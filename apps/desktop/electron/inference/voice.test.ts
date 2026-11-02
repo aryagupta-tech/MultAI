@@ -43,9 +43,12 @@ describe('voice instructions',()=>{
     expect(text).toBe('use cents, not floats');
     expect(seen?.url).toBe('https://api.openai.com/v1/audio/transcriptions');
     expect((seen?.init.headers as Record<string,string>).authorization).toBe('Bearer sk-synthetic');
-    const form=seen?.init.body as FormData;
+    // Parsed back the way a server would read it.
+    const headers=seen?.init.headers as Record<string,string>;
+    const form=await new Response(seen?.init.body as Uint8Array<ArrayBuffer>,{headers:{'content-type':headers['content-type']!}}).formData();
     expect(form.get('model')).toBe(OPENAI_TRANSCRIBE_MODEL);
     expect((form.get('file') as File).size).toBe(44+second.length);
+    expect((form.get('file') as File).name).toBe('voice.wav');
     const refused=async()=>new Response('{}',{status:401});
     await expect(transcribeOpenAI({apiKey:'bad'},second,refused as typeof fetch,new AbortController().signal)).rejects.toMatchObject({code:'provider_credentials_invalid'});
     const silent=async()=>new Response(JSON.stringify({text:''}));

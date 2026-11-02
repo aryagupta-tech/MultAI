@@ -6,8 +6,7 @@ import { getSelection } from '../live/execution';
 import { Button, cx } from '../ui/primitives';
 import {
   KEY_MAX, MAX_CONNECTIONS, NAME_MAX, PROVIDERS, URL_MAX, canSubmit, formErrors, hostOf, statusLabel, toInput,
-  type ApiProvider, type FormState,
-} from './connectionForm';
+  type ApiProvider, type FormState, LOCAL_PRESETS } from './connectionForm';
 import '../styles/connections.css';
 import {ChatGPTPlanUsage,ChatGPTPlanWelcome,isChatGPTUsageLimit} from './ChatGPTPlanUsage';
 
@@ -16,7 +15,7 @@ import {ChatGPTPlanUsage,ChatGPTPlanWelcome,isChatGPTUsageLimit} from './ChatGPT
 type Method = 'meta' | 'chatgpt' | 'api';
 type Notice = { text: string; tone: 'error' | 'warn' } | null;
 
-const PROVIDER_BADGE: Record<ConnectionSummary['provider'], string> = { meta: 'META', chatgpt: 'GPT', openai: 'OAI', anthropic: 'CL', kimi: 'KI', compatible: 'API' };
+const PROVIDER_BADGE: Record<ConnectionSummary['provider'], string> = { meta: 'META', chatgpt: 'GPT', openai: 'OAI', anthropic: 'CL', kimi: 'KI', compatible: 'API', local: 'LOC' };
 const emptyForm = (provider: ApiProvider = 'meta'): FormState => ({ provider, name: '', apiKey: '', baseUrl: '' });
 
 function noticeFrom(error: ServiceError): Notice {
@@ -208,17 +207,24 @@ export function AiConnections({ api, onSelect }: { api: InferenceConnectionsApi;
                 </button>
               ))}
             </div>
-            <span className="conn-help">{form.provider === 'compatible' ? 'Any OpenAI-compatible API over HTTPS.' : `Connects to ${provider.host}.`}</span>
+            <span className="conn-help">{form.provider === 'compatible' ? 'Any OpenAI-compatible API over HTTPS.' : form.provider === 'local' ? 'A model served on this computer, like Muse Glimmer (Meta’s open-weights model) in Ollama or LM Studio. Nothing leaves your machine.' : `Connects to ${provider.host}.`}</span>
           </div>}
 
-          {form.provider === 'compatible' && (
+          {form.provider === 'local' && (
+            <div className="conn-presets" role="group" aria-label="Local server">
+              {LOCAL_PRESETS.map((preset) => (
+                <button key={preset.label} type="button" className={cx('conn-preset', form.baseUrl === preset.url && 'is-on')} onClick={() => set({ baseUrl: preset.url })}>{preset.label}</button>
+              ))}
+            </div>
+          )}
+          {(form.provider === 'compatible' || form.provider === 'local') && (
             <label className="conn-field">
-              <span className="conn-label">API base URL</span>
+              <span className="conn-label">{form.provider === 'local' ? 'Server address' : 'API base URL'}</span>
               <input
                 value={form.baseUrl}
                 onChange={(e) => set({ baseUrl: e.target.value })}
                 onBlur={() => setTouched((t) => ({ ...t, baseUrl: true }))}
-                placeholder="https://provider.example/v1"
+                placeholder={form.provider === 'local' ? 'http://localhost:11434/v1' : 'https://provider.example/v1'}
                 type="url"
                 inputMode="url"
                 autoComplete="off"
@@ -233,7 +239,7 @@ export function AiConnections({ api, onSelect }: { api: InferenceConnectionsApi;
           )}
 
           <label className="conn-field">
-            <span className="conn-label">API key</span>
+            <span className="conn-label">{form.provider === 'local' ? 'API key (optional)' : 'API key'}</span>
             <span className="conn-secret">
               <input
                 value={form.apiKey}
@@ -260,7 +266,7 @@ export function AiConnections({ api, onSelect }: { api: InferenceConnectionsApi;
             <input
               value={form.name}
               onChange={(e) => set({ name: e.target.value })}
-              placeholder={form.provider === 'compatible' ? 'Compatible API' : provider.label}
+              placeholder={form.provider === 'compatible' ? 'Compatible API' : form.provider === 'local' ? 'Muse Glimmer (local)' : provider.label}
               autoComplete="off"
               maxLength={NAME_MAX + 1}
               disabled={busy !== null}

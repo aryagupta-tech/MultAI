@@ -12,7 +12,25 @@ export const PROVIDERS: { id: ApiProvider; label: string; host: string; keyHint:
   { id: 'anthropic', label: 'Claude', host: 'api.anthropic.com', keyHint: 'sk-ant-…' },
   { id: 'kimi', label: 'Kimi', host: 'api.moonshot.ai', keyHint: 'sk-…' },
   { id: 'compatible', label: 'Compatible', host: 'Your HTTPS endpoint', keyHint: 'Provider API key' },
+  { id: 'local', label: 'Local model', host: 'This computer', keyHint: 'Usually not needed' },
 ];
+
+/** Servers people run on their own computer, e.g. for Muse Glimmer (Meta's open-weights model). */
+export const LOCAL_PRESETS: { label: string; url: string }[] = [
+  { label: 'Ollama', url: 'http://localhost:11434/v1' },
+  { label: 'LM Studio', url: 'http://localhost:1234/v1' },
+];
+
+export function localUrlError(raw: string): string | null {
+  const input = raw.trim();
+  if (!input) return null;
+  if (input.length > URL_MAX) return 'That address is too long.';
+  let url: URL;
+  try { url = new URL(input); } catch { return 'Enter a full address, like http://localhost:11434/v1.'; }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return 'Use a plain http:// or https:// address.';
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return 'A local model must be served on this computer: localhost, 127.0.0.1 or [::1].';
+  return null;
+}
 
 export const NAME_MAX = 80;
 export const KEY_MAX = 8192;
@@ -77,21 +95,22 @@ export function formErrors(f: FormState) {
   return {
     name: nameError(f.name),
     apiKey: keyError(f.apiKey),
-    baseUrl: f.provider === 'compatible' ? baseUrlError(f.baseUrl) : null,
+    baseUrl: f.provider === 'compatible' ? baseUrlError(f.baseUrl) : f.provider === 'local' ? localUrlError(f.baseUrl) : null,
   };
 }
 
 export function canSubmit(f: FormState): boolean {
   const e = formErrors(f);
-  return Boolean(f.apiKey.trim()) && (f.provider !== 'compatible' || Boolean(f.baseUrl.trim())) && !e.name && !e.apiKey && !e.baseUrl;
+  const needsUrl = f.provider === 'compatible' || f.provider === 'local';
+  return (f.provider === 'local' || Boolean(f.apiKey.trim())) && (!needsUrl || Boolean(f.baseUrl.trim())) && !e.name && !e.apiKey && !e.baseUrl;
 }
 
 export function toInput(f: FormState): AddConnectionInput {
   return {
     provider: f.provider,
-    apiKey: f.apiKey.trim(),
+    ...(f.apiKey.trim() ? { apiKey: f.apiKey.trim() } : {}),
     ...(f.name.trim() ? { name: f.name.trim() } : {}),
-    ...(f.provider === 'compatible' ? { baseUrl: f.baseUrl.trim() } : {}),
+    ...(f.provider === 'compatible' || f.provider === 'local' ? { baseUrl: f.baseUrl.trim() } : {}),
   };
 }
 

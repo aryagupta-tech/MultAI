@@ -23,6 +23,12 @@ export function providerBase(credentials: ProviderCredentials): URL {
   const selected = credentials.baseUrl ?? expected;
   let url: URL;
   try {url = new URL(selected);} catch {throw new ProviderError('invalid_endpoint', 'Provider endpoint must be an HTTPS API base URL.');}
+  if (credentials.kind === 'local') {
+    // A model served on this computer (Ollama, LM Studio, Muse Glimmer): loopback only, any port.
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new ProviderError('invalid_endpoint', 'A local model must be served on this computer (localhost).');
+    url.pathname = `${url.pathname.replace(/\/$/u, '')}/`;
+    return url;
+  }
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !url.hostname || /(?:^|\.)localhost$/iu.test(url.hostname)) throw new ProviderError('invalid_endpoint', 'Provider endpoint must be an HTTPS API base URL.');
   if (credentials.kind !== 'compatible' && selected.replace(/\/$/u, '') !== expected) throw new ProviderError('invalid_endpoint', 'This provider uses its fixed official API endpoint.');
   url.pathname = `${url.pathname.replace(/\/$/u, '')}/`;

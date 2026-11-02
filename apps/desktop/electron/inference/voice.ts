@@ -1,6 +1,7 @@
 // Voice instructions: the composer records 24 kHz mono PCM, and the host's own connection turns it into
 // text. A Meta connection uses Muse Voice Transcribe (Meta's realtime transcription), an OpenAI key uses
 // OpenAI's transcription endpoint. The audio goes to that provider only and is never stored.
+import {randomUUID} from 'node:crypto';
 import WebSocket from 'ws';
 import type {ConnectionSummary} from '../../src/bridge/inference';
 
@@ -38,15 +39,21 @@ export function checkAudio(pcm:Buffer):void {
 
 const clean = (text:unknown) => typeof text === 'string' ? text.replace(/\s+/gu, ' ').trim().slice(0, 8000) : '';
 
+/** A multipart/form-data body as bytes, for transports that send a fixed byte body. */
+export function multipart(fields:Record<string, string>, file:{name:string; filename:string; type:string; data:Buffer}):{body:Uint8Array<ArrayBuffer>; contentType:string} {
+  const boundary = `multai-${randomUUID()}`;
+  const parts:Buffer[] = [];
+  for (const [name, value] of Object.entries(fields)) parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${file.name}"; filename="${file.filename}"\r\nContent-Type: ${file.type}\r\n\r\n`), file.data, Buffer.from(`\r\n--${boundary}--\r\n`));
+  return {body: new Uint8Array(Buffer.concat(parts)), contentType: `multipart/form-data; boundary=${boundary}`};
+}
+
 /** OpenAI: one multipart request with the recording as a WAV file. */
 export async function transcribeOpenAI(credentials:{apiKey:string; baseUrl?:string}, pcm:Buffer, fetcher:typeof fetch, signal:AbortSignal):Promise<string> {
   checkAudio(pcm);
-  const form = new FormData();
-  form.append('model', OPENAI_TRANSCRIBE_MODEL);
-  form.append('response_format', 'json');
-  form.append('file', new Blob([new Uint8Array(wav(pcm))], {type: 'audio/wav'}), 'voice.wav');
+  const {body, contentType} = multipart({model: OPENAI_TRANSCRIBE_MODEL, response_format: 'json'}, {name: 'file', filename: 'voice.wav', type: 'audio/wav', data: wav(pcm)});
   const base = (credentials.baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/u, '');
-  const response = await fetcher(`${base}/audio/transcriptions`, {method: 'POST', headers: {authorization: `Bearer ${credentials.apiKey}`}, body: form, signal, redirect: 'error'});
+  const response = await fetcher(`${base}/audio/transcriptions`, {method: 'POST', headers: {authorization: `Bearer ${credentials.apiKey}`, 'content-type': contentType}, body, signal, redirect: 'error'});
   if (response.status === 401) throw new VoiceError('provider_credentials_invalid', 'This OpenAI key was refused. Check it in Settings.');
   if (!response.ok) throw new VoiceError('VOICE_FAILED', `OpenAI couldn’t transcribe that (HTTP ${response.status}).`);
   const text = clean(((await response.json().catch(() => null)) as {text?:unknown} | null)?.text);

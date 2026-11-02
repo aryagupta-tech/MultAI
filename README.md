@@ -14,7 +14,7 @@ Built for the **Meta Global AI Developer Hackathon** (Build for Your World), on 
 | **Muse Wonder 1.0** | Writes the **catch-up brief** when someone joins: a short chat-style summary of the goal, what was tried and fixed, decisions and who is waiting on what. It also drafts the **pull request** for the session's work, including who directed the agent. |
 | **Muse Spark (vision)** | Teammates paste a **screenshot of the bug**; the agent sees it alongside the instruction. |
 
-The host connects once with a Meta Model API key. Teammates never need a key: every model call runs on the host's machine with the host's connection.
+The host connects once with a Meta Model API key. Every feature also works with OpenAI, a ChatGPT plan, Claude, Kimi or any compatible API, and with a **local model** such as **Muse Glimmer** (Meta's open-weights model) running in Ollama or LM Studio on the host's own computer, so neither the code nor the model leaves the machine. Teammates never need a key: every model call runs on the host's machine with the host's connection.
 
 ## Work in your real project
 

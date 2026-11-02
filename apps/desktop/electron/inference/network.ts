@@ -24,6 +24,23 @@ export function isPublicAddress(input: string): boolean {
     !/^2001:(?:db8|0):/u.test(address) && !address.startsWith('2002:');
 }
 
+/** A model served on this computer (Ollama, LM Studio, Muse Glimmer): http or https on loopback, any port. */
+export function validateLocalUrl(input: string): string {
+  let url: URL;
+  try {url = new URL(input);} catch {throw new ConnectionError('invalid_provider_url', 'Enter a full local address, like http://localhost:11434/v1.');}
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname.length > 256 || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+    throw new ConnectionError('invalid_provider_url', 'A local model must be served on this computer: localhost, 127.0.0.1 or [::1].');
+  }
+  return `${url.origin}${url.pathname.replace(/\/+$/u, '')}`;
+}
+
+/** Fetch for a local model: refuses anything that isn't on this computer. */
+export const loopbackFetch: typeof fetch = async (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  validateLocalUrl(`${url.origin}${url.pathname}`);
+  return fetch(url, {...init, redirect: 'error'});
+};
+
 export function validateBaseUrl(input: string): string {
   let url: URL;
   try {url = new URL(input);} catch {throw new ConnectionError('invalid_provider_url', 'Enter a valid HTTPS API base URL.');}
@@ -91,10 +108,11 @@ export const publicProviderFetch: typeof fetch = async (input, init = {}) => {
   validateBaseUrl(`${url.origin}${url.pathname}`);
   const method = (init.method ?? source?.method ?? 'GET').toUpperCase();
   if (method !== 'GET' && method !== 'POST') throw new ConnectionError('invalid_provider_request', 'This provider transport supports only GET and POST.');
-  if (init.body !== undefined && init.body !== null && typeof init.body !== 'string') throw new ConnectionError('invalid_provider_request', 'Provider requests require a bounded JSON string body.');
+  if (init.body !== undefined && init.body !== null && typeof init.body !== 'string' && !(init.body instanceof Uint8Array)) throw new ConnectionError('invalid_provider_request', 'Provider requests require a bounded JSON string or byte body.');
   if (source?.body && init.body === undefined) throw new ConnectionError('invalid_provider_request', 'Streaming request bodies are unavailable for provider requests.');
-  const body = typeof init.body === 'string' ? init.body : undefined;
-  if (body && Buffer.byteLength(body) > 1_048_576) throw new ConnectionError('provider_request_limit', 'The provider request exceeded the context byte limit.');
+  const body = typeof init.body === 'string' || init.body instanceof Uint8Array ? init.body : undefined;
+  // Text bodies are JSON context; byte bodies are uploads such as a voice recording.
+  if (body && (typeof body === 'string' ? Buffer.byteLength(body) > 1_048_576 : body.byteLength > 8_388_608)) throw new ConnectionError('provider_request_limit', 'The provider request exceeded its byte limit.');
   const signal = init.signal ?? source?.signal ?? AbortSignal.timeout(120_000);
   const headers = Object.fromEntries(new Headers(init.headers ?? source?.headers).entries());
   return new Promise<Response>((resolve,reject) => {

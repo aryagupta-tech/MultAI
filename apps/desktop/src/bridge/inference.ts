@@ -1,6 +1,6 @@
 import type {Result} from './contract';
 
-export type InferenceProvider = 'meta' | 'openai' | 'anthropic' | 'kimi' | 'compatible' | 'chatgpt';
+export type InferenceProvider = 'meta' | 'openai' | 'anthropic' | 'kimi' | 'compatible' | 'local' | 'chatgpt';
 export interface ConnectionSummary {
   id: string;
   name: string;
@@ -15,7 +15,8 @@ export interface InferenceModel {id: string; name: string}
 export interface AddConnectionInput {
   provider: Exclude<InferenceProvider, 'chatgpt'>;
   name?: string;
-  apiKey: string;
+  /** Required except for a local model, which usually needs none. */
+  apiKey?: string;
   baseUrl?: string;
 }
 /** Keys and OAuth credentials are accepted once, never returned by this surface. */

@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {AddConnectionInput, ConnectionSummary, InferenceModel, InferenceProvider} from '../../src/bridge/inference';
 import {ChatGptOAuth, type ChatGptRegistration} from './chatgpt';
-import {ConnectionError, requestJson, validateBaseUrl, type JsonTransport} from './network';
+import {ConnectionError, requestJson, validateBaseUrl, type JsonTransport, validateLocalUrl, loopbackFetch} from './network';
 import {SecureConnectionStore} from './secure-store';
 
 export interface ConnectionAccount {
@@ -12,7 +12,7 @@ export interface ConnectionAccount {
   identitySnapshot(): Promise<{userId: string; deviceId: string; generation: number}>;
 }
 export interface ProviderCredentials {
-  kind: 'openai' | 'anthropic' | 'compatible' | 'chatgpt' | 'meta';
+  kind: 'openai' | 'anthropic' | 'compatible' | 'chatgpt' | 'meta' | 'local';
   apiKey: string;
   baseUrl?: string;
   accountId?: string;
@@ -40,7 +40,10 @@ const baseUrls = {meta: 'https://api.meta.ai/v1', openai: 'https://api.openai.co
 const META_DOCUMENTED_MODELS: readonly InferenceModel[] = [{id: 'muse-spark-1.3', name: 'Muse Spark 1.3'}, {id: 'muse-wonder-1.0', name: 'Muse Wonder 1.0'}];
 const keySchema = z.string().trim().min(1).max(8192).regex(/^[^\s\u0000-\u001f\u007f]+$/u);
 const nameSchema = z.string().trim().min(1).max(80).regex(/^[^\u0000-\u001f\u007f]+$/u);
-const addSchema = z.object({provider: z.enum(['meta', 'openai', 'anthropic', 'kimi', 'compatible']), name: nameSchema.optional(), apiKey: keySchema, baseUrl: z.string().max(1024).optional()}).strict();
+const addSchema = z.object({provider: z.enum(['meta', 'openai', 'anthropic', 'kimi', 'compatible', 'local']), name: nameSchema.optional(), apiKey: keySchema.optional(), baseUrl: z.string().max(1024).optional()}).strict()
+  .refine(input => input.provider === 'local' || Boolean(input.apiKey), {message: 'An API key is required.', path: ['apiKey']});
+/** Local servers usually need no key; this placeholder is sent instead and ignored by them. */
+const LOCAL_KEY = 'local-model';
 
 function summary(connection: SecretConnection, acknowledgedSubjects: readonly string[] = []): ConnectionSummary {
   const registration = connection.registration;
@@ -50,6 +53,17 @@ function summary(connection: SecretConnection, acknowledgedSubjects: readonly st
   return {id: connection.id, name: connection.name, provider: connection.provider, baseUrl: connection.baseUrl, status,
     ...(registration?.email ? {accountLabel: registration.email} : {}),
     ...(connection.provider === 'chatgpt' && status === 'ready' && registration?.subject && !acknowledgedSubjects.includes(registration.subject) ? {needsPlanWelcome:true} : {})};
+}
+
+/** A local server's model list: on this computer only, bounded and short. */
+async function localJson(url: string, headers: Record<string, string>, signal: AbortSignal): Promise<unknown> {
+  let response: Response;
+  try {response = await loopbackFetch(url, {headers, signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)])});}
+  catch (error) {if (error instanceof ConnectionError) throw error; throw new ConnectionError('local_unreachable', 'Nothing answered at that address. Start Ollama or LM Studio (with its server on), then try again.');}
+  if (!response.ok) throw new ConnectionError('local_unreachable', `The local server answered ${response.status}. Check the address ends in /v1.`);
+  const text = await response.text();
+  if (text.length > 2_000_000) throw new ConnectionError('invalid_provider_response', 'The local server returned too large a model list.');
+  try {return JSON.parse(text);} catch {throw new ConnectionError('invalid_provider_response', 'The local server didn’t return a model list. Check the address ends in /v1.');}
 }
 
 /** Host-only secret owner. Renderer APIs receive only summary projections. */
@@ -106,9 +120,9 @@ export class ConnectionManager {
       const scope = await this.scope();
       const record = await scope.store.load();
       if (record.connections.length >= 32) throw new ConnectionError('connection_capacity', 'Remove a connection before adding another.');
-      const baseUrl = parsed.provider === 'compatible' ? validateBaseUrl(parsed.baseUrl ?? '') : baseUrls[parsed.provider];
-      if (parsed.provider !== 'compatible' && parsed.baseUrl && validateBaseUrl(parsed.baseUrl) !== baseUrl) throw new ConnectionError('invalid_provider_url', 'Choose the compatible provider option for a custom API endpoint.');
-      const connection: SecretConnection = {id: randomUUID(), name: parsed.name ?? (parsed.provider === 'meta' ? 'Meta Muse' : parsed.provider === 'kimi' ? 'Kimi' : parsed.provider === 'anthropic' ? 'Claude' : parsed.provider === 'openai' ? 'OpenAI' : 'Compatible API'), provider: parsed.provider, baseUrl, apiKey: parsed.apiKey};
+      const baseUrl = parsed.provider === 'compatible' ? validateBaseUrl(parsed.baseUrl ?? '') : parsed.provider === 'local' ? validateLocalUrl(parsed.baseUrl ?? '') : baseUrls[parsed.provider];
+      if (parsed.provider !== 'compatible' && parsed.provider !== 'local' && parsed.baseUrl && validateBaseUrl(parsed.baseUrl) !== baseUrl) throw new ConnectionError('invalid_provider_url', 'Choose the compatible provider option for a custom API endpoint.');
+      const connection: SecretConnection = {id: randomUUID(), name: parsed.name ?? (parsed.provider === 'meta' ? 'Meta Muse' : parsed.provider === 'local' ? 'Local model' : parsed.provider === 'kimi' ? 'Kimi' : parsed.provider === 'anthropic' ? 'Claude' : parsed.provider === 'openai' ? 'OpenAI' : 'Compatible API'), provider: parsed.provider, baseUrl, apiKey: parsed.apiKey ?? LOCAL_KEY};
       this.fresh(scope);
       record.connections.push(connection);
       await scope.store.save(record);
@@ -216,7 +230,7 @@ export class ConnectionManager {
       try {
       const credentials = await this.resolved(scope, record, id, controller.signal);
       const headers = credentials.kind === 'anthropic' ? {'x-api-key': credentials.apiKey, 'anthropic-version': '2023-06-01'} : {authorization: `Bearer ${credentials.apiKey}`};
-      const raw = await this.transport(`${credentials.baseUrl}/models`, {headers, signal: controller.signal});
+      const raw = credentials.kind === 'local' ? await localJson(`${credentials.baseUrl}/models`, headers, controller.signal) : await this.transport(`${credentials.baseUrl}/models`, {headers, signal: controller.signal});
       this.fresh(scope);
       if (credentials.kind === 'chatgpt') {
         const data = z.object({models: z.array(z.object({slug: z.string().min(1).max(200), display_name: z.string().min(1).max(200), visibility: z.string()})).max(2000)}).parse(raw);

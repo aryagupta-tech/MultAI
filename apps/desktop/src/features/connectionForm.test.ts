@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { baseUrlError, canSubmit, hostOf, keyError, nameError, statusLabel, toInput, type FormState } from './connectionForm';
+import { baseUrlError, canSubmit, formErrors, hostOf, keyError, nameError, statusLabel, toInput, type FormState } from './connectionForm';
 
 const form = (over: Partial<FormState> = {}): FormState => ({ provider: 'openai', name: '', apiKey: '', baseUrl: '', ...over });
 
@@ -73,5 +73,17 @@ describe('display helpers', () => {
   test('hostOf tolerates bad input', () => {
     expect(hostOf('https://api.openai.com/v1')).toBe('api.openai.com');
     expect(hostOf('not a url')).toBe('not a url');
+  });
+});
+
+describe('local model connections', () => {
+  test('need an address on this computer but no key', () => {
+    const base = { provider: 'local' as const, name: '', apiKey: '', baseUrl: '' };
+    expect(canSubmit(base)).toBe(false);
+    expect(canSubmit({ ...base, baseUrl: 'http://localhost:11434/v1' })).toBe(true);
+    expect(formErrors({ ...base, baseUrl: 'http://192.168.0.2:11434/v1' }).baseUrl).toMatch(/on this computer/);
+    expect(formErrors({ ...base, baseUrl: 'ftp://localhost/v1' }).baseUrl).toMatch(/http/);
+    expect(toInput({ ...base, baseUrl: ' http://127.0.0.1:1234/v1 ' })).toEqual({ provider: 'local', baseUrl: 'http://127.0.0.1:1234/v1' });
+    expect(canSubmit({ provider: 'openai', name: '', apiKey: '', baseUrl: '' })).toBe(false);
   });
 });
