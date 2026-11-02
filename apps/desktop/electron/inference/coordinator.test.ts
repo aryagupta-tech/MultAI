@@ -698,4 +698,15 @@ describe('team verification uses actual host checks and a separate read-only rev
     expect((await again.usageLimits(x.input.connectionId))?.windows[0]).toMatchObject({label: '5-hour', usedPercent: 40});
     expect(await again.usageLimits(randomUUID())).toBeNull();
   });
+
+  test('a used-up ChatGPT plan shows as 0% left until a request succeeds again', async () => {
+    const {ProviderError} = await vi.importActual<typeof import('@multai/runtime')>('@multai/runtime');
+    const x = await fixture();
+    x.connections.resolve.mockResolvedValue({kind: 'chatgpt', apiKey: 'plan-token', baseUrl: 'https://api.openai.com/v1'} as ProviderCredentials);
+    runtime.run.mockImplementationOnce(async () => {throw new ProviderError('subscription_sharing_usage_limit_exceeded', 'The connected ChatGPT account reached its plan usage limit.');});
+    await x.host.run(x.input); await x.terminal();
+    await vi.waitFor(async () => expect((await x.host.usageLimits(x.input.connectionId))?.windows).toEqual([{label: 'Plan limit', usedPercent: 100}]));
+    await x.host.run({...x.input, instructionId: randomUUID()}); await vi.waitFor(() => expect(x.changes.filter(change => change.status === 'completed')).toHaveLength(1));
+    await vi.waitFor(async () => expect((await x.host.usageLimits(x.input.connectionId))?.windows).toEqual([]));
+  });
 });

@@ -735,6 +735,7 @@ export class HostCoordinator {
               if(event.type==='web.search'){await shared();await this.publish(running,'activity.completed',{summary:event.query?`Searched the web: ${event.query}`:'Searched the web'});}
             }});
           await shared(true);const final=textChunks(redactText(result.text,running.secrets),13500);const truncated=final.length>1;
+          if(credentials.kind==='chatgpt')void this.loadLimits().then(limits=>{if(limits.get(body.connectionId)?.windows.some(window=>window.label==='Plan limit'))this.saveLimits(body.connectionId,[]);});
           await this.publish(running,'agent.completed',{messageId,text:`${final[0]??''}${truncated?'\n[Final context text truncated by the sharing limit.]':''}`,model:body.model,truncated});
           await this.request(running,'/finish',{status:'completed'});if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:'completed'});
         }catch(error){
@@ -743,7 +744,9 @@ export class HostCoordinator {
           const reason=controller.signal.aborted?controller.signal.reason:null;
           const stopped=controller.signal.aborted&&!(reason instanceof RuntimeError&&['LEASE_LOST','RUN_DEADLINE'].includes(reason.code));
           if(controller.signal.aborted)console.error('[inference] run ended:',reason instanceof RuntimeError?reason.code:'stopped');
-          if(!stopped){const failure=this.error(controller.signal.aborted?reason:error);await this.publish(running,'activity.failed',{summary:failure.message,code:failure.code}).catch(()=>undefined);}
+          if(!stopped){const failure=this.error(controller.signal.aborted?reason:error);await this.publish(running,'activity.failed',{summary:failure.message,code:failure.code}).catch(()=>undefined);
+            // A plan that reports no numbers still says when it's used up.
+            if(failure.code==='subscription_sharing_usage_limit_exceeded')this.saveLimits(body.connectionId,[{label:'Plan limit',usedPercent:100}]);}
           await this.finishFailedIfCurrent(running,stopped);
           if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:stopped?'stopped':'failed',...(!stopped?{error:this.error(error)}:{})});
         }finally{clearTimeout(deadline);clearInterval(timer);if(this.active===running)this.active=null;}

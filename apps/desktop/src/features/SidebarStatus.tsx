@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Loader2, Settings2, ShieldAlert } from 'lucide-react';
+import { Download, ExternalLink, Loader2, Settings2, ShieldAlert } from 'lucide-react';
 import { create } from 'zustand';
 import { useApp } from '../model/store';
 import { getBridge } from '../bridge/client';
@@ -75,13 +75,20 @@ export function SidebarStatus() {
       </button>
     ),
     ...(prefs.usage ? plans.map(({ name, windows }) => {
+      // The ChatGPT plan reports no numbers; its usage page does.
+      if (!windows.length) return (
+        <button key={`plan-${name}`} type="button" className="status-row" onClick={() => void getBridge()?.inference?.manageChatGPTUsage()} title="Opens your plan's usage page on chatgpt.com">
+          <span className="status-icon"><ExternalLink size={13} aria-hidden /></span>
+          <span className="status-text">{name} · check usage left</span>
+        </button>
+      );
       const tightest = windows.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a));
       const remaining = left(tightest.usedPercent);
       return (
         <div key={`plan-${name}`} className={cx('status-row is-static', remaining <= 10 ? 'is-danger' : remaining <= 30 ? 'is-warn' : '')}
           title={windows.map((w) => `${w.label}: ${left(w.usedPercent)}% left${w.resetsAt ? `, ${resets(w.resetsAt, now)}` : ''}`).join('\n')}>
           <Ring percent={remaining} />
-          <span className="status-text">{name} · <b>{remaining}% left</b><span className="status-sub"> {tightest.label.toLowerCase()}{tightest.resetsAt ? `, ${resets(tightest.resetsAt, now)}` : ''}</span></span>
+          <span className="status-text">{name} · <b>{remaining}% left</b>{tightest.label !== 'Plan limit' && <span className="status-sub"> {tightest.label.toLowerCase()}{tightest.resetsAt ? `, ${resets(tightest.resetsAt, now)}` : ''}</span>}</span>
         </div>
       );
     }) : []),
@@ -145,7 +152,8 @@ function usePlanUsage(): { name: string; windows: UsageLimits['windows'] }[] {
       for (const connection of getConnections()) {
         const result = await getBridge()?.inference?.usageLimits(connection.id).catch(() => null);
         const windows = result?.ok ? planWindows(result.value) : [];
-        if (windows.length) found.push({ name: connection.name, windows });
+        // A ChatGPT plan is always listed: its numbers when a limit was reached, otherwise a link to its usage page.
+        if (windows.length || connection.provider === 'chatgpt') found.push({ name: connection.name, windows });
       }
       if (!stopped) setPlans(found);
     };
