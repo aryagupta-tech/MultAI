@@ -90,8 +90,8 @@ export class ReplayService extends CollaborationService {
   async view(input: unknown) {
     const {token, after} = z.object({token: z.string().regex(/^[A-Za-z0-9_-]{43}$/u), after: z.number().int().min(0).max(100_000).default(0)}).strict().parse(input);
     return transaction(this.db, async client => {
-      const found = await client.query<{session_id: string; expires_at: Date; title: string | null; mode: string; owner_id: string; created_at: Date}>(
-        `SELECT r.session_id,r.expires_at,s.title,s.mode,s.owner_id,s.created_at FROM replay_links r JOIN sessions s ON s.id=r.session_id
+      const found = await client.query<{session_id: string; expires_at: Date; title: string | null; mode: string; owner_id: string; created_at: Date; status: string}>(
+        `SELECT r.session_id,r.expires_at,s.title,s.mode,s.owner_id,s.created_at,s.status FROM replay_links r JOIN sessions s ON s.id=r.session_id
          WHERE r.token_hash=$1 AND r.revoked_at IS NULL AND r.expires_at>now() AND s.deleted_at IS NULL`, [digest(token)]);
       const link = found.rows[0];
       if (!link) throw new ApiError(404, 'replay_unavailable', 'This replay link has expired, was revoked, or doesn’t exist.');
@@ -107,7 +107,8 @@ export class ReplayService extends CollaborationService {
       const events = rows.rows.filter(row => !row.removed).map(row => replayEvent(row, label)).filter((event): event is ReplayEvent => event !== null);
       const last = rows.rows.at(-1)?.sequence ?? after;
       return {
-        replay: {title: link.title ?? 'Untitled session', mode: link.mode, createdAt: link.created_at.toISOString(), expiresAt: link.expires_at.toISOString()},
+        // The page keeps asking for newer events, so the same link follows the session live.
+        replay: {title: link.title ?? 'Untitled session', mode: link.mode, createdAt: link.created_at.toISOString(), expiresAt: link.expires_at.toISOString(), working: link.status === 'running'},
         events, next: last, done: rows.rows.length < PAGE,
       };
     });
@@ -121,7 +122,8 @@ export async function registerReplayRoutes(app: FastifyInstance, service: Replay
   app.post('/v1/sessions/:sessionId/replays', async (request, reply) => reply.code(201).send(await service.create(await authenticate(request), params(request).sessionId, request.body)));
   app.get('/v1/sessions/:sessionId/replays', async request => service.list(await authenticate(request), params(request).sessionId));
   app.delete('/v1/sessions/:sessionId/replays/:replayId', async request => {const p = params(request); return service.revoke(await authenticate(request), p.sessionId, p.replayId!);});
-  app.post('/v1/replays/view', {config: {rateLimit: {max: 30, timeWindow: '1 minute'}}}, async request => service.view(request.body));
+  // A watching page checks every few seconds; 60 a minute leaves room for loading a long history.
+  app.post('/v1/replays/view', {config: {rateLimit: {max: 60, timeWindow: '1 minute'}}}, async request => service.view(request.body));
   const page = (type: string, body: string) => async (_request: FastifyRequest, reply: import('fastify').FastifyReply) =>
     reply.header('Content-Security-Policy', PAGE_CSP).header('Cache-Control', 'public, max-age=300').type(type).send(body);
   app.get('/replay', page('text/html; charset=utf-8', REPLAY_HTML));

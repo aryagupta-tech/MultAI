@@ -150,7 +150,7 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
           items={[
             ...(d.source === 'live' && d.capabilities.configure ? [
               { id: 'brief', label: 'Write catch-up brief', icon: Sparkles, description: 'Muse Wonder summarizes the session for everyone', onSelect: () => void execution.writeBrief(d.id) },
-              { id: 'replay', label: 'Share replay link…', icon: Link2, description: 'Read-only, opens in any browser', onSelect: () => setSharing(true) },
+              { id: 'replay', label: 'Share a watch link…', icon: Link2, description: 'Live and read-only, opens in any browser', onSelect: () => setSharing(true) },
             ] : []),
             { id: 'rename', label: 'Rename', icon: Pencil, ...(d.source === 'live' ? { description: 'Only you see this name' } : {}), onSelect: () => renamePrompt(d) },
             { id: 'pin', label: summary?.pinned ? 'Unpin' : 'Pin to sidebar', icon: Pin, onSelect: () => app.togglePin(d.id) },

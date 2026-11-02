@@ -14,7 +14,7 @@ export const REPLAY_HTML = `<!doctype html>
 </head>
 <body>
 <header class="top">
-  <div class="brand">MultAI <span>replay</span></div>
+  <div class="brand">MultAI <span>replay</span> <span id="live" class="live" hidden></span></div>
   <div class="controls">
     <button type="button" id="play" disabled>Play</button>
     <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Replay position" disabled>
@@ -37,6 +37,8 @@ export const REPLAY_CSS = `:root{--bg:#0b0b0c;--panel:#141416;--line:#26262a;--t
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 .top{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
 .brand{font-weight:700}.brand span{color:var(--muted);font-weight:500}
+.live{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;font-weight:600;color:var(--ok);border:1px solid var(--line);border-radius:999px;padding:1px 9px}.live::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.4s ease-in-out infinite}.live.working{color:var(--accent)}
+@keyframes pulse{50%{opacity:.3}}@media (prefers-reduced-motion:reduce){.live::before{animation:none}}
 .controls{display:flex;align-items:center;gap:10px;flex:1;justify-content:flex-end;min-width:0}
 #scrub{flex:1;max-width:360px;accent-color:var(--accent)}
 button{font:inherit;color:var(--bg);background:var(--text);border:0;border-radius:999px;padding:6px 16px;cursor:pointer}button:disabled{opacity:.4;cursor:default}
@@ -109,6 +111,26 @@ function step(){
 }
 $('play').onclick=()=>{if(timer){stop();return;}if(shown>=items.length)show(0);$('play').textContent='Pause';step();};
 $('scrub').oninput=()=>{stop();show(Number($('scrub').value));};
+let cursor=0;let following=null;
+function badge(working){const live=$('live');live.hidden=false;live.textContent=working?'Live · agent working':'Live';live.classList.toggle('working',Boolean(working));}
+function add(list){
+  const atEnd=!timer&&shown>=items.length;
+  for(const e of list){events.push(e);const li=render(e);items.push(li);$('timeline').append(li);}
+  $('scrub').max=String(items.length);$('scrub').disabled=$('play').disabled=!items.length;
+  if(atEnd)show(items.length);else{items.forEach((li,i)=>li.classList.toggle('hidden',i>=shown));$('position').textContent=shown+' / '+items.length;}
+  if(items.length)$('status').textContent='';
+}
+// Watching live: newer events arrive while the page is open and visible.
+async function follow(){
+  if(document.hidden)return;
+  const res=await fetch('/v1/replays/view',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token,after:cursor})}).catch(()=>null);
+  if(!res||res.status===429)return;
+  const body=await res.json().catch(()=>null);
+  if(!res.ok){clearInterval(following);$('live').hidden=true;$('status').textContent=body&&body.error?body.error.message:'This replay isn’t available anymore.';return;}
+  badge(body.replay.working);
+  if(body.events.length)add(body.events);
+  cursor=body.next;
+}
 async function load(){
   if(!/^[A-Za-z0-9_-]{43}$/.test(token)){$('title').textContent='This replay link is incomplete';$('status').textContent='Copy the whole link, including the part after #.';return;}
   let after=0;
@@ -118,11 +140,12 @@ async function load(){
     if(!res.ok){$('title').textContent=res.status===429?'Too many requests':'This replay isn’t available';$('status').textContent=body&&body.error?body.error.message:'Try again later.';return;}
     if(page===0){document.title=body.replay.title+' · MultAI replay';$('title').textContent=body.replay.title;$('meta').textContent='Started '+time(body.replay.createdAt)+' · link expires '+time(body.replay.expiresAt);}
     for(const e of body.events){events.push(e);const li=render(e);items.push(li);$('timeline').append(li);}
-    after=body.next;if(body.done)break;
+    after=body.next;if(page===0)badge(body.replay.working);if(body.done)break;
   }
   $('scrub').max=String(items.length);$('scrub').disabled=$('play').disabled=!items.length;
   show(items.length);$('play').textContent='Replay';
   if(!items.length)$('status').textContent='Nothing has happened in this session yet.';
+  cursor=after;following=setInterval(()=>void follow(),4000);
 }
 load().catch(()=>{$('title').textContent='The replay couldn’t load';$('status').textContent='Check your connection and reload.';});
 })();`;

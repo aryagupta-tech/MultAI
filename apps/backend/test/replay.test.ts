@@ -45,8 +45,15 @@ test('replay links: host-only, cleaned up, paged, revocable and expiring', async
   assert.deepEqual(messages.map((event: {who: string; data: {text: string; screenshot?: boolean}}) => [event.who, event.data.text, Boolean(event.data.screenshot)]), [['Host', 'Fix the **cart** total', true], ['Teammate 1', 'Looks good to me', false]]);
   assert.equal(body.events.some((event: {type: string}) => event.type.startsWith('invitation.') || event.type.startsWith('replay.')), false);
   assert.equal(body.done, true);
+  assert.equal(body.replay.working, false);
   const later = await ctx.app.inject({method: 'POST', url: '/v1/replays/view', payload: {token, after: body.next}});
   assert.deepEqual(later.json().events, []);
+  // Watching live: a message sent after the page loaded arrives on the next check, and so does a running agent.
+  await ctx.app.inject({method: 'POST', url: `/v1/sessions/${id}/messages`, headers: headers(owner), payload: {requestId: randomUUID(), kind: 'discussion', text: 'Shipping it now'}});
+  await ctx.db.query("UPDATE sessions SET status='running' WHERE id=$1", [id]);
+  const live = (await ctx.app.inject({method: 'POST', url: '/v1/replays/view', payload: {token, after: body.next}})).json();
+  assert.deepEqual(live.events.map((event: {data: {text?: string}}) => event.data.text), ['Shipping it now']);
+  assert.equal(live.replay.working, true);
 
   const wrong = await ctx.app.inject({method: 'POST', url: '/v1/replays/view', payload: {token: randomBytes(32).toString('base64url')}});
   assert.equal(wrong.statusCode, 404);

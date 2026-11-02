@@ -63,7 +63,7 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 
 - **MCP tools.** Add MCP servers that run on your computer in *Settings → Tools (MCP)*. Their tools are offered to the agent in Build mode, and every call waits for your approval. Server settings and tokens are stored encrypted; a repository can't add servers.
 - **Live presence.** See who's online, who's typing, and which file each teammate is looking at in Changes.
-- **Shareable replays.** *Share replay link…* in a chat's menu creates a read-only link (1 to 30 days, revocable) that anyone can open in a browser and play back step by step. Screenshots, commands and account details are left out.
+- **Watch links.** *Share a watch link…* in a chat's menu creates a read-only link (1 to 30 days, revocable) that anyone can open in a browser, no app or account needed: while the session is going they watch it live (new messages, agent replies and steps arrive every few seconds, with a badge while the agent works), and afterwards they can play it back step by step. Screenshots, commands and account details are left out.
 
 ## What happens in a session
 

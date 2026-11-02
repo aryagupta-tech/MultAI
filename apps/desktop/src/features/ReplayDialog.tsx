@@ -43,8 +43,8 @@ export function ReplayDialog({ sessionId, open, onClose }: { sessionId: string; 
     await load();
   };
   return (
-    <Dialog open={open} onClose={onClose} title="Share a replay" width={540}
-      description="A read-only link to this session’s timeline that anyone can open in a browser, no account needed. They can play it back step by step. Screenshots, commands and account details are left out.">
+    <Dialog open={open} onClose={onClose} title="Share a watch link" width={540}
+      description="A read-only link anyone can open in a browser, no app or account needed. While the session is going they watch it live; afterwards they can play it back step by step. Screenshots, commands and account details are left out.">
       <div className="dialog-body">
         <div className="replay-create">
           <span className="field-label">Link works for</span>
@@ -58,7 +58,7 @@ export function ReplayDialog({ sessionId, open, onClose }: { sessionId: string; 
             <IconButton size="sm" icon={Copy} label="Copy link" onClick={() => void copy(created.link)} />
           </div>
         )}
-        {created && <p className="field-help">Copied. It works until {when(created.expiresAt)}. Anyone with the link can watch, so share it only with people you mean to.</p>}
+        {created && <p className="field-help">Copied. It follows the session live and works until {when(created.expiresAt)}. Anyone with the link can watch, so share it only with people you mean to.</p>}
         <h3 className="skill-group-title">Active links</h3>
         {links === null ? <p className="field-help"><Spinner /> Loading…</p> : links.length === 0 ? <p className="field-help">No active links.</p> : (
           <ul className="prompt-list">
