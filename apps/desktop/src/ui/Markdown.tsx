@@ -6,7 +6,8 @@ import { Fragment, type ReactNode } from 'react';
 
 function inline(text: string, keyBase: string): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*|_[^_\n]+_|\[[^\]\n]+\]\([^)\n]+\))/g;
+  // Underscores make italics only at word edges, as in GitHub Markdown, so snake_case names stay intact.
+  const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*|(?<![\p{L}\p{N}_])_(?![\s_])[^_\n]*[^\s_]_(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])_[^\s_]_(?![\p{L}\p{N}_])|\[[^\]\n]+\]\([^)\n]+\))/gu;
   let last = 0;
   let m: RegExpExecArray | null;
   let k = 0;
