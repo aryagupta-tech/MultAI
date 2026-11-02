@@ -178,7 +178,7 @@ export function runPending(sessionId:string):Promise<void> {
   dispatches.set(sessionId,request);return request;
 }
 
-async function run(sessionId:string):Promise<void> {
+async function run(sessionId:string,retried=false):Promise<void> {
   const state=useApp.getState(),detail=state.details[sessionId],inference=api(),selection=getSelection();
   if(!detail||detail.source!=='live'||!inference)return;
   if(!detail.capabilities.configure){state.toast('Only the original owner on the original host can run this task.','error');return;}
@@ -197,6 +197,9 @@ async function run(sessionId:string):Promise<void> {
       result=await inference.run({...input,resolution});
     }
     if(epoch!==accountEpoch||user!==currentUser())return;
+    // This view still listed a message the service already took out of the queue: catch up, then run
+    // the next one that is really waiting.
+    if(!result.ok&&result.error.code==='instruction_unavailable'&&!retried){await open(sessionId);return run(sessionId,true);}
     if(!result.ok)showError(result.error,sessionId);
     // Use the service snapshot and ordered events rather than inventing local run state.
     await open(sessionId);

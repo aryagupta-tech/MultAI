@@ -321,6 +321,19 @@ export function projectSummary(session: WireSession, meta: LocalSessionMeta, eve
 }
 
 /** Merges new events into a sorted, sequence-deduplicated list. */
+/**
+ * The last sequence held with nothing missing before it. A message you just sent arrives ahead of the
+ * live stream, so the newest event isn't proof that the ones before it are here.
+ */
+export function contiguousEnd(events: readonly WireEvent[]): number {
+  let end = 0;
+  for (const e of events) {
+    if (e.sequence === end + 1) end = e.sequence;
+    else if (e.sequence > end + 1) break;
+  }
+  return end;
+}
+
 export function mergeEvents(existing: readonly WireEvent[], incoming: readonly WireEvent[]): WireEvent[] {
   if (incoming.length === 0) return existing as WireEvent[];
   const last = existing.at(-1)?.sequence ?? 0;

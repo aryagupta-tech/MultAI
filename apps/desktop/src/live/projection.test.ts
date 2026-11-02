@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { WireEvent, WireMe, WireSession } from '../bridge/wire';
-import {mergeEvents, nextPendingInstruction, queuedInstructions, personFor, projectSession, projectSessionState, sessionTitle, titleFromMessage} from './projection';
+import {contiguousEnd, mergeEvents, nextPendingInstruction, queuedInstructions, personFor, projectSession, projectSessionState, sessionTitle, titleFromMessage} from './projection';
 
 const me: WireMe = { id: '11111111-1111-4111-8111-111111111111', displayName: 'Ada Lovelace', workspaceId: '22222222-2222-4222-8222-222222222222', deviceId: '33333333-3333-4333-8333-333333333333' };
 const other = 'abcdef12-0000-4000-8000-000000000000';
@@ -65,6 +65,12 @@ describe('mergeEvents', () => {
     expect(mergeEvents(a, [ev(3, 'x', null, {})]).map((e) => e.sequence)).toEqual([1, 2, 3]);
     expect(mergeEvents(a, [ev(2, 'x', null, {}), ev(4, 'x', null, {}), ev(3, 'x', null, {})]).map((e) => e.sequence)).toEqual([1, 2, 3, 4]);
     expect(mergeEvents(a, [])).toBe(a);
+  });
+  test('resumes from the last event with nothing missing before it', () => {
+    expect(contiguousEnd([])).toBe(0);
+    expect(contiguousEnd([ev(1, 'x', null, {}), ev(2, 'x', null, {}), ev(3, 'x', null, {})])).toBe(3);
+    // A message just sent (4) arrived before the removal (3) the live stream still owes us.
+    expect(contiguousEnd([ev(1, 'x', null, {}), ev(2, 'x', null, {}), ev(4, 'x', null, {})])).toBe(2);
   });
 });
 

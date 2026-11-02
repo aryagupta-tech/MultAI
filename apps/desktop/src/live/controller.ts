@@ -9,7 +9,7 @@ import type { Draft } from '../model/store';
 import * as work from './work';
 import { useApp } from '../model/store';
 import type { MessageKind, Project, SessionMode } from '../model/types';
-import { mergeEvents, projectSession, projectSummary, projectSessionState, titleFromMessage, type LocalSessionMeta } from './projection';
+import { contiguousEnd, mergeEvents, projectSession, projectSummary, projectSessionState, titleFromMessage, type LocalSessionMeta } from './projection';
 import * as execution from './execution';
 import * as assist from './assist';
 import * as presence from './presence';
@@ -306,7 +306,7 @@ export async function open(id: string): Promise<void> {
     cache.set(id, c);
     // Replay everything after what we already hold, a page at a time.
     for (let guard = 0; guard < 1000; guard++) {
-      const after = c.events.at(-1)?.sequence ?? 0;
+      const after = contiguousEnd(c.events);
       const page = await api().readEvents(id, after);
       if (!page.ok) { fail(page.error); break; }
       c.events = mergeEvents(c.events, page.value.events);
@@ -316,7 +316,7 @@ export async function open(id: string): Promise<void> {
     publish(id);
     if (useApp.getState().activeId === id) {
       subscribed = id;
-      await api().subscribe(id, c.events.at(-1)?.sequence ?? 0);
+      await api().subscribe(id, contiguousEnd(c.events));
       if (c.session.capabilities.manage) void loadJoinRequests(id);
     }
   } finally {
