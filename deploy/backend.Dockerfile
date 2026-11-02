@@ -15,9 +15,24 @@ RUN node deploy/stamp-build.mjs
 RUN npm prune --omit=dev --ignore-scripts --workspace @multai/backend --include-workspace-root \
     && rm -rf node_modules/@multai
 
+# The browser companion: static files only. Its build tools never reach the service image.
+FROM node:24.22.0-bookworm-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4 AS companion
+WORKDIR /workspace
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/companion-core/package.json packages/companion-core/package.json
+COPY packages/companion-ui/package.json packages/companion-ui/package.json
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci --ignore-scripts --workspace @multai/web --include-workspace-root
+COPY packages/companion-core/src packages/companion-core/src
+COPY packages/companion-ui/src packages/companion-ui/src
+COPY apps/web/index.html apps/web/vite.config.ts apps/web/tsconfig.json apps/web/
+COPY apps/web/src apps/web/src
+COPY apps/web/public apps/web/public
+RUN cd apps/web && ../../node_modules/.bin/vite build
+
 FROM node:24.22.0-bookworm-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4
 WORKDIR /service
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=4310
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=4310 COMPANION_DIR=/service/companion
 ARG SOURCE_COMMIT
 LABEL org.opencontainers.image.title="MultAI collaboration service" \
       org.opencontainers.image.revision=$SOURCE_COMMIT
@@ -26,6 +41,7 @@ COPY --from=build --chown=node:node /workspace/apps/backend/dist ./dist
 COPY --from=build --chown=node:node /workspace/apps/backend/migrations ./migrations
 COPY --from=build --chown=node:node /workspace/apps/backend/package.json ./package.json
 COPY --chown=node:node deploy/entrypoint.mjs ./entrypoint.mjs
+COPY --from=companion --chown=node:node /workspace/apps/web/dist ./companion
 RUN node -e "for(const name of ['electron','typescript','tsx','react','@multai/runtime']){if(require('node:fs').existsSync('node_modules/'+name))throw Error('Unexpected desktop/development dependency: '+name)}"
 USER node
 EXPOSE 4310

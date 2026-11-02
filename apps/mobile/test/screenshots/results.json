@@ -1,0 +1,50 @@
+{
+  "at": "2026-11-02T13:19:51.129Z",
+  "device": "Android emulator (not a physical phone)",
+  "results": [
+    {
+      "name": "install the version 1 test APK",
+      "ok": true
+    },
+    {
+      "name": "the app opens on the home screen inside the WebView, with its CSP",
+      "ok": true
+    },
+    {
+      "name": "pairing from the app with matching check digits; the credential goes to the Keystore",
+      "ok": true
+    },
+    {
+      "name": "start the chosen instruction and approve the exact command from the app",
+      "ok": true
+    },
+    {
+      "name": "Stop from the app cancels the run and its waiting approval",
+      "ok": true
+    },
+    {
+      "name": "rotation keeps state and layout",
+      "ok": true
+    },
+    {
+      "name": "process death: a killed app comes back paired, with its request history",
+      "ok": true
+    },
+    {
+      "name": "update in place to version 2 keeps the pairing",
+      "ok": true
+    },
+    {
+      "name": "a downgrade over version 2 is refused",
+      "ok": true
+    },
+    {
+      "name": "revoking on the desktop ends owner control in the app",
+      "ok": true
+    },
+    {
+      "name": "uninstall removes the app and its data",
+      "ok": true
+    }
+  ]
+}

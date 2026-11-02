@@ -9,6 +9,8 @@ file('../../version.properties').withInputStream { versionProps.load(it) }
 def signingFile = new File(System.getenv('MULTAI_ANDROID_SIGNING') ?: "${System.getProperty('user.home')}/.multai/android/keystore.properties")
 def signing = new Properties()
 if (signingFile.exists()) signingFile.withInputStream { signing.load(it) }
+// Release builds always use version.properties; test builds may override it to exercise updates.
+def multaiVersionCode = (project.findProperty('multaiTestVersionCode') ?: versionProps.getProperty('versionCode')).toString().toInteger()
 
 android {
     namespace = "si.multai.companion"
@@ -17,7 +19,7 @@ android {
         applicationId "si.multai.companion"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode versionProps.getProperty('versionCode').toInteger()
+        versionCode multaiVersionCode
         versionName versionProps.getProperty('versionName')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [authScheme: 'multai-companion', linkHost: 'api.multai.si']
@@ -59,6 +61,9 @@ android {
 }
 
 gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name.contains('Release') } && project.findProperty('multaiTestVersionCode')) {
+        throw new GradleException('Version overrides are for test builds only; release versions come from version.properties.')
+    }
     if (graph.allTasks.any { it.name.contains('Release') } && !signing.getProperty('storeFile')) {
         throw new GradleException("Release signing key not found. Create it with apps/mobile/scripts/create-signing-key.sh (expected ${signingFile}).")
     }

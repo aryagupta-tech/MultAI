@@ -381,6 +381,19 @@ test('host state reports are host-only, validated and age-stamped for the phone'
   assert.ok(view.host.ageMs < 5_000);
   const bad = await ctx.app.inject({method: 'PUT', url: `/v1/sessions/${target.id}/control-state`, headers: bearer(owner), payload: {state: {...state, shell: '/bin/sh'}}});
   assert.equal(bad.statusCode, 400, 'unknown fields cannot smuggle anything to the phone');
+  // Participants see only the coarse state; outsiders see nothing.
+  const viewer = await seedActor(ctx.db, 'Synthetic viewer');
+  const outsider = await seedActor(ctx.db, 'Synthetic outsider');
+  const collaboration = new CollaborationService(ctx.db);
+  const invitation = await collaboration.createInvitation(owner.actor, target.id, {});
+  const join = await collaboration.requestJoin(viewer.actor, {token: invitation.invitation.token});
+  await collaboration.admit(owner.actor, target.id, (join as {requestId: string}).requestId, {role: 'viewer'});
+  const presence = await ctx.app.inject({method: 'GET', url: `/v1/sessions/${target.id}/host-presence`, headers: bearer(viewer)});
+  assert.equal(presence.statusCode, 200, presence.body);
+  assert.deepEqual(presence.json().report.state, {host: 'online', run: {status: 'idle'}, locked: 0});
+  assert.equal(presence.json().connected, false);
+  assert.equal(JSON.stringify(presence.json()).includes('synthetic-model'), false, 'nothing beyond the coarse state');
+  assert.equal((await ctx.app.inject({method: 'GET', url: `/v1/sessions/${target.id}/host-presence`, headers: bearer(outsider)})).statusCode, 403);
   await ctx.db.query("UPDATE host_control_state SET updated_at=now()-interval '5 minutes' WHERE session_id=$1", [target.id]);
   assert.ok((await detail(ctx, phone, target.id)).host.ageMs >= 299_000, 'a stale report reads as offline on the phone');
 });

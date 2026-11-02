@@ -25,13 +25,16 @@ const config = path.join(root, 'android/app/src/main/assets/capacitor.config.jso
 // Only test builds can be inspected with Chrome DevTools.
 writeFileSync(config, JSON.stringify({...JSON.parse(readFileSync(config, 'utf8')), android: {allowMixedContent: false, captureInput: false, webContentsDebuggingEnabled: test}}, null, '\t'));
 writeFileSync(path.join(root, 'android/local.properties'), `sdk.dir=${sdk}\n`);
-run('./gradlew', ['--no-daemon', '--quiet', release ? 'assembleRelease' : 'assembleDebug'], {cwd: path.join(root, 'android')});
+const testVersion = test && process.env.MULTAI_TEST_VERSION_CODE ? Number(process.env.MULTAI_TEST_VERSION_CODE) : null;
+if (testVersion !== null && !(Number.isInteger(testVersion) && testVersion > 0)) throw new Error('MULTAI_TEST_VERSION_CODE must be a positive integer.');
+run('./gradlew', ['--no-daemon', '--quiet', release ? 'assembleRelease' : 'assembleDebug', ...(testVersion ? [`-PmultaiTestVersionCode=${testVersion}`] : [])], {cwd: path.join(root, 'android')});
 
 const built = path.join(root, 'android/app/build/outputs/apk', release ? 'release/app-release.apk' : 'debug/app-debug.apk');
-const {versionName, versionCode} = Object.fromEntries(readFileSync(path.join(root, 'version.properties'), 'utf8').trim().split('\n').map(line => line.split('=')));
+const properties = Object.fromEntries(readFileSync(path.join(root, 'version.properties'), 'utf8').trim().split('\n').map(line => line.split('=')));
+const versionName = properties.versionName, versionCode = String(testVersion ?? properties.versionCode);
 const outDir = path.join(root, release ? 'release' : 'build-test');
 mkdirSync(outDir, {recursive: true});
-const name = release ? `multai-companion-${versionName}.apk` : `multai-companion-test-${versionName}.apk`;
+const name = release ? `multai-companion-${versionName}.apk` : `multai-companion-test-${versionName}-${versionCode}.apk`;
 const target = path.join(outDir, name);
 copyFileSync(built, target);
 const apksigner = path.join(sdk, 'build-tools', '36.0.0', 'apksigner');

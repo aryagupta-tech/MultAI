@@ -92,3 +92,6 @@ export const controlRequestSchema = z.object({id: uuid, sessionId: uuid, kind: z
   code: z.string().max(64).nullable(), message: z.string().max(500).nullable(), createdAt: iso, expiresAt: iso, deliveredAt: iso.nullable(), acknowledgedAt: iso.nullable()});
 export type ControlRequest = z.infer<typeof controlRequestSchema>;
 export const controlRequestResponse = z.object({request: controlRequestSchema});
+
+export const hostPresenceSchema = z.object({connected: z.boolean(), report: z.object({state: z.object({host: z.enum(['online', 'asleep', 'signing_out']), run: z.object({status: z.string().max(20)}), locked: z.number().int().min(0)}), ageMs: z.number().int().nonnegative()}).nullable()});
+export type HostPresence = z.infer<typeof hostPresenceSchema>;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {buildEnvelope, controlBytes, exportPublic, generatePhoneKeys, keyThumbprint, normalizePairingCode, openPreview, sealPreview, signControl, stable, verificationCode, verifyControl, MAX_REQUEST_LIFETIME_MS, type ControlEnvelope} from '../src/index.js';
+import {buildEnvelope, controlBytes, describeStatus, exportPublic, generatePhoneKeys, keyThumbprint, normalizePairingCode, openPreview, sealPreview, signControl, stable, verificationCode, verifyControl, MAX_REQUEST_LIFETIME_MS, type ControlEnvelope} from '../src/index.js';
 
 // The service's own Node implementation, so both sides are proven to agree byte for byte.
 const service = await import(new URL('../../../apps/backend/src/owner-control.ts', import.meta.url).href) as typeof import('../../../apps/backend/src/owner-control.js');
@@ -69,4 +69,16 @@ test('pairing codes accept what people type', () => {
   assert.equal(normalizePairingCode('short'), null);
   assert.equal(normalizePairingCode('<script>alert(1)</script>'), null);
   assert.equal(service.normalizeCode('k7q2-m9xd-4tpr'), normalizePairingCode('k7q2-m9xd-4tpr'));
+});
+
+test('status never says online without a fresh report or a live connection', () => {
+  const report = (host: 'online' | 'asleep', ageMs: number, status = 'idle') => ({state: {host, run: {status}, locked: 0}, ageMs});
+  assert.equal(describeStatus({sessionStatus: 'inactive'}).availability, 'unknown');
+  assert.equal(describeStatus({sessionStatus: 'inactive', report: report('online', 1_000)}).headline, 'Desktop online · Idle');
+  assert.equal(describeStatus({sessionStatus: 'inactive', report: report('online', 45_000)}).headline, 'Desktop is offline');
+  assert.equal(describeStatus({sessionStatus: 'inactive', report: report('asleep', 1_000)}).headline, 'Desktop is asleep');
+  assert.equal(describeStatus({sessionStatus: 'inactive', report: null, connected: false}).headline, 'Host isn’t connected');
+  assert.equal(describeStatus({sessionStatus: 'running', report: report('online', 1_000, 'running'), pendingAction: true}).phase, 'blocked');
+  assert.equal(describeStatus({sessionStatus: 'inactive', report: report('online', 1_000, 'completed')}).headline, 'Desktop online · Run completed');
+  assert.equal(describeStatus({sessionStatus: 'inactive', report: report('online', 1_000), conflict: true}).headline, 'Desktop online · Conflicting directions');
 });

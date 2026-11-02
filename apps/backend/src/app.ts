@@ -112,6 +112,18 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
   const connectionCounts = new Map<string, number>();
   const presence = new PresenceHub();
   const presenceSchema = z.object({type: z.literal('presence'), typing: z.boolean(), viewing: z.string().max(200).nullable()}).strict();
+  // Whether the host's app is in this session right now, for every admitted participant. Only the coarse
+  // state is shared: connected, online/asleep and the run phase; approval details stay owner-only.
+  app.get('/v1/sessions/:sessionId/host-presence', async request => {
+    const actor = await auth.authenticateRequest(request);
+    const {sessionId} = z.object({sessionId: z.uuid()}).parse(request.params);
+    const {session} = await service.getSession(actor, sessionId) as {session: {ownerId: string}};
+    const report = await db.query<{host: string; run: string; locked: number; updated_at: Date}>(`SELECT h.state->>'host' AS host,h.state->'run'->>'status' AS run,COALESCE((h.state->>'locked')::int,0) AS locked,h.updated_at
+      FROM host_control_state h JOIN sessions s ON s.id=h.session_id AND s.host_device_id=h.host_device_id WHERE h.session_id=$1`, [sessionId]);
+    const row = report.rows[0];
+    return {connected: presence.snapshot(sessionId).some(entry => entry.userId === session.ownerId),
+      report: row ? {state: {host: row.host, run: {status: row.run}, locked: row.locked}, ageMs: Math.max(0, Date.now() - row.updated_at.getTime())} : null};
+  });
   app.get('/v1/sessions/:sessionId/live', {
     websocket: true,
     preValidation: async request => {

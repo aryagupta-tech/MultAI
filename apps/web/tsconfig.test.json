@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {"noEmit": true, "allowImportingTsExtensions": true, "module": "NodeNext", "moduleResolution": "NodeNext", "lib": ["ES2024", "DOM"], "types": ["node"], "noUnusedLocals": false},
+  "include": ["test/*.ts", "../mobile/test/*.ts"]
+}

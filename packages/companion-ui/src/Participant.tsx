@@ -2,7 +2,7 @@
 // people, requirements and shared screenshots. Your role in each session decides what you can send;
 // running or approving anything on the desktop needs owner pairing, never this sign-in.
 import {useCallback, useMemo, useRef, useState} from 'react';
-import {acceptanceSchema, describeStatus, eventPageSchema, personLabel, projectTimeline, screenshotsSchema, sessionDetailSchema, sessionListSchema, type Account, type Acceptance, type ApiClient, type Me, type Session, type SharedScreenshot, type WireEvent} from '@multai/companion-core';
+import {acceptanceSchema, describeStatus, eventPageSchema, hostPresenceSchema, type HostPresence, personLabel, projectTimeline, screenshotsSchema, sessionDetailSchema, sessionListSchema, type Account, type Acceptance, type ApiClient, type Me, type Session, type SharedScreenshot, type WireEvent} from '@multai/companion-core';
 import {Banner, Button, Empty, Header, StatusPill, Tabs, cx, errorText, relative} from './ui';
 import {usePoll, useRequestId} from './hooks';
 import {Timeline} from './Timeline';
@@ -54,6 +54,7 @@ export function ParticipantSession({api, account, me, sessionId, back, resume}: 
   const [tab, setTab] = useState<Tab>('activity');
   const [error, setError] = useState<string | null>(null);
   const [gone, setGone] = useState<string | null>(null);
+  const [presence, setPresence] = useState<HostPresence | null>(null);
   const bearer = useCallback(<T,>(work: (token: string) => Promise<T>) => account.authorized(work), [account]);
 
   const poll = usePoll(async signal => {
@@ -75,6 +76,9 @@ export function ParticipantSession({api, account, me, sessionId, back, resume}: 
     }
   }, 3_000, [sessionId], resume);
   usePoll(async signal => {
+    setPresence(await bearer(token => api.request('GET', `/v1/sessions/${sessionId}/host-presence`, {auth: {type: 'bearer', token}, schema: hostPresenceSchema, signal})));
+  }, 10_000, [sessionId], resume);
+  usePoll(async signal => {
     if (tab !== 'requirements' && tab !== 'screenshots') return;
     const [a, s] = await Promise.all([
       bearer(token => api.request('GET', `/v1/sessions/${sessionId}/acceptance`, {auth: {type: 'bearer', token}, schema: acceptanceSchema, signal})),
@@ -85,7 +89,7 @@ export function ParticipantSession({api, account, me, sessionId, back, resume}: 
 
   const nameOf = useCallback((userId: string | null) => personLabel(userId, me, session?.ownerId ?? null), [me, session?.ownerId]);
   const items = useMemo(() => projectTimeline(events, nameOf), [events, nameOf]);
-  const status = session ? describeStatus({sessionStatus: session.status}) : null;
+  const status = session ? describeStatus({sessionStatus: session.status, ...(presence ? {report: presence.report, connected: presence.connected} : {})}) : null;
   const canSend = session ? session.role !== 'viewer' : false;
   const act = async (work: () => Promise<unknown>) => {setError(null); try {await work();} catch (failure) {setError(errorText(failure));}};
 

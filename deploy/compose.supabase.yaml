@@ -34,6 +34,8 @@ services:
       NODE_OPTIONS: --max-old-space-size=256
       # The proxy reaches the backend over either network; only it can set the client address.
       TRUST_PROXY: 172.30.0.0/24,172.31.0.0/24
+      # Publishes the Android companion's signing certificate for App Links (public, not a secret).
+      ANDROID_CERT_SHA256: "72:E3:60:27:AE:1C:6C:A8:F9:75:A3:F8:95:EA:11:A6:78:84:80:FF:0C:19:B9:C9:F1:3F:1C:E7:7F:F3:7B:7B"
     secrets: [database-url, database-ca, google-client-id, google-client-secret]
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
