@@ -219,6 +219,14 @@ test('central action validation independently denies lexical escapes, NUL bytes 
   const moved = await submit({...descriptor, requestId: randomUUID(), cwd: '/private/another-workspace'});
   assert.equal(moved.statusCode, 409, moved.body);
   assert.equal(moved.json().error.code, 'stale_action');
+  // A parallel agent's worktree is part of the same workspace; look-alikes are not.
+  const lane = await submit({...descriptor, requestId: randomUUID(), cwd: '/private/synthetic-workspace.lane-2-0a1b2c3d'});
+  assert.equal(lane.statusCode, 200, lane.body);
+  for (const cwd of ['/private/synthetic-workspace.lane-9-0a1b2c3d', '/private/synthetic-workspace.lane-2-zzzzzzzz', '/private/synthetic-workspace2', '/private/synthetic-workspace.lane-2-0a1b2c3d/nested']) {
+    const other = await submit({...descriptor, requestId: randomUUID(), cwd});
+    assert.equal(other.statusCode, 409, cwd);
+    assert.equal(other.json().error.code, 'stale_action', cwd);
+  }
 });
 
 test('central lexical checks accept normalized Windows descriptors without reading host paths', async t => {

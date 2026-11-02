@@ -33,6 +33,8 @@ const operation = z.discriminatedUnion('kind',[
   z.object({kind:z.literal('external'),tool:exactText(512),transport:z.enum(['stdio','https']),arguments:z.json()}).strict(),
   z.object({kind:z.literal('file_write'),relativePath:exactText(4096),expectedContentHash:z.string().regex(/^[a-f0-9]{64}$/).nullable(),contentHash:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
 ]);
+/** A parallel agent's worktree counts as its run's workspace. */
+export const workspaceOf=(cwd:string)=>cwd.replace(/\.lane-[1-4]-[0-9a-f]{8}$/u,'');
 const descriptorSchema = z.object({
   version:z.literal(1),requestId:uuid,sessionId:uuid,originalOwnerId:uuid,originalDeviceId:uuid,
   accountGeneration:z.number().int().positive(),sessionGeneration:z.number().int().positive(),runtimeGeneration:z.number().int().positive(),
@@ -219,7 +221,9 @@ export class ExecutionService extends CollaborationService {
       if(descriptor.sessionId!==sessionId || descriptor.originalOwnerId!==actor.userId || descriptor.originalDeviceId!==actor.deviceId || descriptor.sessionGeneration!==run.generation || descriptor.runtimeGeneration!==run.generation || descriptor.connectionId!==run.connection_id || descriptor.payerId!==actor.userId) throw new ApiError(409,'stale_action','Action authority does not match the selected host, run or payer.');
       if(descriptor.expiresAt<=Date.now() || descriptor.expiresAt>Date.now()+300000) throw new ApiError(400,'action_expiry','Action expiry must be within five minutes.');
       const pinned=await client.query<{cwd:string}>("SELECT descriptor->>'cwd' AS cwd FROM execution_actions WHERE run_id=$1 ORDER BY created_at,id LIMIT 1",[run.id]);
-      if(pinned.rows[0]&&pinned.rows[0].cwd!==descriptor.cwd) throw new ApiError(409,'stale_action','The run is already bound to a different canonical workspace directory.');
+      // Parallel agents work in sibling worktrees named after the run's workspace (<workspace>.lane-N-<id>);
+      // they belong to the same workspace. Any other directory is refused.
+      if(pinned.rows[0]&&workspaceOf(pinned.rows[0].cwd)!==workspaceOf(descriptor.cwd)) throw new ApiError(409,'stale_action','The run is already bound to a different canonical workspace directory.');
       const prior=await client.query<{fingerprint:string;status:string}>('SELECT fingerprint,status FROM execution_actions WHERE id=$1',[descriptor.requestId]);
       if(prior.rows[0]){
         if(prior.rows[0].fingerprint!==fingerprint) throw new ApiError(409,'idempotency_conflict','This action identity was already used for different bytes.');
