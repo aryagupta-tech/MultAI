@@ -2,7 +2,8 @@ import {readFileSync} from 'node:fs';
 import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
 
-const {version} = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {version: string};
+// The version shown in the app is the Android versionName.
+const version = /^versionName=(.+)$/mu.exec(readFileSync(new URL('./version.properties', import.meta.url), 'utf8'))?.[1]?.trim() ?? '0.0.0';
 // Release builds talk only to the production service; a test build (emulator) may name a loopback origin.
 const origin = process.env.MULTAI_SERVICE_ORIGIN ?? 'https://api.multai.si';
 if (!/^https:\/\/[a-z0-9.-]+$/u.test(origin) && !/^http:\/\/(localhost|127\.0\.0\.1):\d+$/u.test(origin)) throw new Error('MULTAI_SERVICE_ORIGIN must be an HTTPS origin or a loopback test origin.');
