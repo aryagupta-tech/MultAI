@@ -159,7 +159,10 @@ function usePlanUsage(): { name: string; windows: UsageLimits['windows'] }[] {
     };
     void refresh();
     const timer = setInterval(() => void refresh(), 20_000);
-    return () => { stopped = true; clearInterval(timer); };
+    // Connections load after the window opens; show them as soon as they do.
+    const changed = () => void refresh();
+    window.addEventListener('multai:selection-changed', changed);
+    return () => { stopped = true; clearInterval(timer); window.removeEventListener('multai:selection-changed', changed); };
   }, []);
   return plans;
 }
