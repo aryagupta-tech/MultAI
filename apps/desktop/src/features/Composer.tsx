@@ -22,23 +22,27 @@ import { MarkProblem } from './MarkProblem';
 /** Record a voice instruction; the host's Meta or OpenAI connection turns it into text in the draft. */
 function VoiceButton({ draftKey, disabled }: { draftKey: string; disabled: boolean }) {
   const recording = useVoice((s) => s.recording === draftKey);
+  const starting = useVoice((s) => s.starting === draftKey);
   const busy = useVoice((s) => s.busy === draftKey);
   const startedAt = useVoice((s) => s.startedAt);
   const [, tick] = useState(0);
   useEffect(() => {
-    if (!recording) return;
+    if (!recording && !starting && !busy) return;
     const timer = setInterval(() => tick((n) => n + 1), 500);
     const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') cancelVoice(); };
     window.addEventListener('keydown', onKey);
     return () => { clearInterval(timer); window.removeEventListener('keydown', onKey); };
-  }, [recording]);
-  useEffect(() => () => { if (useVoice.getState().recording === draftKey) cancelVoice(); }, [draftKey]);
+  }, [recording, starting, busy]);
+  useEffect(() => () => {
+    const voice = useVoice.getState();
+    if ([voice.starting, voice.recording, voice.busy].includes(draftKey)) cancelVoice();
+  }, [draftKey]);
   const seconds = Math.floor((Date.now() - startedAt) / 1000);
   if (busy) return <span className="voice-state" aria-live="polite"><Loader2 size={13} className="spin" aria-hidden /> Transcribing…</span>;
   return (
     <>
       <IconButton size="sm" icon={recording ? Square : Mic} label={recording ? 'Stop and transcribe' : 'Speak an instruction'} tipSide="top" active={recording}
-        className={cx(recording && 'is-recording')} onClick={() => toggleVoice(draftKey)} disabled={disabled} />
+        className={cx(recording && 'is-recording')} onClick={() => toggleVoice(draftKey)} disabled={disabled || starting} />
       {recording && <span className="voice-state is-live" aria-live="polite"><span className="voice-dot" aria-hidden />{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`} · Esc to cancel</span>}
     </>
   );

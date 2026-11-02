@@ -97,8 +97,8 @@ export class CollaborationService {
 
   protected async append(client: PoolClient, session: SessionRow, actor: Actor, type: string, payload: unknown): Promise<SharedEvent> {
     // Reserve 256 control events: a full session has at most 99 other active
-    // participants and 100 active invitations. Capacity must never trap a grant.
-    const capacity = type === 'participant.revoked' || type === 'invitation.revoked' ? 100000 : 99744;
+    // participants, 100 active invitations and 20 replay links. Capacity must never trap a grant.
+    const capacity = type === 'participant.revoked' || type === 'invitation.revoked' || type === 'replay.revoked' ? 100000 : 99744;
     if (session.event_sequence >= capacity) throw new ApiError(409, 'session_capacity', 'This session has reached its event capacity.');
     const sequence = session.event_sequence + 1;
     const result = await client.query<EventRow>(

@@ -44,6 +44,30 @@ test('command output is bounded and split secret bytes are redacted before publi
   assert.ok(Buffer.byteLength(result.output) <= 50);
 });
 
+test('large and JSON-escaped shell output fits the durable journal and replays without dispatch', async t => {
+  for (const [text, maximum] of [['x'.repeat(65_536), undefined], ['\0\n"\\'.repeat(20_000), 131_072]] as const) {
+    const x = await fixture(`process.stdout.write(${JSON.stringify(text.slice(0, 4))}.repeat(${text.length / 4}))`);
+    t.after(() => x.close()); x.approve();
+    const options = {...x, signal: new AbortController().signal, maxOutputBytes: maximum};
+    const result = await executeApprovedShell(options);
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.truncated, true);
+    assert.ok(text.startsWith(result.output));
+    assert.ok(Buffer.byteLength(JSON.stringify(result)) <= 65_536);
+    assert.equal(x.journal.get(x.descriptor.requestId).state, 'completed');
+    assert.deepEqual(await executeApprovedShell(options), result);
+    assert.equal(x.journal.pending().length, 1);
+  }
+});
+
+test('shell output limits preserve whole Unicode characters without exceeding the byte budget', async t => {
+  const x = await fixture("process.stdout.write('🌍🌍')"); t.after(() => x.close()); x.approve();
+  const result = await executeApprovedShell({...x, signal: new AbortController().signal, maxOutputBytes: 5});
+  assert.equal(result.output, '🌍');
+  assert.equal(result.truncated, true);
+  assert.ok(Buffer.byteLength(result.output) <= 5);
+});
+
 test('real process cancellation kills the process group and marks the effect uncertain', async t => {
   const x = await fixture("require('fs').writeFileSync('started',String(process.pid)); setInterval(()=>{},1000)"); t.after(() => x.close()); x.approve();
   const controller = new AbortController();

@@ -36,6 +36,23 @@ describe('project worktrees',()=>{
     await expect(x.registry.get(randomUUID())).rejects.toMatchObject({code:'UNKNOWN_PROJECT'});
   });
 
+  it('preserves every project and one stable identity when registrations overlap',async()=>{
+    const x=await fixture();
+    const folders=await Promise.all(Array.from({length:4},async(_,index)=>{
+      const root=join(x.base,`other-${index}`);await mkdir(root);
+      sh(root,'init','-q','-b','main');sh(root,'commit','--allow-empty','-qm','init');
+      return root;
+    }));
+    const registryFile=join(x.base,'concurrent-projects.json');
+    const registries=[new ProjectRegistry(()=>registryFile),new ProjectRegistry(()=>registryFile)];
+    const registered=await Promise.all([...folders,...folders].map((folder,index)=>registries[index%2]!.register(folder)));
+    for(let index=0;index<folders.length;index++){
+      expect(registered[index]!.projectId).toBe(registered[index+folders.length]!.projectId);
+      expect(await registries[0]!.get(registered[index]!.projectId)).toMatchObject({root:folders[index]});
+    }
+    expect(await registries[0]!.all()).toHaveLength(folders.length);
+  });
+
   it('works on its own branch, shows every kind of change, and applies it to the host folder',async()=>{
     const x=await fixture();const sessionId=randomUUID();const root=join(x.workspaces,sessionId);
     const info=await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'Fix the cart total!'});

@@ -30,6 +30,7 @@ export async function* readSse(response: Response, signal: AbortSignal, limits: 
   let eventBytes = 0;
   let events = 0;
   let line = '';
+  let lineBytes = 0;
   let event = '';
   let data: string[] = [];
   let afterCR = false;
@@ -55,6 +56,7 @@ export async function* readSse(response: Response, signal: AbortSignal, limits: 
       } else if (field === 'event') event = value;
     }
     line = '';
+    lineBytes = 0;
   }
   function accept(text: string) {
     for (const character of text) {
@@ -66,7 +68,8 @@ export async function* readSse(response: Response, signal: AbortSignal, limits: 
       else if (character === '\n') finishLine();
       else {
         line += character;
-        if (line.length > bounds.maxEventBytes) throw new ProviderError('stream_limit', 'A provider stream line exceeded its byte limit.');
+        lineBytes += Buffer.byteLength(character);
+        if (lineBytes > bounds.maxEventBytes) throw new ProviderError('stream_limit', 'A provider stream line exceeded its byte limit.');
       }
     }
   }
@@ -104,7 +107,9 @@ export async function* readSse(response: Response, signal: AbortSignal, limits: 
     if (error instanceof TypeError) throw new ProviderError('invalid_stream', 'The provider sent invalid UTF-8.');
     throw error;
   } finally {
-    await reader.cancel().catch(() => undefined);
+    // Cancellation closes the reader immediately, but a transport's cleanup promise
+    // may never settle. Do not let cleanup defeat the deadline or the user's Stop.
+    void reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }

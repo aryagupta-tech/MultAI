@@ -103,6 +103,43 @@ describe('splitting a task',()=>{
     await removeLanes(root,lanes);
   });
 
+  it('preserves late host edits and applies none of the merge when a file conflicts',async()=>{
+    const {root}=await chat();
+    const base=await captureWork(root,sh(root,'rev-parse','HEAD').trim(),'before split');
+    const [lane]=await createLanes(root,base,[{title:'Changes',task:'a',files:[]}]);
+    await writeFile(join(lane!.root,'src','cart.js'),'agent version\n');
+    await writeFile(join(lane!.root,'new.txt'),'agent addition\n');
+    await rm(join(lane!.root,'old.txt'));
+    const result=(await laneResult(lane!,base))!;
+    const current=await captureWork(root,base,'before merge');
+    const merge=await mergeLanes(root,base,current,[result]);
+    // An editor saves after the merge snapshot was captured.
+    await writeFile(join(root,'src','cart.js'),'host version\n');
+    const index=sh(root,'ls-files','--stage');
+    await expect(applyCommit(root,current,merge.commit)).rejects.toMatchObject({code:'MERGE_CHANGED'});
+    expect(await readFile(join(root,'src','cart.js'),'utf8')).toBe('host version\n');
+    expect(await readFile(join(root,'old.txt'),'utf8')).toBe('remove me\n');
+    expect(await exists(join(root,'new.txt'))).toBe(false);
+    expect(sh(root,'ls-files','--stage')).toBe(index);
+    await removeLanes(root,[lane!]);
+  });
+
+  it('applies binary changes and file-to-directory transitions without changing the index',async()=>{
+    const {root}=await chat();
+    const base=await captureWork(root,sh(root,'rev-parse','HEAD').trim(),'before split');
+    const [lane]=await createLanes(root,base,[{title:'Changes',task:'a',files:[]}]);
+    await rm(join(lane!.root,'old.txt'));
+    await mkdir(join(lane!.root,'old.txt'));
+    const binary=Buffer.from([0,1,255,0,2,128]);
+    await writeFile(join(lane!.root,'old.txt','binary.bin'),binary);
+    const result=(await laneResult(lane!,base))!;
+    const index=sh(root,'ls-files','--stage');
+    await applyCommit(root,base,result.commit);
+    expect(await readFile(join(root,'old.txt','binary.bin'))).toEqual(binary);
+    expect(sh(root,'ls-files','--stage')).toBe(index);
+    await removeLanes(root,[lane!]);
+  });
+
   it('cleans up the worktrees it made when creating one fails',async()=>{
     const {root}=await chat();
     const base=await captureWork(root,sh(root,'rev-parse','HEAD').trim(),'before split');

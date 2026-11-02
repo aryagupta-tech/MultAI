@@ -73,7 +73,7 @@ async function fixture() {
   const projects = new ProjectRegistry(() => join(directory, 'projects.json'));
   const host = new HostCoordinator({account, connections, projects, mcp: new McpHost(async () => []), dataDirectory: () => directory, confirm, emit: change => {changes.push(change);}});
   cleanup.push(async () => {await host.invalidate(); await rm(directory, {recursive: true, force: true});});
-  const terminal = async () => {await vi.waitFor(() => expect(changes.at(-1)?.status).toMatch(/^(?:completed|failed|stopped)$/u));};
+  const terminal = async () => {await vi.waitFor(() => expect(changes.at(-1)?.status).toMatch(/^(?:completed|failed|stopped)$/u), {timeout: 5000});};
   const scopeDirectory = async () => join(directory, 'runtime-v1', (await readdir(join(directory, 'runtime-v1')))[0]!);
   const workspace = async () => join(await scopeDirectory(), 'workspaces', input.sessionId);
   return {directory, state, input, runId, credentials, requests, respond, account, connections, changes, confirm, host, terminal, scopeDirectory, workspace, projects};
@@ -322,6 +322,40 @@ describe('parallel agents', () => {
     expect(report).toMatch(/Agent 1 · API\*\*: merged/u);
     // The workers' worktrees are gone.
     expect(git(root, 'worktree', 'list')).not.toMatch(/\.lane-/u);
+  });
+
+  test('Stop keeps the run and lane worktrees alive until every sibling finishes unwinding', async () => {
+    const x = await fixture();
+    const {root} = await project(x);
+    x.state.instruction = '/split Two parts';
+    const started = [deferred<void>(), deferred<void>()];
+    const aborted = [deferred<void>(), deferred<void>()];
+    const release = deferred<void>();
+    runtime.run.mockImplementation(async (options: RunAgentOptions) => {
+      if (options.system === PLAN_SYSTEM) return {text: JSON.stringify({parts: [{title: 'One', task: 'a', files: []}, {title: 'Two', task: 'b', files: []}]}), iterations: 1};
+      const lane = Number(/You are agent (\d) of 2/u.exec(userText(options))?.[1]);
+      options.signal.addEventListener('abort', () => aborted[lane - 1]!.resolve(), {once: true});
+      started[lane - 1]!.resolve();
+      await aborted[lane - 1]!.promise;
+      // A process/tool in the second lane takes longer to terminate than the first provider.
+      if (lane === 2) await release.promise;
+      options.signal.throwIfAborted();
+      throw new Error('Expected Stop');
+    });
+    await x.host.run(x.input);
+    await Promise.all(started.map(item => item.promise));
+    let stopped = false;
+    const stopping = x.host.stop(x.input.sessionId).then(() => {stopped = true;});
+    try {
+      await Promise.all(aborted.map(item => item.promise));
+      await new Promise(resolve => setTimeout(resolve, 200));
+      expect(stopped).toBe(false);
+      expect(git(root, 'worktree', 'list').match(/\.lane-/gu)).toHaveLength(2);
+      expect(x.changes.at(-1)?.status).not.toBe('stopped');
+    } finally {release.resolve(); await stopping;}
+    expect(x.changes.at(-1)?.status).toBe('stopped');
+    expect(git(root, 'worktree', 'list')).not.toMatch(/\.lane-/u);
+    expect(git(root, 'status', '--porcelain')).toBe('');
   });
 
   test('a part that conflicts gets one more pass in the chat\'s worktree, and a failed agent doesn\'t stop the others', async () => {

@@ -70,6 +70,7 @@ export class ReplayService extends CollaborationService {
   }
   async list(actor: Actor, sessionId: string) {
     return transaction(this.db, async client => {
+      await assertActor(client, actor);
       const authorized = await this.authorize(client, actor, uuid.parse(sessionId));
       requireOriginalHost(authorized, actor);
       const rows = await client.query<{id: string; created_at: Date; expires_at: Date}>('SELECT id,created_at,expires_at FROM replay_links WHERE session_id=$1 AND revoked_at IS NULL AND expires_at>now() ORDER BY created_at DESC', [sessionId]);
@@ -78,6 +79,7 @@ export class ReplayService extends CollaborationService {
   }
   async revoke(actor: Actor, sessionId: string, replayId: string) {
     return transaction(this.db, async client => {
+      await assertActor(client, actor);
       const authorized = await this.authorize(client, actor, uuid.parse(sessionId));
       requireOriginalHost(authorized, actor);
       const revoked = await client.query('UPDATE replay_links SET revoked_at=now() WHERE id=$1 AND session_id=$2 AND revoked_at IS NULL', [uuid.parse(replayId), sessionId]);

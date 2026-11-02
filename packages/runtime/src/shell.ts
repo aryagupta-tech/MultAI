@@ -1,7 +1,7 @@
 import {spawn, spawnSync} from 'node:child_process';
 import {lstat, realpath} from 'node:fs/promises';
 import {isAbsolute} from 'node:path';
-import {ExecutionJournal} from './journal.js';
+import {ExecutionJournal, MAX_EFFECT_RESULT_BYTES} from './journal.js';
 import {assertAuthority, fail, validateDescriptor} from './policy.js';
 import type {ActionDescriptor, Authority, JsonValue} from './policy.js';
 
@@ -19,6 +19,23 @@ export interface ApprovedShellOptions {
   toolPath?: string;
 }
 export interface ShellResult {exitCode: number | null; signal: string | null; output: string; truncated: boolean}
+
+function boundedResult(exitCode: number | null, signal: string | null, text: string, maximum: number, truncated: boolean): ShellResult {
+  const result: ShellResult = {exitCode, signal, output: '', truncated};
+  // The durable limit includes JSON escaping and metadata, not just output bytes.
+  // Reserve the longer `false` spelling so both truncation states fit.
+  let jsonRemaining = MAX_EFFECT_RESULT_BYTES - Buffer.byteLength(JSON.stringify({...result, truncated: false}));
+  let remaining = maximum;
+  for (const character of text) {
+    const bytes = Buffer.byteLength(character);
+    const jsonBytes = Buffer.byteLength(JSON.stringify(character)) - 2;
+    if (bytes > remaining || jsonBytes > jsonRemaining) {result.truncated = true; break;}
+    result.output += character;
+    remaining -= bytes;
+    jsonRemaining -= jsonBytes;
+  }
+  return result;
+}
 
 export function redactSecrets(text: string, secrets: string[] = []): string {
   let safe = text;
@@ -146,15 +163,14 @@ export async function executeApprovedShell(options: ApprovedShellOptions): Promi
     // process group before returning control to the agent.
     killTree('SIGKILL');
   }
-  const output = Buffer.from(redactSecrets(raw.toString('utf8'), options.secrets)).subarray(0, maximum).toString('utf8');
   if (stoppedBy !== null || options.signal.aborted) {
     options.journal.invalidateSession(descriptor.sessionId);
     if (stoppedBy === 'timeout') fail('COMMAND_TIMEOUT', 'The command exceeded its deadline; its outcome is uncertain and will not be retried.');
     options.signal.throwIfAborted();
     fail('COMMAND_CANCELED', 'The command was canceled; its outcome is uncertain and will not be retried.');
   }
-  const result: ShellResult = {exitCode, signal: exitSignal, output, truncated};
+  const result = boundedResult(exitCode, exitSignal, redactSecrets(raw.toString('utf8'), options.secrets), maximum, truncated);
   options.journal.complete(reservation.ticket, result as unknown as JsonValue, options.authority);
-  options.onOutput?.(output);
+  options.onOutput?.(result.output);
   return result;
 }

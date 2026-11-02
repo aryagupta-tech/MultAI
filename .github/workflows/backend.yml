@@ -1,7 +1,7 @@
 name: Backend and desktop integration
 on:
   push:
-    branches: [backend]
+    branches: [backend, main]
   pull_request:
     branches: [backend, main]
 permissions:

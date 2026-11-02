@@ -29,6 +29,30 @@ test('SSE enforces idle, framing and byte limits and cancels its reader', async 
   await assert.rejects(async () => {for await (const _event of readSse(new Response(Uint8Array.of(0xff, 10, 10)), signal())) {}}, /UTF-8/);
 });
 
+test('SSE line limits count UTF-8 bytes in comments and event names', async () => {
+  for (const input of [':🌍🌍🌍🌍\n\n', 'event: 🌍🌍🌍\n\n']) {
+    await assert.rejects(async () => {
+      for await (const _event of readSse(new Response(input), signal(), {maxEventBytes: 16})) {}
+    }, error => error instanceof ProviderError && error.code === 'stream_limit');
+  }
+});
+
+test('SSE timeouts return even when transport cancellation never settles', async () => {
+  let cancelRequested = false;
+  let finishCleanup!: () => void;
+  const cleanup = new Promise<void>(resolve => {finishCleanup = resolve;});
+  const response = new Response(new ReadableStream({cancel() {cancelRequested = true; return cleanup;}}));
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await assert.rejects(Promise.race([
+      (async () => {for await (const _event of readSse(response, signal(), {idleMs: 10})) {}})(),
+      new Promise<never>((_resolve, reject) => {timer = setTimeout(() => reject(new Error('transport cleanup blocked timeout')), 500);}),
+    ]), error => error instanceof ProviderError && error.code === 'provider_timeout');
+    assert.equal(cancelRequested, true);
+    assert.equal(response.body!.locked, false);
+  } finally {clearTimeout(timer); finishCleanup();}
+});
+
 test('Responses loop preserves reasoning and exact function outputs before the next turn', async () => {
   const bodies: Record<string, unknown>[] = [];
   let calls = 0;

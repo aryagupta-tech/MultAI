@@ -128,12 +128,14 @@ export class ProjectRegistry {
     if(top.code||!top.stdout.trim())throw new ProjectError('NOT_GIT','This folder isn’t a git repository. Run “git init” and make a first commit in it, then add it again.');
     const root=await realpath(top.stdout.trim());
     const status=await gitStatus(root);
-    const records=await this.load();
-    const existing=Object.entries(records).find(([,record])=>record.root===root);
-    const projectId=existing?.[0]??randomUUID();
-    records[projectId]={root,name:path.basename(root)};
-    await this.save(records);
-    return {projectId,name:path.basename(root),root,git:status};
+    return serial(this.file(),async()=>{
+      const records=await this.load();
+      const existing=Object.entries(records).find(([,record])=>record.root===root);
+      const projectId=existing?.[0]??randomUUID();
+      records[projectId]={root,name:path.basename(root)};
+      await this.save(records);
+      return {projectId,name:path.basename(root),root,git:status};
+    });
   }
   async get(projectId:string):Promise<ProjectRecord>{
     const record=(await this.load())[projectId];

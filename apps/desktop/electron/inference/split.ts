@@ -2,7 +2,7 @@
 // git worktree branched from the chat's current work, then merged back into the chat's worktree.
 // Everything here is plain git and text; the coordinator runs the agents and their approvals.
 import {randomUUID} from 'node:crypto';
-import {mkdir,rm,unlink} from 'node:fs/promises';
+import {mkdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {z} from 'zod';
 import {git,safeRelative,snapshotTree} from './projects';
@@ -145,15 +145,13 @@ export async function applyCommit(root:string, from:string, to:string):Promise<s
     const file = safeRelative(changes[i + 1]!);
     (changes[i] === 'D' ? deleted : written).push(file);
   }
-  for (const file of deleted) await rm(path.join(root, file), {force: true});
-  if (written.length) {
-    const index = `${root}.apply-${randomUUID()}.index`;
-    const env = {GIT_INDEX_FILE: index};
-    try {
-      await git(root, ['read-tree', to], {env});
-      await git(root, ['checkout-index', '--force', '--', ...written], {env});
-    } finally {await unlink(index).catch(() => undefined);}
-  }
+  if (!written.length && !deleted.length) return [];
+  // The host can edit the chat while the merge is computed. Git validates the entire patch before
+  // changing files, so a late conflicting edit (or newly created file) leaves every file intact.
+  // Unlike force-checkout, this also handles file/directory transitions without touching the index.
+  const patch = (await git(root, ['diff', '--binary', '--no-color', '--no-ext-diff', '--no-renames', from, to])).stdout;
+  const applied = await git(root, ['apply', '--whitespace=nowarn', '-'], {input: patch, allowFail: true});
+  if (applied.code) throw new SplitError('MERGE_CHANGED', 'The chat’s files changed while the agents’ work was being merged. Nothing was applied. Review the files before trying again.');
   return [...written, ...deleted];
 }
 

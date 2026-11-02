@@ -1,4 +1,28 @@
-# Verification · 29 October 2026
+# Verification · 2 November 2026
+
+The current combined `main` checkout was reviewed directly; no historical branch or application changes were reapplied. Baseline: **303 passing tests**. After the edge-case regressions and fixes: **320 passing tests — 63 backend, 199 desktop, 58 runtime; zero failures or skips**. `npm run test:integration` used a disposable PostgreSQL 18 container without changing the existing development database. Root typecheck, build and `git diff --check` passed on Node 24.22.0/macOS arm64.
+
+## Edge cases verified in this pass
+
+- Replay list/revoke revalidate authentication within the transaction; a full session still permits revocation of all 20 public watch links.
+- Typing expires while other users keep sending presence updates; multiple devices report the latest viewed file instead of connection order.
+- Parallel agents preserve conflicting host edits when applying their merge, including binary files and file/directory transitions. Stop waits for sibling tasks to finish unwinding before deleting their worktrees, and authorization is checked again before applying.
+- Concurrent project registration preserves both records and reuses the same ID for the same project.
+- Pending microphone grants cannot start a canceled recording; repeated clicks request permission once. Audio initialization failure releases the microphone. Canceled or previous-account transcripts cannot modify drafts or clear a newer transcription's busy state; rejected IPC calls restore the controls.
+- Large and JSON-escaped shell output completes within the durable journal limit and replays without executing again. Unicode truncation respects the byte limit.
+- SSE limits count UTF-8 bytes; a hung transport cancellation does not defeat the stream deadline.
+
+The complete suites also exercised existing OAuth/connection rejection, permission and revocation boundaries, one-use approvals, journal recovery, path confinement, provider stream failures, project worktrees, projections and composer behavior. Backend CI now runs on `main` pushes as well as backend pushes and pull requests.
+
+## Native checks and limits
+
+The compiled Electron 44.9.3 development app was exercised with a disposable profile against the existing `https://api.multai.si` health endpoint. Renderer mounting, preload/IPC, sandbox/context isolation, unavailable renderer Node, signed-out inference denial, untrusted-window rejection, database readiness and an actual macOS Keychain encryption/decryption round trip passed. The local API on port 4310 was not running, so its first health-dependent smoke failed before using the hosted endpoint.
+
+This pass does not establish exhaustive coverage of every possible edge case. No real provider inference or interactive Google/ChatGPT consent was performed, no deployed service was changed, and Windows/Linux installer acceptance remains a separate CI check. The native harness stubs OS protocol registration and does not verify a real browser sign-in callback. The older evidence below is historical, not a statement of today's deployment state.
+
+---
+
+# Historical verification · 29 October 2026
 
 Evidence belongs to this new implementation in the isolated backend checkout. Tooling uses Node **v24.22.0**; the native smoke used Electron **44.9.3** on **macOS arm64**. No historical test counts, older installers or copied application binaries establish acceptance for this build.
 

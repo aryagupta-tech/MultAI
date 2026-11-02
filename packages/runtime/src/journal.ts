@@ -19,6 +19,7 @@ export interface DispatchTicket {requestId: string; fingerprint: string; attempt
 export type Reservation = {kind: 'execute'; ticket: DispatchTicket} | {kind: 'completed'; result: JsonValue};
 interface StoredEffect {descriptor: string; fingerprint: string; state: EffectState; approval: ApprovalState; result: string | null; attempt_id: string | null}
 export interface OutboundEvent {id: string; payload: JsonValue; createdAt: number}
+export const MAX_EFFECT_RESULT_BYTES = 65_536;
 
 /** Establish privacy before SQLite can write a header, schema or scope metadata. */
 function openPrivateJournalFile(filename: string): number {
@@ -231,7 +232,7 @@ export class ExecutionJournal {
 
   complete(ticket: DispatchTicket, result: JsonValue, authority: Authority): void {
     const encodedResult = canonicalJson(result);
-    if (Buffer.byteLength(encodedResult) > 65_536) fail('RESULT_TOO_LARGE', 'Effect results are limited to 64 KiB');
+    if (Buffer.byteLength(encodedResult) > MAX_EFFECT_RESULT_BYTES) fail('RESULT_TOO_LARGE', 'Effect results are limited to 64 KiB');
     let authorityError: unknown;
     this.atomic(() => {
       const stored = this.stored(ticket.requestId);

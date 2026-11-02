@@ -9,18 +9,19 @@ export type PresenceSender = (message: {type: 'presence'; participants: Presence
 const TYPING_MS = 6_000;
 const MAX_PER_SECOND = 4;
 
-interface Connection {userId: string; send: PresenceSender; typingUntil: number; viewing: string | null; recent: number[]}
+interface Connection {userId: string; send: PresenceSender; typingUntil: number; viewing: string | null; viewingOrder: number; recent: number[]}
 
 export class PresenceHub {
   private readonly sessions = new Map<string, Map<object, Connection>>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
+  private viewingOrder = 0;
   constructor(private readonly clock: () => number = Date.now) {}
 
   /** Adds a socket and tells everyone; the returned function removes it. */
   join(sessionId: string, key: object, userId: string, send: PresenceSender): () => void {
     let connections = this.sessions.get(sessionId);
     if (!connections) this.sessions.set(sessionId, connections = new Map());
-    connections.set(key, {userId, send, typingUntil: 0, viewing: null, recent: []});
+    connections.set(key, {userId, send, typingUntil: 0, viewing: null, viewingOrder: 0, recent: []});
     this.broadcast(sessionId);
     return () => {
       const current = this.sessions.get(sessionId);
@@ -41,9 +42,10 @@ export class PresenceHub {
     const typingUntil = update.typing ? now + TYPING_MS : 0;
     const changed = (typingUntil > now) !== (connection.typingUntil > now) || update.viewing !== connection.viewing;
     connection.typingUntil = typingUntil;
+    if (update.viewing !== connection.viewing) connection.viewingOrder = ++this.viewingOrder;
     connection.viewing = update.viewing;
     if (changed) this.broadcast(sessionId);
-    if (update.typing) this.expireLater(sessionId);
+    this.expireLater(sessionId);
     return true;
   }
 
@@ -51,10 +53,14 @@ export class PresenceHub {
   snapshot(sessionId: string): PresenceEntry[] {
     const now = this.clock();
     const people = new Map<string, PresenceEntry>();
+    const latestView = new Map<string, number>();
     for (const connection of this.sessions.get(sessionId)?.values() ?? []) {
       const entry = people.get(connection.userId) ?? {userId: connection.userId, typing: false, viewing: null};
       entry.typing ||= connection.typingUntil > now;
-      entry.viewing = connection.viewing ?? entry.viewing;
+      if (connection.viewing !== null && connection.viewingOrder > (latestView.get(connection.userId) ?? -1)) {
+        entry.viewing = connection.viewing;
+        latestView.set(connection.userId, connection.viewingOrder);
+      }
       people.set(connection.userId, entry);
     }
     return [...people.values()];
@@ -71,7 +77,19 @@ export class PresenceHub {
   private expireLater(sessionId: string): void {
     const previous = this.timers.get(sessionId);
     if (previous) clearTimeout(previous);
-    const timer = setTimeout(() => {this.timers.delete(sessionId); this.broadcast(sessionId);}, TYPING_MS + 50);
+    this.timers.delete(sessionId);
+    const now = this.clock();
+    const deadlines = [...(this.sessions.get(sessionId)?.values() ?? [])].map(connection => connection.typingUntil).filter(deadline => deadline > 0);
+    if (!deadlines.length) return;
+    // Expire the earliest typist, even when somebody else keeps sending updates.
+    const timer = setTimeout(() => {
+      this.timers.delete(sessionId);
+      for (const connection of this.sessions.get(sessionId)?.values() ?? []) {
+        if (connection.typingUntil <= this.clock()) connection.typingUntil = 0;
+      }
+      this.broadcast(sessionId);
+      this.expireLater(sessionId);
+    }, Math.max(0, Math.min(...deadlines) - now + 50));
     timer.unref();
     this.timers.set(sessionId, timer);
   }

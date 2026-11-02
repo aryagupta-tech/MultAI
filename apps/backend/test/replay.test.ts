@@ -2,9 +2,51 @@ import assert from 'node:assert/strict';
 import {randomBytes, randomUUID} from 'node:crypto';
 import {test} from 'node:test';
 import {CollaborationService} from '../src/collaboration.js';
+import {ReplayService} from '../src/replay.js';
 import {createTestContext, seedActor} from './helpers.js';
 
 const headers = (identity: {token: string}) => ({authorization: `Bearer ${identity.token}`});
+
+test('replay management revalidates a previously authenticated actor', async t => {
+  const ctx = await createTestContext(); t.after(() => ctx.close());
+  const owner = await seedActor(ctx.db);
+  const collaboration = new CollaborationService(ctx.db);
+  const service = new ReplayService(ctx.db);
+  const created = await collaboration.createSession(owner.actor, {requestId: randomUUID(), message: {kind: 'discussion', text: 'Hello'}}) as {session: {id: string}};
+  const id = created.session.id;
+  const {replay} = await service.create(owner.actor, id, {});
+  for (const fence of ['session revoked', 'device revoked', 'session expired']) {
+    await ctx.db.query('UPDATE auth_sessions SET revoked_at=NULL, expires_at=now()+interval \'1 day\' WHERE id=$1', [owner.actor.authSessionId]);
+    await ctx.db.query('UPDATE devices SET revoked_at=NULL WHERE id=$1', [owner.actor.deviceId]);
+    if (fence === 'session revoked') await ctx.db.query('UPDATE auth_sessions SET revoked_at=now() WHERE id=$1', [owner.actor.authSessionId]);
+    if (fence === 'device revoked') await ctx.db.query('UPDATE devices SET revoked_at=now() WHERE id=$1', [owner.actor.deviceId]);
+    if (fence === 'session expired') await ctx.db.query("UPDATE auth_sessions SET expires_at=now()-interval '1 second' WHERE id=$1", [owner.actor.authSessionId]);
+    await assert.rejects(service.list(owner.actor, id), {code: 'unauthorized'}, fence);
+    await assert.rejects(service.revoke(owner.actor, id, replay.id), {code: 'unauthorized'}, fence);
+    assert.equal((await service.view({token: replay.token})).replay.title, 'Hello');
+  }
+});
+
+test('all public replay links can be revoked when session content reaches capacity', async t => {
+  const ctx = await createTestContext(); t.after(() => ctx.close());
+  const owner = await seedActor(ctx.db);
+  const collaboration = new CollaborationService(ctx.db);
+  const service = new ReplayService(ctx.db);
+  const created = await collaboration.createSession(owner.actor, {requestId: randomUUID(), message: {kind: 'discussion', text: 'Hello'}}) as {session: {id: string}};
+  const id = created.session.id;
+  const links = [];
+  for (let i = 0; i < 20; i++) links.push((await service.create(owner.actor, id, {})).replay);
+  await assert.rejects(service.create(owner.actor, id, {}), {code: 'replay_capacity'});
+  // Synthetic capacity fixture, as in the membership/invitation capacity regression.
+  await ctx.db.query('UPDATE sessions SET event_sequence=99744 WHERE id=$1', [id]);
+  for (const replay of links) {
+    await service.revoke(owner.actor, id, replay.id);
+    await assert.rejects(service.view({token: replay.token}), {code: 'replay_unavailable'});
+  }
+  assert.deepEqual((await service.list(owner.actor, id)).replays, []);
+  assert.equal((await collaboration.getSession(owner.actor, id)).session.lastSequence, 99764);
+  await assert.rejects(service.create(owner.actor, id, {}), {code: 'session_capacity'});
+});
 
 test('replay links: host-only, cleaned up, paged, revocable and expiring', async t => {
   const ctx = await createTestContext(); t.after(() => ctx.close());
