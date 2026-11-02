@@ -714,7 +714,8 @@ export class HostCoordinator {
           }
           // The model's last paragraph is its summary; earlier ones narrate its steps.
           const summary=redactText(result.text,running.secrets).trim().split(/\n\s*\n/u).filter(Boolean).at(-1)??'';
-          await this.publish(laneRun,'activity.completed',{tool:'lane',state:'done',summary:`Finished: ${lane.title}`,detail:summary.slice(0,4000)});
+          const unchanged=lane.files.length>0&&!(await laneResult(lane,base));
+          await this.publish(laneRun,'activity.completed',{tool:'lane',state:'done',summary:unchanged?`Finished without changing ${lane.files.join(', ')}`:`Finished: ${lane.title}`,detail:summary.slice(0,4000)});
           return {lane,ok:true as const,summary};
         }catch(error){
           if(signal.aborted)throw error;
@@ -752,7 +753,7 @@ export class HostCoordinator {
       // 6. One report for everyone.
       const lines=outcomes.map(outcome=>{
         const result=results.find(item=>item.lane===outcome.lane);
-        const status=!outcome.ok?'stopped':!result?'finished with no changes':merge.conflicts.some(item=>item.result===result)?(resolved.includes(outcome.lane.index)?'merged after a final pass':'not merged (conflict)'):'merged';
+        const status=!outcome.ok?'stopped':!result?(outcome.lane.files.length?`didn’t change ${outcome.lane.files.map(file=>`\`${file}\``).join(', ')}`:'finished with no changes'):merge.conflicts.some(item=>item.result===result)?(resolved.includes(outcome.lane.index)?'merged after a final pass':'not merged (conflict)'):'merged';
         return `- **Agent ${outcome.lane.index} · ${outcome.lane.title}**: ${status}${result?.files.length?` (${result.files.slice(0,8).map(file=>`\`${file}\``).join(', ')}${result.files.length>8?', …':''})`:''}\n  ${outcome.summary.replace(/\s+/gu,' ').slice(0,500)}`;
       });
       return `**${lanes.length} agents worked on this in parallel.**\n\n${lines.join('\n')}\n\n${changed.length||resolved.length?'The combined changes are in this chat’s worktree. Review them in Changes; *Undo the last run* puts everything back as it was before the split.':'Nothing changed in this chat’s worktree.'}`;

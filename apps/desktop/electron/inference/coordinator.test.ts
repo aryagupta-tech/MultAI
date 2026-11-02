@@ -410,6 +410,21 @@ describe('parallel agents', () => {
     expect(events(x).find(event => event.payload.tool === 'merge')?.payload.summary).toBe('Merged 2 agents’ work into this chat');
   });
 
+  test('an agent that never changes its files says so instead of looking done', async () => {
+    const x = await fixture();
+    await project(x);
+    x.state.instruction = '/split Two parts';
+    runtime.run.mockImplementation(async (options: RunAgentOptions) => {
+      if (options.system === PLAN_SYSTEM) return {text: '{"parts":[{"title":"A","task":"a","files":["a.js"]},{"title":"Docs","task":"b","files":["README.md"]}]}', iterations: 1};
+      const lane = Number(/You are agent (\d) of 2/u.exec(String(options.messages.find(message => /You are agent/u.test(String(message.content)))?.content))?.[1]);
+      if (lane === 1) await options.executeTool!(write('a.js', '// a\n'), options.signal);
+      return {text: 'All done.', iterations: 1};
+    });
+    await x.host.run(x.input); await x.terminal();
+    expect(events(x).find(event => event.payload.tool === 'lane' && event.payload.lane === 2)?.payload.summary).toBe('Agent 2 · Finished without changing README.md');
+    expect(events(x).find(event => event.type === 'agent.completed')!.payload.text).toMatch(/Agent 2 · Docs\*\*: didn’t change `README\.md`/u);
+  });
+
   test('needs a project, Build mode and a task', async () => {
     for (const [setup, code] of [['private', 'SPLIT_NEEDS_PROJECT'], ['plan', 'SPLIT_NEEDS_BUILD'], ['empty', 'SPLIT_NEEDS_TASK']] as const) {
       const x = await fixture();
