@@ -16,7 +16,7 @@ function listen<T>(channel: string) {
 const ops: ServiceOp[] = [
   'review',
   'health', 'authState', 'signIn', 'cancelSignIn', 'signOut', 'listSessions', 'getSession', 'readEvents', 'createSession',
-  'postMessage', 'setMode', 'createInvitation', 'joinInvitation', 'listJoinRequests', 'admit', 'revokeParticipant',
+  'postMessage', 'setMode', 'createInvitation', 'joinInvitation', 'listJoinRequests', 'admit', 'revokeParticipant', 'leaveSession',
   'deleteSession', 'saveDecision', 'subscribe', 'unsubscribe', 'sendPresence', 'createReplay', 'listReplays', 'revokeReplay',
   'steerInstruction', 'removeInstruction',
 ];
@@ -44,6 +44,7 @@ const bridge: DesktopBridge = {
   writeClipboard:(text)=>ipcRenderer.invoke(IPC.clipboard,text),
   controller: Object.freeze(controller),
   getBuildInfo: () => ipcRenderer.invoke(IPC.buildInfo),
+  checkForUpdate: () => ipcRenderer.invoke(IPC.updateCheck),
   pickProjectFolder: () => ipcRenderer.invoke(IPC.pickFolder),
   service: Object.freeze(service),
   inference:Object.freeze({
@@ -87,6 +88,7 @@ const bridge: DesktopBridge = {
     deleteSkill:(name)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'deleteSkill',[name]),
     compact:(input)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'compact',[input]),
     contextUsage:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'contextUsage',[sessionId]),
+    usageLimits:(connectionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'usageLimits',[connectionId]),
     transcribe:(audio)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'transcribe',[audio]),
     segment:(image,point)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'segment',[image,point]),
     segmentAvailable:()=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'segmentAvailable',[]),

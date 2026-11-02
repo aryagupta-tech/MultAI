@@ -315,7 +315,8 @@ test('start and conflict decisions bind the exact queue the owner reviewed', asy
   assert.equal((await submit(ctx, phone, staleStart)).json().error.code, 'stale_resolution');
   view = await detail(ctx, phone, target.id);
   assert.equal(view.queue.requiresReview, true);
-  assert.deepEqual(view.queue.pending.map((item: {author: string}) => item.author), ['Host', `Teammate ${collaborator.actor.userId.replace(/-/gu, '').slice(0, 4).toUpperCase()}`]);
+  // Authors show their names; the owner is marked as the host.
+  assert.deepEqual(view.queue.pending.map((item: {author: string}) => item.author), ['Synthetic owner (host)', 'Synthetic collaborator']);
   const plainStart = await signed(phone, {sessionId: target.id, runGeneration: view.session.runtimeGeneration, kind: 'start', target: {instructionId: target.instructionId, queueFingerprint: view.queue.fingerprint}});
   assert.equal((await submit(ctx, phone, plainStart)).json().error.code, 'instruction_conflict', 'conflicting directions need a decision');
   const resolve = await signed(phone, {sessionId: target.id, runGeneration: view.session.runtimeGeneration, kind: 'resolve', target: {instructionId: target.instructionId, queueFingerprint: view.queue.fingerprint, resolution: 'Use integer cents.'}});

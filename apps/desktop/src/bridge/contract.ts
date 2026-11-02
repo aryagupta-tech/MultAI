@@ -82,6 +82,7 @@ export interface ServiceApi {
   listJoinRequests(sessionId: string): Promise<Result<{ requests: WireJoinRequest[] }>>;
   admit(sessionId: string, requestId: string, role: 'collaborator' | 'viewer'): Promise<Result<{ admitted: true; userId: string; role: string }>>;
   revokeParticipant(sessionId: string, userId: string): Promise<Result<{ revoked: true }>>;
+  leaveSession(sessionId: string): Promise<Result<{ left: true }>>;
   deleteSession(sessionId: string): Promise<Result<null>>;
   saveDecision(sessionId:string,input:{text:string;reason?:string;replacesId?:string}):Promise<Result<{id:string}>>;
   subscribe(sessionId: string, after: number): Promise<void>;
@@ -105,6 +106,8 @@ export interface ServiceApi {
 export interface DesktopBridge {
   writeClipboard(text:string):Promise<Result<null>>;
   getBuildInfo(): Promise<BuildInfo>;
+  /** A newer published MultAI release, or null when this one is current or the check couldn't run. */
+  checkForUpdate(): Promise<{ version: string; url: string } | null>;
   pickProjectFolder(): Promise<FolderPick>;
   service: ServiceApi;
   inference: InferenceConnectionsApi & HostExecutionApi;
@@ -116,6 +119,7 @@ export const IPC = {
   clipboard:'multai:clipboard-write',
   joinReady:'multai:join-ready',
   buildInfo: 'multai:build-info',
+  updateCheck: 'multai:update-check',
   pickFolder: 'multai:pick-folder',
   invoke: 'multai:service',
   authChanged: 'multai:auth-changed',
@@ -130,5 +134,5 @@ export type ServiceOp =
   | 'review'
   | 'health' | 'authState' | 'signIn' | 'cancelSignIn' | 'signOut' | 'listSessions' | 'getSession' | 'readEvents'
   | 'createSession' | 'postMessage' | 'setMode' | 'createInvitation' | 'joinInvitation' | 'listJoinRequests' | 'admit'
-  | 'revokeParticipant' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe' | 'sendPresence'
+  | 'revokeParticipant' | 'leaveSession' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe' | 'sendPresence'
   | 'createReplay' | 'listReplays' | 'revokeReplay' | 'steerInstruction' | 'removeInstruction';

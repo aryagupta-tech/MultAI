@@ -8,6 +8,7 @@ import { recencyBucket } from '../model/format';
 import { fuzzyScore } from '../model/fuzzy';
 import type { SessionSummary } from '../model/types';
 import { Avatar, Button, IconButton, Kbd, Menu, cx, shortcutText } from '../ui/primitives';
+import { SidebarStatus } from './SidebarStatus';
 import { LogoMark } from '../ui/Logo';
 
 export function Sidebar() {
@@ -151,6 +152,7 @@ export function Sidebar() {
             <span><strong>Demo data</strong> · not a live session</span>
           </div>
         )}
+        {dataMode === 'live' && <SidebarStatus />}
         {account && (
           <Menu
             label="Account"

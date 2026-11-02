@@ -41,7 +41,7 @@ describe.skipIf(!existsSync(chromium.executablePath()))('browser invitations',()
       if(path==='/v1/web/auth/start')return json({flowId:FLOW,authorizationUrl:'https://accounts.example.test/fixture',expiresAt:new Date(Date.now()+300000).toISOString()});
       if(path==='/v1/web/auth/exchange'){exchangeCount++;signedIn=true;return json(session);}
       if(path==='/v1/me')return json({id:ID,displayName:'Synthetic teammate',workspaceId:ID,deviceId:ID});
-      if(path==='/v1/invitations/join'){joinCount++;expect(request.postDataJSON()).toEqual({token:TOKEN});return json({status:'pending',sessionId:ID});}
+      if(path==='/v1/invitations/join'){joinCount++;expect(request.postDataJSON()).toEqual({token:TOKEN,name:'Synthetic teammate'});return json({status:'pending',sessionId:ID});}
       return json({error:{code:'unexpected_fixture_call',message:path}},404);
     });
   });

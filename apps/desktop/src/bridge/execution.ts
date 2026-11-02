@@ -12,6 +12,7 @@ export type HostApproval={id:string;sessionId:string;reason:string;expiresAt:str
 /** Where a project session's worktree came from. Paths never reach the renderer. */
 export interface WorkSummary {projectName:string;branch:string;baseBranch:string|null;baseCommit:string;fromCommit?:string;carried:boolean;kept:string|null;pushedTo:string|null;remote:string|null}
 export interface SkillInfo {name:string;description:string;body:string;source:'project'|'personal'}
+export interface UsageLimits {windows:{label:string;usedPercent:number;resetsAt?:number}[];at:number}
 export interface ContextUsage {used:number;limit:number;compactedAt:string|null}
 export interface Checkpoint {commit:string;at:string;instruction:string}
 export interface UndoPreview {checkpoint:Checkpoint;files:{path:string;status:'added'|'modified'|'deleted'}[]}
@@ -58,6 +59,8 @@ export interface HostExecutionApi {
   /** Summarizes the conversation so later runs start from the summary; it's posted as a brief too. */
   compact(input:{sessionId:string;connectionId:string;model:string}):Promise<Result<{sequence:number;model:string}>>;
   contextUsage(sessionId:string):Promise<Result<ContextUsage|null>>;
+  /** What the provider last reported about this connection's usage limits. */
+  usageLimits(connectionId:string):Promise<Result<UsageLimits|null>>;
   /** Speech to text with the host's Meta (Muse Voice Transcribe) or OpenAI connection. `audio` is base64 24 kHz mono PCM16. */
   transcribe(audio:string):Promise<Result<{text:string;provider:'meta'|'openai'}>>;
   /** SAM 3.1 on the host's Meta connection: the bounds of the element at this pixel of a screenshot. */

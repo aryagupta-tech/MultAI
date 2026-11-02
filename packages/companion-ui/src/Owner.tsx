@@ -3,10 +3,11 @@
 // the screen says "waiting for the desktop" until the desktop acknowledges it. Nothing is ever shown as
 // done because the phone sent it.
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {ApiError, describeStatus, formatPairingCode, hostAvailability, normalizePairingCode, personLabel, projectTimeline, type ApiClient, type ControlSession, type Controller, type ControllerState, type LedgerEntry, type WireEvent} from '@multai/companion-core';
+import {ApiError, type Account, type Me, describeStatus, formatPairingCode, hostAvailability, normalizePairingCode, personLabel, projectTimeline, type ApiClient, type ControlSession, type Controller, type ControllerState, type LedgerEntry, type WireEvent} from '@multai/companion-core';
 import {Banner, Button, Empty, Field, Header, StatusPill, Tabs, cx, errorText, relative, useConfirm} from './ui';
 import {useNow, usePoll} from './hooks';
 import {Timeline} from './Timeline';
+import {Composer} from './Participant';
 
 const KIND_LABEL: Record<LedgerEntry['kind'], string> = {start: 'Start instruction', resolve: 'Resolve directions', stop: 'Stop', steer: 'Steer', approve: 'Approve action', reject: 'Reject action'};
 
@@ -94,7 +95,7 @@ export function OwnerSessions({controller, open, resume}: {controller: Controlle
 
 type Tab = 'control' | 'activity';
 
-export function OwnerSession({controller, sessionId, back, resume}: {controller: Controller; api: ApiClient; sessionId: string; back: () => void; resume: number}) {
+export function OwnerSession({controller, api, account, me, sessionId, back, resume}: {controller: Controller; api: ApiClient; account: Account; me: Me | null; sessionId: string; back: () => void; resume: number}) {
   const [detail, setDetail] = useState<ControlSession | null>(null);
   const [events, setEvents] = useState<WireEvent[]>([]);
   const cursor = useRef(0);
@@ -105,9 +106,16 @@ export function OwnerSession({controller, sessionId, back, resume}: {controller:
   const [selected, setSelected] = useState<string | null>(null);
   const [resolution, setResolution] = useState('');
   const [preview, setPreview] = useState<string | null>(null);
+  // A prompt typed on this phone is selected as soon as the queue shows it, ready to start or steer.
+  const [typed, setTyped] = useState<string | null>(null);
   const [ask, confirmNode] = useConfirm();
   const now = useNow(1000);
   useEffect(() => controller.onLedger(setLedger), [controller]);
+  useEffect(() => {
+    if (!typed) return;
+    const mine = [...(detail?.queue.pending ?? [])].reverse().find(item => item.text === typed);
+    if (mine) {setSelected(mine.id); setResolution(mine.text); setTyped(null);}
+  }, [typed, detail?.queue.pending]);
 
   const poll = usePoll(async () => {
     let next: ControlSession;
@@ -135,7 +143,7 @@ export function OwnerSession({controller, sessionId, back, resume}: {controller:
     setPreview(null);
     if (exact?.preview) void controller.decryptPreview(exact.preview, {actionId: exact.actionId, fingerprint: exact.fingerprint}).then(setPreview);
   }, [controller, exact?.actionId, exact?.fingerprint, exact?.preview]);
-  const nameOf = useCallback((userId: string | null) => personLabel(userId, null, detail?.participants.find(p => p.role === 'owner')?.userId ?? null), [detail?.participants]);
+  const nameOf = useCallback((userId: string | null) => personLabel(userId, null, detail?.participants.find(p => p.role === 'owner')?.userId ?? null, new Map((detail?.participants ?? []).map(p => [p.userId, p.label.replace(/ \(host\)$/u, '')]))), [detail?.participants]);
   const items = useMemo(() => projectTimeline(events, nameOf), [events, nameOf]);
 
   if (!detail) return <><Header title="Owner control" back={back} />{poll.failing ? <Banner tone="error" title="Can’t load this session">Check your connection. Retrying.</Banner> : <p className="c-muted c-pad">Loading…</p>}</>;
@@ -156,6 +164,12 @@ export function OwnerSession({controller, sessionId, back, resume}: {controller:
   };
   const pending = detail.queue.pending;
   const chosen = pending.find(item => item.id === selected) ?? null;
+  const ownerId = detail.participants.find(person => person.role === 'owner')?.userId ?? null;
+  const canType = Boolean(me && ownerId && me.id === ownerId);
+  const postMessage = async (kind: 'discussion' | 'instruction', text: string, requestId: string) => {
+    await account.authorized(token => api.request('POST', `/v1/sessions/${sessionId}/messages`, {auth: {type: 'bearer', token}, body: {requestId, kind, text}}));
+    if (kind === 'instruction') setTyped(text);
+  };
 
   return (
     <>
@@ -231,6 +245,17 @@ export function OwnerSession({controller, sessionId, back, resume}: {controller:
                 </div>
               )}
               {!chosen && pending.length > 0 && <p className="c-muted">Select a direction to act on it.</p>}
+            </section>
+
+            <section className="c-card" aria-labelledby="prompt-title">
+              <h2 className="c-h2" id="prompt-title">New prompt</h2>
+              {canType ? <>
+                <p className="c-muted">An instruction joins the queue above, already selected: then Start it, or Steer it into the running agent. A discussion message goes to the team.</p>
+                <Composer onSend={postMessage} />
+              </> : me ? <p className="c-muted">You’re signed in as {me.displayName}, not this desktop’s owner. Sign in with the owner’s Google account to type prompts here.</p> : <>
+                <p className="c-muted">Sign in with the same Google account as your desktop to type new prompts and messages from this phone. Pairing still decides what runs.</p>
+                <Button onClick={() => void account.beginSignIn().catch(failure => setProblem(errorText(failure)))}>Sign in with Google</Button>
+              </>}
             </section>
 
             <section className="c-card" aria-labelledby="requests-title" aria-live="polite">

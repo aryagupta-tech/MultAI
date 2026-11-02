@@ -20,6 +20,7 @@ import {TerminalHost} from './inference/terminal';
 import {McpError,McpHost,newServerId,validServer,type McpServer} from './inference/mcp';
 import {SecureConnectionStore} from './inference/secure-store';
 import {electronLook} from './inference/look';
+import {latestRelease} from './update';
 
 // Injected by scripts/build-electron.mjs.
 declare const __BUILD_INFO__: Omit<BuildInfo, 'platform' | 'serviceOrigin'>;
@@ -169,6 +170,10 @@ function registerIpc(): void {
   ipcMain.handle(IPC.joinReady,event=>{
     assertTrustedSender(event);joinListenerReady=true;
     if(pendingJoinToken){const token=pendingJoinToken;pendingJoinToken=null;send(IPC.joinLink,token);}
+  });
+  ipcMain.handle(IPC.updateCheck, async (event) => {
+    assertTrustedSender(event);
+    return isRelease ? latestRelease(__BUILD_INFO__.version) : null;
   });
   ipcMain.handle(IPC.buildInfo, (event): BuildInfo => {
     assertTrustedSender(event);

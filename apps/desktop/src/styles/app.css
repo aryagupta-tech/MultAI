@@ -1251,3 +1251,14 @@ body.is-resizing .app { transition: none; }
 .phones-meta span { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .phones-audit { margin: 10px 0 0; padding-left: 18px; font-size: var(--fs-xs); color: var(--text-2); display: grid; gap: 2px; max-height: 200px; overflow: auto; }
 .phones-audit time { font-family: var(--font-mono); color: var(--text-3); margin-right: 6px; }
+
+/* ---------------------------------------------------------------- Sidebar status: update and usage */
+.sidebar-status { display: flex; align-items: center; gap: 8px; padding: 2px 6px 6px; }
+.update-dot { width: 28px; height: 28px; border-radius: 50%; border: 0; display: inline-grid; place-items: center; background: #3b82f6; color: #fff; cursor: pointer; }
+.update-dot:hover { background: #2563eb; }
+.usage-ring { width: 28px; height: 28px; border-radius: 50%; border: 0; display: inline-grid; place-items: center; background: transparent; color: var(--text-2); cursor: pointer; }
+.usage-ring:hover { background: var(--surface-2); }
+.usage-ring-track { fill: none; stroke: var(--border-strong); stroke-width: 2.5; }
+.usage-ring-fill { fill: none; stroke: var(--text-2); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dashoffset .3s ease; }
+.usage-ring.is-warn .usage-ring-fill { stroke: #f59e0b; }
+.usage-ring.is-danger .usage-ring-fill { stroke: var(--danger); }

@@ -1,12 +1,13 @@
 import {useEffect, useState} from 'react';
 import {
   Archive, Hammer, Laptop, ListChecks, MoreHorizontal, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Radio, Sparkles, MessageCircle, Link2,
+  Pencil, Pin, Play, Square, SquarePen, Trash2, UserPlus, GitBranch, Radio, Sparkles, MessageCircle, Link2, LogOut,
 } from 'lucide-react';
 import { useApp } from '../model/store';
 import type { SessionDetail } from '../model/types';
 import { Avatar, Button, IconButton, Menu, Segmented, cx, shortcutText } from '../ui/primitives';
 import * as execution from '../live/execution';
+import * as live from '../live/controller';
 import {refreshWork,useWork} from '../live/work';
 import {setTeamOpen,useTeam,useUnreadTeam} from './TeamPanel';
 import {getBridge} from '../bridge/client';
@@ -156,6 +157,10 @@ export function SessionHeader({ d }: { d: SessionDetail | null }) {
             { id: 'pin', label: summary?.pinned ? 'Unpin' : 'Pin to sidebar', icon: Pin, onSelect: () => app.togglePin(d.id) },
             { id: 'archive', label: 'Archive', icon: Archive, description: 'Hides it for you only', onSelect: () => app.setArchived(d.id, true) },
             { id: 'sep', separator: true },
+            ...(d.source === 'live' && d.role !== 'owner' ? [{
+              id: 'leave', label: 'Leave session…', icon: LogOut, danger: true, description: 'Coming back takes a new invitation',
+              onSelect: () => { if (window.confirm('Leave this session? You’ll need a new invitation from the host to come back.')) void live.leaveSession(d.id); },
+            }] : []),
             {
               id: 'delete', label: 'Delete shared session…', icon: Trash2, danger: true,
               disabled: !d.capabilities.delete ? 'Only the session owner can delete' : running ? 'Stop the agent before deleting' : false,

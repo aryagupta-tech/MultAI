@@ -43,7 +43,7 @@ const schemas={
   segment:z.tuple([z.string().min(1).max(12_000_000),z.object({x:z.number().int().min(0),y:z.number().int().min(0),width:z.number().int().min(1).max(20_000),height:z.number().int().min(1).max(20_000)}).strict()]),
   segmentAvailable:z.tuple([]),
   transcribe:z.tuple([z.string().min(1).max(Math.ceil(MAX_PCM_BYTES/3)*4).regex(/^[A-Za-z0-9+/]+={0,2}$/u)]),
-  compact:z.tuple([z.unknown()]),contextUsage:z.tuple([z.uuid()]),undoPreview:z.tuple([z.uuid()]),undo:z.tuple([z.uuid()]),
+  compact:z.tuple([z.unknown()]),contextUsage:z.tuple([z.uuid()]),usageLimits:z.tuple([z.uuid()]),undoPreview:z.tuple([z.uuid()]),undo:z.tuple([z.uuid()]),
   editors:z.tuple([]),mcpServers:z.tuple([]),mcpDelete:z.tuple([z.uuid()]),mcpTest:z.tuple([z.uuid()]),
   mcpSave:z.tuple([z.object({id:z.string().max(64),name:z.string().max(64),command:z.string().max(1024),args:z.array(z.string().max(4096)).max(64),env:z.record(z.string().max(128),z.string().max(8192)),enabled:z.boolean()}).strict()]),lockedActions:z.tuple([z.uuid()]),resolveLocked:z.tuple([z.uuid(),z.uuid(),z.enum(['happened','did_not_happen'])]),openIn:z.tuple([z.uuid(),z.enum(['vscode','cursor','zed','finder'])]),
 };
@@ -102,6 +102,7 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'deleteSkill':value=await coordinator.deleteSkill(values[0] as string);break;
       case 'compact':value=await coordinator.compact(values[0]);break;
       case 'contextUsage':value=await coordinator.contextUsage(values[0] as string);break;
+      case 'usageLimits':value=coordinator.usageLimits(values[0] as string);break;
       case 'transcribe':value=await transcribe(manager,coordinator,values[0] as string);break;
       case 'segmentAvailable':value=Boolean(metaConnection(await manager.list(),null));break;
       case 'segment':{

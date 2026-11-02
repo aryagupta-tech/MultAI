@@ -26,6 +26,8 @@ export interface WireParticipant {
   userId: string;
   role: WireRole;
   admittedAt: string;
+  /** The name they gave when joining, else their account name. */
+  name?: string;
 }
 
 export interface WireEvent {
@@ -56,6 +58,8 @@ export interface WireJoinRequest {
   id: string;
   userId: string;
   createdAt: string;
+  /** The name they gave when asking to join, else their account name. */
+  name?: string;
 }
 
 export type WireJoinResult =

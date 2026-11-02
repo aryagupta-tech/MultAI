@@ -23,7 +23,7 @@ export const sessionSchema = z.object({
 });
 export type Session = z.infer<typeof sessionSchema>;
 export const sessionListSchema = z.object({sessions: z.array(sessionSchema).max(100), cursor: uuid.nullable()});
-export const participantSchema = z.object({userId: uuid, role: roleSchema, admittedAt: iso});
+export const participantSchema = z.object({userId: uuid, role: roleSchema, admittedAt: iso, name: z.string().max(120).optional()});
 export const sessionDetailSchema = z.object({session: sessionSchema, participants: z.array(participantSchema).max(100)});
 
 export const eventSchema = z.object({id: uuid, sequence: z.number().int().positive(), type: z.string().max(100), actorId: uuid.nullable(), payload: z.unknown(), createdAt: iso});

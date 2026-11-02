@@ -3,7 +3,7 @@
 // running or approving anything on the desktop needs owner pairing, never this sign-in.
 import {useCallback, useMemo, useRef, useState} from 'react';
 import {acceptanceSchema, describeStatus, eventPageSchema, hostPresenceSchema, type HostPresence, personLabel, projectTimeline, screenshotsSchema, sessionDetailSchema, sessionListSchema, type Account, type Acceptance, type ApiClient, type Me, type Session, type SharedScreenshot, type WireEvent} from '@multai/companion-core';
-import {Banner, Button, Empty, Header, StatusPill, Tabs, cx, errorText, relative} from './ui';
+import {Banner, Button, Empty, Header, StatusPill, Tabs, cx, errorText, relative, useConfirm} from './ui';
 import {usePoll, useRequestId} from './hooks';
 import {Timeline} from './Timeline';
 import {Requirements, type ReviewInput} from './Requirements';
@@ -46,7 +46,7 @@ type Tab = 'activity' | 'people' | 'requirements' | 'screenshots';
 
 export function ParticipantSession({api, account, me, sessionId, back, resume}: {api: ApiClient; account: Account; me: Me; sessionId: string; back: () => void; resume: number}) {
   const [session, setSession] = useState<Session | null>(null);
-  const [participants, setParticipants] = useState<{userId: string; role: Session['role']}[]>([]);
+  const [participants, setParticipants] = useState<{userId: string; role: Session['role']; name?: string | undefined}[]>([]);
   const [events, setEvents] = useState<WireEvent[]>([]);
   const cursor = useRef(0);
   const [acceptance, setAcceptance] = useState<Acceptance | null>(null);
@@ -56,6 +56,8 @@ export function ParticipantSession({api, account, me, sessionId, back, resume}: 
   const [gone, setGone] = useState<string | null>(null);
   const [presence, setPresence] = useState<HostPresence | null>(null);
   const bearer = useCallback(<T,>(work: (token: string) => Promise<T>) => account.authorized(work), [account]);
+  const [ask, confirmNode] = useConfirm();
+  const [leaving, setLeaving] = useState(false);
 
   const poll = usePoll(async signal => {
     try {
@@ -87,11 +89,19 @@ export function ParticipantSession({api, account, me, sessionId, back, resume}: 
     setAcceptance(a); setShots(s.screenshots);
   }, 8_000, [sessionId, tab], resume);
 
-  const nameOf = useCallback((userId: string | null) => personLabel(userId, me, session?.ownerId ?? null), [me, session?.ownerId]);
+  const names = useMemo(() => new Map(participants.filter(p => p.name).map(p => [p.userId, p.name!])), [participants]);
+  const nameOf = useCallback((userId: string | null) => personLabel(userId, me, session?.ownerId ?? null, names), [me, session?.ownerId, names]);
   const items = useMemo(() => projectTimeline(events, nameOf), [events, nameOf]);
   const status = session ? describeStatus({sessionStatus: session.status, ...(presence ? {report: presence.report, connected: presence.connected} : {})}) : null;
   const canSend = session ? session.role !== 'viewer' : false;
   const act = async (work: () => Promise<unknown>) => {setError(null); try {await work();} catch (failure) {setError(errorText(failure));}};
+  // Leaving ends this account's access; coming back takes a new invitation from the host.
+  const leave = async () => {
+    if (leaving || !await ask('Leave this session? You’ll need a new invitation from the host to come back.')) return;
+    setLeaving(true); setError(null);
+    try {await bearer(token => api.request('POST', `/v1/sessions/${sessionId}/leave`, {auth: {type: 'bearer', token}, body: {}})); back();}
+    catch (failure) {setError(errorText(failure)); setLeaving(false);}
+  };
 
   if (gone) return <><Header title="Session" back={back} /><Banner tone="error" title="This session isn’t available">{gone}</Banner></>;
   return (
@@ -111,6 +121,9 @@ export function ParticipantSession({api, account, me, sessionId, back, resume}: 
             {participants.map(person => <li key={person.userId} className="c-list-row"><b>{nameOf(person.userId)}</b><span className="c-chip">{ROLE[person.role]}</span>{person.userId === session?.ownerId && <span className="c-muted">original host</span>}</li>)}
           </ul>
         )}
+        {tab === 'people' && session && session.ownerId !== me.id && (
+          <div className="c-pad"><Button variant="danger" busy={leaving} onClick={() => void leave()}>Leave session</Button></div>
+        )}
         {tab === 'requirements' && (
           <Requirements acceptance={acceptance} canPropose={canSend} canReview={canSend} running={session?.status === 'running'}
             onPropose={input => act(() => bearer(token => api.request('POST', `/v1/sessions/${sessionId}/acceptance/criteria`, {auth: {type: 'bearer', token}, body: input})))}
@@ -121,6 +134,7 @@ export function ParticipantSession({api, account, me, sessionId, back, resume}: 
       </main>
       {tab === 'activity' && canSend && session && <Composer onSend={(kind, text, requestId) => bearer(token => api.request('POST', `/v1/sessions/${sessionId}/messages`, {auth: {type: 'bearer', token}, body: {requestId, kind, text}}))} />}
       {tab === 'activity' && session?.role === 'viewer' && <p className="c-muted c-pad">You’re a viewer: you can read along but not send.</p>}
+      {confirmNode}
     </>
   );
 }

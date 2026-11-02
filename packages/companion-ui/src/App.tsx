@@ -118,7 +118,7 @@ export function CompanionApp({platform}: {platform: CompanionPlatform}) {
     case 'session': body = signedIn ? <ParticipantSession api={api} account={account} me={signedIn} sessionId={screen.id} back={back} resume={resume} /> : <SignInFirst go={go} />; break;
     case 'pair': body = <><Header title="Pair as owner" back={back} /><PairPhone controller={controller} {...(screen.code ? {initialCode: screen.code} : {})} onDone={() => go({name: 'owner'}, true)} /></>; break;
     case 'owner': body = paired ? <><Header title="Owner control" /><OwnerSessions controller={controller} open={id => go({name: 'owner-session', id})} resume={resume} /></> : <><Header title="Owner control" back={back} /><main className="c-main c-narrow"><p>This phone isn’t paired.</p><Button variant="primary" onClick={() => go({name: 'pair'})}>Pair as owner</Button></main></>; break;
-    case 'owner-session': body = <OwnerSession controller={controller} api={api} sessionId={screen.id} back={back} resume={resume} />; break;
+    case 'owner-session': body = <OwnerSession controller={controller} api={api} account={account} me={signedIn} sessionId={screen.id} back={back} resume={resume} />; break;
     case 'review': body = <GuestReview api={api} invitation={screen.token} back={() => go({name: 'home'}, true)} />; break;
     case 'join': body = <Join key={screen.token??'empty'} api={api} account={account} signedIn={Boolean(signedIn)} restoring={accountState.status==='restoring'} token={screen.token} go={go} remember={token=>joinIntent.remember(token)} clear={()=>joinIntent.clear()} />; break;
   }
@@ -203,6 +203,9 @@ function Join({api,account,signedIn,restoring,token,go,remember,clear}:{api:ApiC
   const [sessionId,setSessionId]=useState<string|null>(null);
   const busy=useRef(false),mounted=useRef(true);
   const identity=account.current;
+  // The name everyone in the session sees; starts as the Google account's name.
+  const [name,setName]=useState(identity.status==='signed-in'?identity.me.displayName:'');
+  useEffect(()=>{if(identity.status==='signed-in')setName(previous=>previous||identity.me.displayName);},[identity]);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   useEffect(()=>{busy.current=false;setState('ready');setProblem(null);setSessionId(null);},[identity]);
   const signIn=async()=>{
@@ -211,10 +214,13 @@ function Join({api,account,signedIn,restoring,token,go,remember,clear}:{api:ApiC
     catch(failure){if(mounted.current)setProblem(errorText(failure));}
     finally{busy.current=false;if(mounted.current)setState('ready');}
   };
+  const chosen=name.replace(/\s+/gu,' ').trim();
   const join=async()=>{
-    if(!token||busy.current)return;busy.current=true;setState('busy');setProblem(null);
+    if(!token||busy.current)return;
+    if(!chosen){setProblem('Enter the name the host and team will see.');return;}
+    busy.current=true;setState('busy');setProblem(null);
     try{
-      const result=await account.authorized(bearer=>api.request<{sessionId:string;status:'pending'|'admitted'}>('POST','/v1/invitations/join',{auth:{type:'bearer',token:bearer},body:{token}}));
+      const result=await account.authorized(bearer=>api.request<{sessionId:string;status:'pending'|'admitted'}>('POST','/v1/invitations/join',{auth:{type:'bearer',token:bearer},body:{token,name:chosen.slice(0,60)}}));
       if(!mounted.current||account.current!==identity)return;clear();setSessionId(result.sessionId);setState(result.status);
     }catch(failure){if(mounted.current&&account.current===identity){setProblem(errorText(failure));setState('ready');}}
     finally{if(account.current===identity)busy.current=false;}
@@ -233,7 +239,12 @@ function Join({api,account,signedIn,restoring,token,go,remember,clear}:{api:ApiC
         <Banner tone="ok" title="You’re in"/><Button variant="primary" onClick={()=>go({name:'session',id:sessionId})}>Open session</Button>
       </>:<>
         <p>Ask the host to admit you to this session. The host chooses whether you can send instructions or only watch.</p>
-        <Button variant="primary" busy={state==='busy'} onClick={()=>void join()}>Ask to join</Button>
+        <form onSubmit={event=>{event.preventDefault();void join();}}>
+          <Field id="join-name" label="Your name" hint="The host and everyone in the session see this name.">
+            <input id="join-name" value={name} maxLength={60} autoComplete="name" required aria-describedby="join-name-hint" onChange={event=>setName(event.target.value)}/>
+          </Field>
+          <Button type="submit" variant="primary" busy={state==='busy'} disabled={!chosen}>Ask to join</Button>
+        </form>
       </>}
     </main>
   </>;

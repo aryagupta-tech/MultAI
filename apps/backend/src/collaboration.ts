@@ -46,6 +46,8 @@ const messageSchema = z.object({ kind: z.enum(['discussion', 'instruction']), te
 const createSchema = z.object({ requestId: uuid, title: cleanText(120).optional(), message: messageSchema }).strict();
 const postMessageSchema = z.object({ requestId: uuid, kind: z.enum(['discussion', 'instruction']), text: cleanText(16000), image: imageSchema.optional() }).strict();
 const secretSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
+/** A name someone gives when joining: one line of printable text. */
+const nameSchema = z.string().transform((value) => value.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim()).pipe(z.string().min(1).max(60));
 const sessionParams = (request: FastifyRequest) => z.object({ sessionId: uuid }).parse(request.params).sessionId;
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const eventView = (row: EventRow): SharedEvent => ({
@@ -98,7 +100,7 @@ export class CollaborationService {
   protected async append(client: PoolClient, session: SessionRow, actor: Actor, type: string, payload: unknown): Promise<SharedEvent> {
     // Reserve 256 control events: a full session has at most 99 other active
     // participants, 100 active invitations and 20 replay links. Capacity must never trap a grant.
-    const capacity = type === 'participant.revoked' || type === 'invitation.revoked' || type === 'replay.revoked' ? 100000 : 99744;
+    const capacity = type === 'participant.revoked' || type === 'participant.left' || type === 'invitation.revoked' || type === 'replay.revoked' ? 100000 : 99744;
     if (session.event_sequence >= capacity) throw new ApiError(409, 'session_capacity', 'This session has reached its event capacity.');
     const sequence = session.event_sequence + 1;
     const result = await client.query<EventRow>(
@@ -173,10 +175,11 @@ export class CollaborationService {
     return transaction(this.db, async (client) => {
       await assertActor(client, actor);
       const authorized = await this.authorize(client, actor, sessionId);
-      const participants = await client.query<{user_id: string; role: Role; admitted_at: Date}>(
-        'SELECT user_id,role,admitted_at FROM session_participants WHERE session_id=$1 AND revoked_at IS NULL ORDER BY admitted_at,user_id', [sessionId],
+      const participants = await client.query<{user_id: string; role: Role; admitted_at: Date; name: string}>(
+        `SELECT p.user_id,p.role,p.admitted_at,COALESCE(p.display_name,u.display_name) AS name FROM session_participants p JOIN users u ON u.id=p.user_id
+         WHERE p.session_id=$1 AND p.revoked_at IS NULL ORDER BY p.admitted_at,p.user_id`, [sessionId],
       );
-      return { session: sessionView(authorized, actor), participants: participants.rows.map((p) => ({userId: p.user_id,role: p.role,admittedAt: p.admitted_at.toISOString()})) };
+      return { session: sessionView(authorized, actor), participants: participants.rows.map((p) => ({userId: p.user_id,role: p.role,name: p.name,admittedAt: p.admitted_at.toISOString()})) };
     });
   }
 
@@ -313,7 +316,7 @@ export class CollaborationService {
   }
 
   async requestJoin(actor: Actor, input: unknown) {
-    const { token } = z.object({ token: secretSchema }).strict().parse(input);
+    const { token, name } = z.object({ token: secretSchema, name: nameSchema.optional() }).strict().parse(input);
     return transaction(this.db, async (client) => {
       await assertActor(client, actor);
       // Discover the session, then lock it before checking invite state. Every
@@ -329,12 +332,15 @@ export class CollaborationService {
       if (member.rowCount) return { sessionId, status: 'admitted' as const };
       const previous = await client.query<{id: string; status: string}>('SELECT id,status FROM join_requests WHERE invitation_id=$1 AND user_id=$2', [invitation.rows[0].id, actor.userId]);
       if (previous.rows[0]?.status === 'admitted' || previous.rows[0]?.status === 'revoked') throw new ApiError(403, 'membership_revoked', 'Ask the owner for a new invitation.');
-      if (previous.rows[0]) return { requestId: previous.rows[0].id, sessionId, status: 'pending' as const };
+      if (previous.rows[0]) {
+        if (name) await client.query('UPDATE join_requests SET display_name=$2 WHERE id=$1', [previous.rows[0].id, name]);
+        return { requestId: previous.rows[0].id, sessionId, status: 'pending' as const };
+      }
       const count = await client.query<{count: number}>('SELECT count(*)::integer AS count FROM join_requests WHERE session_id=$1', [sessionId]);
       if (count.rows[0]!.count >= 1000) throw new ApiError(409, 'join_capacity', 'This session has reached its admission request capacity.');
       const id = randomUUID();
-      await client.query('INSERT INTO join_requests(id,session_id,invitation_id,user_id) VALUES($1,$2,$3,$4)', [id, sessionId, invitation.rows[0].id, actor.userId]);
-      await this.append(client, found.rows[0], actor, 'participant.join_requested', { requestId: id, userId: actor.userId });
+      await client.query('INSERT INTO join_requests(id,session_id,invitation_id,user_id,display_name) VALUES($1,$2,$3,$4,$5)', [id, sessionId, invitation.rows[0].id, actor.userId, name ?? null]);
+      await this.append(client, found.rows[0], actor, 'participant.join_requested', { requestId: id, userId: actor.userId, ...(name ? { name } : {}) });
       return { requestId: id, sessionId, status: 'pending' as const };
     });
   }
@@ -344,11 +350,11 @@ export class CollaborationService {
       await assertActor(client, actor);
       const authorized = await this.authorize(client, actor, uuid.parse(sessionId));
       requireOriginalHost(authorized, actor);
-      const requests = await client.query<{id: string; user_id: string; created_at: Date}>(
-        `SELECT j.id,j.user_id,j.created_at FROM join_requests j JOIN invitations i ON i.id=j.invitation_id
+      const requests = await client.query<{id: string; user_id: string; created_at: Date; name: string}>(
+        `SELECT j.id,j.user_id,j.created_at,COALESCE(j.display_name,u.display_name) AS name FROM join_requests j JOIN invitations i ON i.id=j.invitation_id JOIN users u ON u.id=j.user_id
          WHERE j.session_id=$1 AND j.status='pending' AND i.revoked_at IS NULL AND i.expires_at>now() ORDER BY j.created_at,j.id LIMIT 1000`, [sessionId],
       );
-      return { requests: requests.rows.map((r) => ({ id: r.id, userId: r.user_id, createdAt: r.created_at.toISOString() })) };
+      return { requests: requests.rows.map((r) => ({ id: r.id, userId: r.user_id, name: r.name, createdAt: r.created_at.toISOString() })) };
     });
   }
 
@@ -358,8 +364,8 @@ export class CollaborationService {
       await assertActor(client, actor);
       const authorized = await this.authorize(client, actor, uuid.parse(sessionId));
       requireOriginalHost(authorized, actor);
-      const found = await client.query<{user_id: string; status: string; admitted_role: string | null}>(
-        `SELECT j.user_id,j.status,j.admitted_role FROM join_requests j JOIN invitations i ON i.id=j.invitation_id
+      const found = await client.query<{user_id: string; status: string; admitted_role: string | null; name: string}>(
+        `SELECT j.user_id,j.status,j.admitted_role,COALESCE(j.display_name,(SELECT display_name FROM users WHERE id=j.user_id)) AS name FROM join_requests j JOIN invitations i ON i.id=j.invitation_id
          WHERE j.id=$1 AND j.session_id=$2 AND i.revoked_at IS NULL AND i.expires_at>now()`, [uuid.parse(requestId), sessionId],
       );
       const pending = found.rows[0];
@@ -375,12 +381,28 @@ export class CollaborationService {
       const count = await client.query<{count: number}>('SELECT count(*)::integer AS count FROM session_participants WHERE session_id=$1 AND revoked_at IS NULL', [sessionId]);
       if (count.rows[0]!.count >= 100) throw new ApiError(409, 'participant_capacity', 'This session has reached its participant capacity.');
       await client.query(
-        `INSERT INTO session_participants(session_id,user_id,role) VALUES($1,$2,$3)
-         ON CONFLICT(session_id,user_id) DO UPDATE SET role=$3,revoked_at=NULL,admitted_at=now()`, [sessionId, pending.user_id, role],
+        `INSERT INTO session_participants(session_id,user_id,role,display_name) VALUES($1,$2,$3,(SELECT display_name FROM join_requests WHERE id=$4))
+         ON CONFLICT(session_id,user_id) DO UPDATE SET role=$3,revoked_at=NULL,admitted_at=now(),display_name=EXCLUDED.display_name`, [sessionId, pending.user_id, role, requestId],
       );
       await client.query("UPDATE join_requests SET status='admitted',admitted_role=$2 WHERE id=$1", [requestId, role]);
-      await this.append(client, authorized.session, actor, 'participant.admitted', { userId: pending.user_id, role });
+      await this.append(client, authorized.session, actor, 'participant.admitted', { userId: pending.user_id, role, name: pending.name });
       return { admitted: true, userId: pending.user_id, role };
+    });
+  }
+
+  /** A collaborator or viewer leaves on their own. The owner can't; they delete the session instead. */
+  async leave(actor: Actor, sessionId: string) {
+    return transaction(this.db, async (client) => {
+      await assertActor(client, actor);
+      const authorized = await this.authorize(client, actor, uuid.parse(sessionId));
+      if (authorized.session.owner_id === actor.userId) throw new ApiError(409, 'owner_cannot_leave', 'You own this chat. Delete it instead of leaving.');
+      const result = await client.query('UPDATE session_participants SET revoked_at=now() WHERE session_id=$1 AND user_id=$2 AND revoked_at IS NULL', [sessionId, actor.userId]);
+      if (result.rowCount) {
+        // Rejoining takes a new invitation, like after a removal.
+        await client.query("UPDATE join_requests SET status='revoked' WHERE session_id=$1 AND user_id=$2", [sessionId, actor.userId]);
+        await this.append(client, authorized.session, actor, 'participant.left', { userId: actor.userId });
+      }
+      return { left: true };
     });
   }
 
@@ -481,6 +503,7 @@ export async function registerCollaborationRoutes(app: FastifyInstance, dependen
     const params = z.object({sessionId: uuid,requestId: uuid}).parse(request.params);
     return service.admit(await authenticate(request), params.sessionId, params.requestId, request.body);
   });
+  app.post('/v1/sessions/:sessionId/leave', async (request) => service.leave(await authenticate(request), sessionParams(request)));
   app.delete('/v1/sessions/:sessionId/participants/:userId', async (request) => {
     const params = z.object({sessionId: uuid,userId: uuid}).parse(request.params);
     return service.revokeParticipant(await authenticate(request), params.sessionId, params.userId);

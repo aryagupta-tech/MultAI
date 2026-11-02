@@ -383,11 +383,18 @@ export class OwnerControlService extends CollaborationService {
       const state = await client.query<{state: unknown; updated_at: Date}>('SELECT state,updated_at FROM host_control_state WHERE session_id=$1 AND host_device_id=$2', [session.id, session.host_device_id]);
       const pending = await pendingDirections(client, session.id);
       const previousDirection = await priorSteeringConflict(client, session.id);
-      const people = await client.query<{user_id: string; role: string}>('SELECT user_id,role FROM session_participants WHERE session_id=$1 AND revoked_at IS NULL ORDER BY admitted_at,user_id', [session.id]);
+      const people = await client.query<{user_id: string; role: string; name: string}>(`SELECT p.user_id,p.role,COALESCE(p.display_name,u.display_name) AS name FROM session_participants p JOIN users u ON u.id=p.user_id
+        WHERE p.session_id=$1 AND p.revoked_at IS NULL ORDER BY p.admitted_at,p.user_id`, [session.id]);
       // The exact action the service holds for the running run; paths are workspace-relative.
       const action = await client.query<{id: string; fingerprint: string; descriptor: {operation: Record<string, unknown>; expiresAt: number}; generation: number}>(`SELECT a.id,a.fingerprint,a.descriptor,r.generation FROM execution_actions a JOIN execution_runs r ON r.id=a.run_id
         WHERE r.session_id=$1 AND r.status='running' AND a.status='pending' AND a.expires_at>now() ORDER BY a.created_at DESC LIMIT 1`, [session.id]);
-      const label = (userId: string) => userId === session.owner_id ? 'Host' : `Teammate ${userId.replace(/-/gu, '').slice(0, 4).toUpperCase()}`;
+      // The name each person gave when joining (or their account name); the owner is marked as the host.
+      const names = new Map(people.rows.map(row => [row.user_id, row.name.slice(0, 60)]));
+      const label = (userId: string) => {
+        const name = names.get(userId);
+        if (userId === session.owner_id) return name ? `${name} (host)`.slice(0, 60) : 'Host';
+        return name ?? `Teammate ${userId.replace(/-/gu, '').slice(0, 4).toUpperCase()}`;
+      };
       const a = action.rows[0];
       const operation = a?.descriptor.operation as {kind: string; relativePath?: string; contentHash?: string; expectedContentHash?: string | null; commandText?: string | null; argv?: string[]; tool?: string; arguments?: unknown} | undefined;
       return {

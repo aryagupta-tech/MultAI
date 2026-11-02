@@ -1,3 +1,4 @@
+import {limitsFrom} from './limits.js';
 import {canonicalJson, type JsonValue} from '../policy.js';
 import {readSse, streamLimits} from './sse.js';
 import {ProviderError} from './types.js';
@@ -207,6 +208,8 @@ export async function complete(input: CompleteInput): Promise<Completion> {
     if (functions.length) body.tools = functions.map(({type, ...fn}) => ({type, function: fn}));
   }
   const response = await send(credentials, path, body, input);
+  const windows = limitsFrom(response.headers);
+  if (windows.length) await input.onEvent({type: 'limits', windows});
   const mime = response.headers.get('content-type')?.split(';')[0]?.trim();
   // Some endpoints (the ChatGPT plan's Responses stream) send SSE without a Content-Type. A missing type is
   // left to the SSE parser, which rejects anything that isn't an event stream; a different type is refused here.

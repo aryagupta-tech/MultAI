@@ -4,7 +4,7 @@ import path from 'node:path';
 import {z} from 'zod';
 import {acceptanceSchema,checkRequirements,sourceRevision,REVIEWER_SYSTEM,type VerificationCriterion} from './verification';
 import {conflictContextSchema,conflictSystem,conflictPrompt,parseConflictAnalysis} from './conflicts';
-import {ControlledWorkspace,ExecutionJournal,isDeniedPath,RuntimeError,ProviderError,fingerprint,runAgent,executeApprovedShell,hostShell,redactSecrets,type ActionDescriptor,type Authority,type JsonValue,type ToolCall,type ToolDefinition} from '@multai/runtime';
+import {type LimitWindow,ControlledWorkspace,ExecutionJournal,isDeniedPath,RuntimeError,ProviderError,fingerprint,runAgent,executeApprovedShell,hostShell,redactSecrets,type ActionDescriptor,type Authority,type JsonValue,type ToolCall,type ToolDefinition} from '@multai/runtime';
 import type {HostRunChange,InferenceSelection,LockedAction,StartInferenceInput} from '../../src/bridge/execution';
 import {ApiFailure,type Account} from '../service/account';
 import type {ConnectionManager} from './connections';
@@ -428,6 +428,9 @@ export class HostCoordinator {
     return ids.has(model);
   }
   /** How full the agent's input was at the start of the session's last run on this computer. */
+  /** The usage limits the provider last reported for a connection, if any. */
+  private readonly limits=new Map<string,{windows:LimitWindow[];at:number}>();
+  usageLimits(connectionId:string):{windows:LimitWindow[];at:number}|null{z.uuid().parse(connectionId);return this.limits.get(connectionId)??null;}
   async contextUsage(sessionId:string):Promise<{used:number;limit:number;compactedAt:string|null}|null>{
     z.uuid().parse(sessionId);
     const {directory}=await this.scope();
@@ -708,6 +711,7 @@ export class HostCoordinator {
             onEvent:async event=>{
               if(event.type==='text.delta'){pending+=event.text;share();}
               if(event.type==='usage'){await sharing;await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}
+              if(event.type==='limits')this.limits.set(body.connectionId,{windows:event.windows,at:Date.now()});
               if(event.type==='web.search'){await shared();await this.publish(running,'activity.completed',{summary:event.query?`Searched the web: ${event.query}`:'Searched the web'});}
             }});
           await shared(true);const final=textChunks(redactText(result.text,running.secrets),13500);const truncated=final.length>1;

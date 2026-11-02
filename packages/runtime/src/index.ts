@@ -6,6 +6,7 @@ export {runAgent} from './agent.js';
 export type {RunAgentOptions, AgentResult} from './agent.js';
 export {discoverModels, providerBase} from './providers/client.js';
 export {ProviderError} from './providers/types.js';
+export {limitsFrom, type LimitWindow} from './providers/limits.js';
 export type {ProviderCredentials, ModelInfo, AgentMessage, ToolDefinition, ToolCall, Usage, AgentEvent, StreamLimits, AgentLimits} from './providers/types.js';
 export {ControlledWorkspace, isDeniedPath} from './workspace.js';
 export type {WorkspaceEntry, WorkspaceRead, ReviewedWrite} from './workspace.js';

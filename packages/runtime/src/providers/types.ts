@@ -1,3 +1,4 @@
+import type {LimitWindow} from './limits.js';
 import type {JsonValue} from '../policy.js';
 
 export interface ProviderCredentials {
@@ -20,7 +21,9 @@ export type AgentEvent =
   | {type: 'usage'; usage: Usage}
   | {type: 'turn.completed'; iterations: number}
   | {type: 'steer'; count: number}
-  | {type: 'web.search'; query: string};
+  | {type: 'web.search'; query: string}
+  /** Usage limits from the provider's response headers, when it reports any. */
+  | {type: 'limits'; windows: LimitWindow[]};
 
 export interface StreamLimits {
   maxBytes?: number;

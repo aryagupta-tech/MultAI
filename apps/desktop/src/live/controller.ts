@@ -451,6 +451,16 @@ export async function deleteSession(id: string): Promise<void> {
   useApp.getState().toast('Shared session deleted for everyone. Your project files weren’t touched.', 'success');
 }
 
+/** Leaves a session someone else owns. Coming back takes a new invitation. */
+export async function leaveSession(id: string): Promise<void> {
+  const r = await api().leaveSession(id);
+  if (!r.ok) return fail(r.error);
+  delete local.meta[id];
+  forget(id);
+  persistLocal();
+  useApp.getState().toast('You left the session. The host can invite you again.', 'success');
+}
+
 export async function createInvitation(id: string, expiresInSeconds: number): Promise<{ token: string; expiresAt: string } | null> {
   const value = await call(api().createInvitation(id, expiresInSeconds));
   return value ? { token: value.invitation.token, expiresAt: value.invitation.expiresAt } : null;

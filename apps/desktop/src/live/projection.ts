@@ -20,14 +20,16 @@ function initialsOf(name: string): string {
 }
 
 /**
- * The service only exposes your own display name. Other participants get a stable,
- * clearly generic label derived from their id rather than an invented name.
+ * Others show the name they gave when joining (or their account name) when the service has one;
+ * otherwise a stable, clearly generic label derived from their id rather than an invented name.
  */
-export function personFor(userId: string, me: WireMe): Person {
+export function personFor(userId: string, me: WireMe, known?: string): Person {
   if (userId === me.id) {
     const name = me.displayName || 'You';
     return { id: userId, name, initials: initialsOf(name), hue: hueFor(userId) };
   }
+  const name = known?.trim().slice(0, 60);
+  if (name) return { id: userId, name, initials: initialsOf(name), hue: hueFor(userId) };
   const short = userId.replace(/-/g, '').slice(0, 4).toUpperCase();
   return { id: userId, name: `Teammate ${short}`, initials: short.slice(0, 2), hue: hueFor(userId) };
 }
@@ -99,6 +101,8 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
     }
     case 'participant.revoked':
       return { ...base, type: 'system', tone: 'warn', text: `${nameOf(typeof p.userId === 'string' ? p.userId : null)} was removed from the session.` };
+    case 'participant.left':
+      return { ...base, type: 'system', tone: 'info', text: `${nameOf(typeof p.userId === 'string' ? p.userId : e.actorId)} left the session.` };
     case 'run.started':
       return {...base,type:'system',tone:'info',text:`${actor} started an agent run${typeof p.model === 'string' ? ` with ${p.model.slice(0,200)}` : ''}.`};
     case 'run.completed':
@@ -215,10 +219,17 @@ export function projectSession(input: {
   const {participants,events,me} = input;
   const session = projectSessionState(input.session,events);
   const people = new Map<string, Person>();
+  // Names from the participant list, and from join events for people who have since left.
+  const known = new Map<string, string>();
+  for (const e of events) {
+    const p = e.payload as {userId?: unknown; name?: unknown} | null;
+    if ((e.type === 'participant.join_requested' || e.type === 'participant.admitted') && typeof p?.userId === 'string' && typeof p.name === 'string') known.set(p.userId, p.name);
+  }
+  for (const wp of participants) if (wp.name) known.set(wp.userId, wp.name);
   const nameOf = (id: string | null) => {
     if (!id) return 'Someone';
     let p = people.get(id);
-    if (!p) people.set(id, (p = personFor(id, me)));
+    if (!p) people.set(id, (p = personFor(id, me, known.get(id))));
     return id === me.id ? 'You' : p.name;
   };
 
@@ -326,7 +337,7 @@ export function projectSession(input: {
   if (session.status !== 'running') for (const agent of agents.values()) agent.streaming = false;
 
   const parts: Participant[] = participants.map((wp) => ({
-    ...personFor(wp.userId, me),
+    ...personFor(wp.userId, me, known.get(wp.userId)),
     role: wp.role,
     presence: wp.userId === me.id ? 'online' : 'unknown',
     isHost: wp.userId === session.ownerId,
@@ -336,7 +347,7 @@ export function projectSession(input: {
   for (const t of timeline) if (t.type === 'message' && !parts.some((p) => p.id === t.authorId)) nameOf(t.authorId);
 
   const manage = session.capabilities.manage;
-  const owner = personFor(session.ownerId, me);
+  const owner = personFor(session.ownerId, me, known.get(session.ownerId));
   return {
     id: session.id,
     source: 'live',

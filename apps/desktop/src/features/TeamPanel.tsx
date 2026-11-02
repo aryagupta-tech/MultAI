@@ -45,13 +45,11 @@ function markSeen(sessionId: string, count: number): void {
 export function useUnreadTeam(d: SessionDetail | null): number {
   const me = useApp((s) => s.account?.id);
   const seen = useTeam((s) => (d ? s.seen[d.id] : undefined));
-  return useMemo(() => {
-    if (!d) return 0;
-    const messages = d.timeline.filter(isTeamMessage);
-    // First visit to a session: nothing counts as unread.
-    if (seen === undefined) return 0;
-    return messages.slice(seen).filter((m) => m.authorId !== me).length;
-  }, [d, seen, me]);
+  const messages = useMemo(() => (d ? d.timeline.filter(isTeamMessage) : []), [d]);
+  // First visit to a session: what's already there counts as read, and everything after it is counted,
+  // whether or not team chat was ever opened here.
+  useEffect(() => { if (d && seen === undefined) markSeen(d.id, messages.length); }, [d, seen, messages.length]);
+  return useMemo(() => (seen === undefined ? 0 : messages.slice(seen).filter((m) => m.authorId !== me).length), [messages, seen, me]);
 }
 
 export function TeamPanel({ d }: { d: SessionDetail }) {

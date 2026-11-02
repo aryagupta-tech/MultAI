@@ -13,10 +13,12 @@ export type TimelineItem =
   | {id: string; sequence: number; at: string; kind: 'activity'; text: string; failed: boolean}
   | {id: string; sequence: number; at: string; kind: 'system'; text: string; tone: Tone};
 
-/** Others get the same generic label the desktop shows; display names stay private. */
-export function personLabel(userId: string | null, me: {id: string; displayName?: string} | null, ownerId: string | null): string {
+/** Others show the name they gave when joining (or their account name), else the same generic label the desktop shows. */
+export function personLabel(userId: string | null, me: {id: string; displayName?: string} | null, ownerId: string | null, names?: ReadonlyMap<string, string>): string {
   if (!userId) return 'MultAI';
   if (me && userId === me.id) return 'You';
+  const name = names?.get(userId)?.trim();
+  if (name) return ownerId && userId === ownerId ? `${name.slice(0, 60)} (host)` : name.slice(0, 60);
   if (ownerId && userId === ownerId) return 'Host';
   return `Teammate ${userId.replace(/-/gu, '').slice(0, 4).toUpperCase()}`;
 }
@@ -78,6 +80,7 @@ export function projectEvent(event: WireEvent, nameOf: (userId: string | null) =
     case 'instruction.removed': return p.reason === 'host_resolution' ? {...base, kind: 'system', tone: 'info', text: 'A reviewed direction was replaced by the host’s decision.'} : null;
     case 'participant.admitted': return {...base, kind: 'system', tone: 'info', text: `${nameOf(str(p.userId, 64) ?? null)} joined as ${p.role === 'viewer' ? 'viewer' : 'collaborator'}.`};
     case 'participant.revoked': return {...base, kind: 'system', tone: 'warn', text: `${nameOf(str(p.userId, 64) ?? null)} was removed from the session.`};
+    case 'participant.left': return {...base, kind: 'system', tone: 'info', text: `${nameOf(str(p.userId, 64) ?? null)} left the session.`};
     case 'session.mode_changed': return {...base, kind: 'system', tone: 'info', text: `${actor} switched to ${p.mode === 'build' ? 'Build' : 'Plan'} mode.`};
     case 'reviewer.requested': case 'reviewer.admitted': case 'reviewer.revoked':
       return {...base, kind: 'system', tone: 'info', text: `${str(p.reviewerName, 120) ?? 'A browser reviewer'} ${event.type === 'reviewer.requested' ? 'asked to review in a browser.' : event.type === 'reviewer.admitted' ? 'was admitted to review.' : 'lost review access.'}`};

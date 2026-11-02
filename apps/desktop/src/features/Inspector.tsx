@@ -625,7 +625,8 @@ function PeoplePanel({ d }: { d: SessionDetail }) {
   const requests = isLive
     ? (liveRequests ?? []).map((r) => {
         const short = r.userId.replace(/-/g, '').slice(0, 4).toUpperCase();
-        return { id: r.id, name: `Teammate ${short}`, initials: short.slice(0, 2), hue: hueFor(r.userId), at: r.createdAt };
+        const name = r.name?.trim();
+        return { id: r.id, name: name || `Teammate ${short}`, initials: name ? name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() : short.slice(0, 2), hue: hueFor(r.userId), at: r.createdAt };
       })
     : demoRequests;
   const [busy, setBusy] = useState<string | null>(null);

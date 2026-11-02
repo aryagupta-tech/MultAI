@@ -93,6 +93,46 @@ test('invitation possession creates a pending request; admitted viewers remain r
   assert.equal((await context.db.query('SELECT * FROM instruction_queue')).rowCount, 0);
 });
 
+test('a joiner\'s chosen name reaches the host and the session, and they can leave on their own', async (t) => {
+  const context = await createTestContext(); t.after(context.close);
+  const owner = await seedActor(context.db, 'Arya Gupta');
+  const guest = await seedActor(context.db, 'Google Account Name');
+  const quiet = await seedActor(context.db, 'Account Only');
+  const service = new CollaborationService(context.db);
+  const created = await service.createSession(owner.actor, {requestId: randomUUID(), message: {kind: 'discussion', text: 'Hello'}}) as {session: {id: string}};
+  const id = created.session.id;
+  const invite = await service.createInvitation(owner.actor, id, {});
+  // Control characters and runs of spaces are cleaned; an empty or too long name is refused.
+  await assert.rejects(service.requestJoin(guest.actor, {token: invite.invitation.token, name: '   '}));
+  await assert.rejects(service.requestJoin(guest.actor, {token: invite.invitation.token, name: 'x'.repeat(61)}));
+  const join = await service.requestJoin(guest.actor, {token: invite.invitation.token, name: '  Sam\u0007   Lee '});
+  const plain = await service.requestJoin(quiet.actor, {token: invite.invitation.token});
+  const listed = await service.listJoinRequests(owner.actor, id);
+  assert.deepEqual(listed.requests.map(r => r.name).sort(), ['Account Only', 'Sam Lee']);
+  await service.admit(owner.actor, id, join.requestId!, {role: 'collaborator'});
+  await service.admit(owner.actor, id, plain.requestId!, {role: 'viewer'});
+  const snapshot = await service.getSession(owner.actor, id);
+  assert.deepEqual(snapshot.participants.map(p => [p.role, p.name]), [['owner', 'Arya Gupta'], ['collaborator', 'Sam Lee'], ['viewer', 'Account Only']]);
+  const events = await service.readEvents(owner.actor, id, 0) as {events: {type: string; payload: Record<string, unknown>}[]};
+  assert.equal(events.events.find(e => e.type === 'participant.join_requested' && e.payload.userId === guest.actor.userId)?.payload.name, 'Sam Lee');
+  assert.equal(events.events.find(e => e.type === 'participant.admitted' && e.payload.userId === guest.actor.userId)?.payload.name, 'Sam Lee');
+
+  // Leaving ends access at once and is recorded; the owner can't leave their own session.
+  const left = await context.app.inject({method: 'POST', url: `/v1/sessions/${id}/leave`, headers: {authorization: `Bearer ${guest.token}`}, payload: {}});
+  assert.equal(left.statusCode, 200);
+  assert.deepEqual(left.json(), {left: true});
+  await assert.rejects(service.readEvents(guest.actor, id, 0), hasCode('membership_required'));
+  assert.equal((await service.listSessions(guest.actor, {})).sessions.length, 0);
+  assert.ok((await service.readEvents(owner.actor, id, 0) as {events: {type: string}[]}).events.some(e => e.type === 'participant.left'));
+  assert.deepEqual((await service.getSession(owner.actor, id)).participants.map(p => p.name), ['Arya Gupta', 'Account Only']);
+  // Coming back takes a new invitation.
+  await assert.rejects(service.requestJoin(guest.actor, {token: invite.invitation.token, name: 'Sam'}), hasCode('membership_revoked'));
+  const again = await service.requestJoin(guest.actor, {token: (await service.createInvitation(owner.actor, id, {})).invitation.token, name: 'Sam'});
+  assert.equal(again.status, 'pending');
+  await assert.rejects(service.leave(owner.actor, id), hasCode('owner_cannot_leave'));
+  await assert.rejects(service.leave(guest.actor, id), hasCode('membership_required'));
+});
+
 test('expired and revoked invitations cannot join or be admitted', async (t) => {
   const context = await createTestContext(); t.after(context.close);
   const owner = await seedActor(context.db);

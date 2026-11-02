@@ -120,6 +120,36 @@ async function scenario(engine: 'chromium' | 'webkit') {
     await snap(phone, `${engine}-completed`);
   });
 
+  await step(`${label}: signed in as the owner too, the phone types a new prompt, picks it and starts it`, async () => {
+    await owner.addCookies([{name: 'multai_web_refresh', value: host.refresh, url: `${ORIGIN}/v1/web/auth`, httpOnly: true, sameSite: 'Strict'}]);
+    await phone.reload();
+    if (!await phone.getByRole('heading', {name: 'New prompt'}).isVisible().catch(() => false)) {
+      await snap(phone, `${engine}-after-reload`);
+      await phone.getByRole('button', {name: 'Owner control'}).first().click();
+      await phone.getByRole('button', {name: /Checkout fix/u}).click();
+    }
+    await phone.getByRole('heading', {name: 'New prompt'}).waitFor({timeout: 15_000});
+    await phone.getByRole('radio', {name: 'Instruction for the agent'}).click();
+    await phone.locator('#composer').fill('Add a regression test for the double charge.');
+    await phone.getByRole('button', {name: 'Send'}).click();
+    // The new prompt joins the queue already selected.
+    const picked = phone.getByRole('radio', {name: /Add a regression test for the double charge\./u});
+    await picked.waitFor({timeout: 15_000});
+    await phone.waitForFunction(() => [...document.querySelectorAll<HTMLInputElement>('input[name="direction"]')].some(input => input.checked && input.closest('label')?.textContent?.includes('regression test')), undefined, {timeout: 15_000});
+    await noHorizontalOverflow(phone, 'owner prompt');
+    await snap(phone, `${engine}-owner-prompt`);
+    await phone.getByRole('button', {name: 'Start selected'}).click();
+    await phone.getByRole('alertdialog').getByRole('button', {name: 'Confirm'}).click();
+    await phone.getByText('Waiting for your approval').waitFor({timeout: 20_000});
+    await phone.waitForFunction(() => !document.querySelector('.c-approval .c-btn-primary')?.hasAttribute('disabled'), undefined, {timeout: 20_000});
+    await phone.getByRole('button', {name: 'Approve'}).click();
+    await phone.getByText('Run completed', {exact: false}).first().waitFor({timeout: 20_000});
+    const typed = await db.query("SELECT e.actor_id FROM shared_events e WHERE e.session_id=$1 AND e.type='message.instruction' AND e.payload->>'text'=$2", [sessionId, 'Add a regression test for the double charge.']);
+    assert.equal(typed.rows[0]?.actor_id, host.userId, 'the prompt is attributed to the owner');
+    const started = await db.query("SELECT payload FROM shared_events WHERE session_id=$1 AND type='control.acknowledged' ORDER BY sequence", [sessionId]);
+    assert.deepEqual(started.rows.slice(-2).map(row => [row.payload.kind, row.payload.outcome]), [['start', 'accepted'], ['approve', 'accepted']]);
+  });
+
   await step(`${label}: reload and resume keep the pairing; old requests stay answered`, async () => {
     await phone.reload();
     await phone.getByRole('button', {name: 'Owner control', exact: true}).click();
@@ -240,6 +270,17 @@ async function scenario(engine: 'chromium' | 'webkit') {
     assert.ok(region.x >= 0 && region.y >= 0 && region.x + region.width <= 1.000001 && region.y + region.height <= 1.000001, `region in bounds: ${JSON.stringify(region)}`);
     assert.ok(Math.abs(region.x - 0.3) < 0.05 && Math.abs(region.y - 0.6) < 0.05, `region starts where dragged: ${JSON.stringify(region)}`);
     await snap(mate, `${engine}-screenshot`);
+  });
+  await step(`${label}: people show their names, and a collaborator can leave the session`, async () => {
+    await mate.getByRole('tab', {name: /People/u}).click();
+    await mate.getByText('E2E host (host)').waitFor({timeout: 10_000});
+    await mate.getByRole('button', {name: 'Leave session'}).click();
+    await mate.getByRole('alertdialog').getByRole('button', {name: 'Confirm'}).click();
+    await mate.getByRole('button', {name: 'Open sessions'}).or(mate.getByRole('heading', {name: 'Sessions'})).first().waitFor({timeout: 10_000});
+    const membership = await db.query('SELECT revoked_at FROM session_participants WHERE session_id=$1 AND user_id=$2', [sessionId, teammate.userId]);
+    assert.ok(membership.rows[0]?.revoked_at, 'leaving ended the membership');
+    const left = await db.query("SELECT 1 FROM shared_events WHERE session_id=$1 AND type='participant.left' AND actor_id=$2", [sessionId, teammate.userId]);
+    assert.equal(left.rowCount, 1);
   });
   await collaboration.close();
 

@@ -191,3 +191,27 @@ describe('agent plan checklist', () => {
     expect(d.timeline.map((item) => item.type)).toEqual(['plan', 'tools']);
   });
 });
+
+describe('participant names', () => {
+  const left = 'deadbeef-0000-4000-8000-000000000000';
+  const events: WireEvent[] = [
+    ev(1, 'session.created', me.id, { mode: 'plan', inferenceEnabled: false }),
+    ev(2, 'participant.join_requested', other, { requestId: 'r1', userId: other, name: 'Sam Lee' }),
+    ev(3, 'participant.admitted', me.id, { userId: other, role: 'collaborator', name: 'Sam Lee' }),
+    ev(4, 'participant.admitted', me.id, { userId: left, role: 'viewer', name: 'Grace H' }),
+    ev(5, 'message.discussion', left, { messageId: 'm1', text: 'Bye' }),
+    ev(6, 'participant.left', left, { userId: left }),
+  ];
+  const d = projectSession({ session: session(), participants: [{ userId: me.id, role: 'owner', admittedAt: '', name: 'Ada Lovelace' }, { userId: other, role: 'collaborator', admittedAt: '', name: 'Sam Lee' }], events, me });
+
+  test('people show the name they gave when joining, including someone who has since left', () => {
+    expect(d.participants.find((p) => p.id === other)).toMatchObject({ name: 'Sam Lee', initials: 'SL' });
+    const lines = d.timeline.filter((t) => t.type === 'system').map((t) => t.type === 'system' && t.text);
+    expect(lines).toEqual(['You started this session in Plan mode.', 'Sam Lee asked to join.', 'Sam Lee joined as collaborator.', 'Grace H joined as viewer.', 'Grace H left the session.']);
+  });
+
+  test('without a name the generic label stays', () => {
+    const plain = projectSession({ session: session(), participants: [{ userId: other, role: 'collaborator', admittedAt: '' }], events: [], me });
+    expect(plain.participants[0]?.name).toBe('Teammate ABCD');
+  });
+});

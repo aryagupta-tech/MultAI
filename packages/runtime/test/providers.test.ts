@@ -528,3 +528,23 @@ test('separate text blocks in one Responses turn become separate paragraphs', as
   const answer = await runAgent({credentials, model: 'synthetic', messages: [{role: 'user', content: 'x'}], signal: signal(), fetch: fetcher});
   assert.equal(answer.text, 'I will search.\n\nFound it.');
 });
+
+test('usage limits are read from each provider\'s response headers, and a completion reports them', async () => {
+  const {limitsFrom, durationMs} = await import('../src/providers/limits.js');
+  const now = 1_000_000;
+  assert.deepEqual(limitsFrom(new Headers({'x-codex-primary-used-percent': '34.56', 'x-codex-primary-window-minutes': '300', 'x-codex-primary-reset-after-seconds': '60', 'x-codex-secondary-used-percent': '120', 'x-codex-secondary-window-minutes': '10080', 'x-codex-secondary-reset-at': '2000'}), now),
+    [{label: '5-hour', usedPercent: 34.6, resetsAt: now + 60_000}, {label: 'Weekly', usedPercent: 100, resetsAt: 2_000_000}]);
+  assert.deepEqual(limitsFrom(new Headers({'x-ratelimit-limit-requests': '500', 'x-ratelimit-remaining-requests': '450', 'x-ratelimit-reset-requests': '1m30s', 'x-ratelimit-limit-tokens': '0', 'x-ratelimit-remaining-tokens': '0'}), now),
+    [{label: 'Requests per minute', usedPercent: 10, resetsAt: now + 90_000}]);
+  assert.deepEqual(limitsFrom(new Headers({'anthropic-ratelimit-requests-limit': '50', 'anthropic-ratelimit-requests-remaining': '25', 'anthropic-ratelimit-requests-reset': '2030-01-01T00:00:00Z'}), now),
+    [{label: 'Requests per minute', usedPercent: 50, resetsAt: Date.parse('2030-01-01T00:00:00Z')}]);
+  assert.deepEqual(limitsFrom(new Headers({'x-codex-primary-used-percent': 'lots', 'x-ratelimit-limit-requests': '10'})), []);
+  assert.equal(durationMs('250ms'), 250);
+  assert.equal(durationMs('6m0s'), 360_000);
+  assert.equal(durationMs('soon'), undefined);
+  // The agent loop passes them on as an event.
+  const seen: unknown[] = [];
+  const fetcher: typeof fetch = async () => new Response(frames([done('ok')]), {headers: {'content-type': 'text/event-stream', 'x-ratelimit-limit-tokens': '1000', 'x-ratelimit-remaining-tokens': '250'}});
+  await runAgent({credentials, model: 'synthetic', messages: [{role: 'user', content: 'hi'}], signal: signal(), fetch: fetcher, onEvent: event => {if (event.type === 'limits') seen.push(event.windows);}});
+  assert.deepEqual(seen, [[{label: 'Tokens per minute', usedPercent: 75}]]);
+});

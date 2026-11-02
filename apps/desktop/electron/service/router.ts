@@ -28,6 +28,7 @@ const schemas = {
   listJoinRequests: z.tuple([uuid]),
   admit: z.tuple([uuid, uuid, z.enum(['collaborator', 'viewer'])]),
   revokeParticipant: z.tuple([uuid, uuid]),
+  leaveSession: z.tuple([uuid]),
   deleteSession: z.tuple([uuid]),
   saveDecision:z.tuple([uuid,z.object({text:z.string().trim().min(1).max(8000),reason:z.string().trim().min(1).max(2000).optional(),replacesId:uuid.optional()}).strict()]),
   subscribe: z.tuple([uuid, z.number().int().min(0)]),
@@ -93,6 +94,7 @@ export async function route(account: Account, live: LiveHub, op: ServiceOp, rawA
     case 'listJoinRequests': return wrap(() => req('GET', `/v1/sessions/${s(0)}/join-requests`));
     case 'admit': return wrap(() => req('POST', `/v1/sessions/${s(0)}/join-requests/${s(1)}/admit`, { role: s(2) }));
     case 'revokeParticipant': return wrap(() => req('DELETE', `/v1/sessions/${s(0)}/participants/${s(1)}`));
+    case 'leaveSession': return wrap(() => req('POST', `/v1/sessions/${s(0)}/leave`, {}));
     case 'deleteSession': return wrap(async () => {
       // The renderer has already shown its own explicit confirmation; the one-use challenge
       // binds this deletion to the session's current generation and our device.

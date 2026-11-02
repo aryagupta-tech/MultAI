@@ -63,7 +63,10 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 - **[Browser companion](https://api.multai.si/app/)** (Android Chrome, iPhone Safari, add to home screen) and a **[signed Android APK](https://api.multai.si/app/android)** ([installation details](apps/mobile/README.md)). Sign in to follow your sessions: live activity, catch-up briefs, people, messages, requirements and evidence reviews, and marking a problem on a shared screenshot. Guests can use review links in it too.
 - **Owner control.** In **Settings → Paired phones** the desktop shows a one-use QR code; you confirm the phone when both screens show the same six digits. The phone can then start a pending instruction you pick, stop, steer, approve or reject the exact waiting action, and resolve conflicting directions. Each request is signed by the phone, checked by the service and checked again by the desktop, which does it with its own authority and acknowledges it. The phone never gets the desktop's sign-in, files, terminal or model keys; signing in alone never grants this.
 
-[How it works, pairing, security and limits](docs/mobile-companion.md). Requires migration 010.
+- **New prompts from the phone.** Signed in with the same Google account as the desktop, the owner screen has a message box: a new instruction joins the queue already selected, so one tap starts it (or steers it into the running agent).
+- **Names and leaving.** Someone joining from the website types the name everyone will see. Anyone but the owner can leave a session, from the website (People tab) or the desktop (session menu); coming back takes a new invitation.
+
+[How it works, pairing, security and limits](docs/mobile-companion.md). Requires migrations 010 to 012.
 
 ## Parallel agents
 
@@ -79,6 +82,7 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 ## Tools, presence and replays
 
 - **MCP tools.** Add MCP servers that run on your computer in *Settings → Tools (MCP)*. Their tools are offered to the agent in Build mode, and every call waits for your approval. Server settings and tokens are stored encrypted; a repository can't add servers.
+- **Unread and limits at a glance.** The team chat icon counts unread messages. In the sidebar, a ring shows the usage limits your model provider reports (a ChatGPT plan's 5-hour and weekly windows, an API key's per-minute budget) and the open chat's context, and a blue download button appears when a newer MultAI is published.
 - **Live presence.** See who's online, who's typing, and which file each teammate is looking at in Changes.
 - **Watch links.** *Share a watch link…* in a chat's menu creates a read-only link (1 to 30 days, revocable) that anyone can open in a browser, no app or account needed: while the session is going they watch it live (new messages, agent replies and steps arrive every few seconds, with a badge while the agent works), and afterwards they can play it back step by step. Screenshots, commands and account details are left out.
 
@@ -98,7 +102,7 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 
 Everything in this repository was built during the hackathon: the first commit is from 29 October 2026, after building started on 26 October, and the full history is public. That includes:
 
-- **Desktop app** (Electron + React) for macOS, Windows and Linux, with Google sign-in, HTTPS invitations, a sandboxed renderer and OS-encrypted credentials.
+- **Desktop app** (Electron + React) for macOS, with Google sign-in, HTTPS invitations, a sandboxed renderer and OS-encrypted credentials. Windows and Linux installers are built and smoke-tested in CI, but they aren't offered for download until they've been tried on real machines.
 - **Collaboration service** (Fastify + PostgreSQL), deployed at `https://api.multai.si` on AWS Lightsail with Supabase Postgres: sessions, admission and roles, ordered live events, decisions, host-only run leases and approvals.
 - **Host runtime**: provider adapters (Meta Model API, OpenAI, Claude, Kimi, ChatGPT plan, compatible APIs), a controlled workspace, exact approval descriptors and a durable effect journal so an interrupted action is never silently repeated.
 - **Meta features**: Muse Spark as the agent, Muse Wonder catch-up briefs and pull request drafts, screenshot input, access levels and in-chat approvals.
