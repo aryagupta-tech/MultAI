@@ -46,6 +46,17 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 - **`@codebase`.** Finds the code most related to your request from a local search index of the project, and attaches it. The agent can search the same way with its `codebase_search` tool.
 - **Web search.** For Muse (Meta's built-in `web_search`), GPT (OpenAI or your ChatGPT plan) and Claude models, turn on *Allow web search* in the access menu: the provider runs the searches, the timeline shows each one, and replies cite their sources. Muse runs on Meta's Responses API for this.
 
+## Parallel agents
+
+`/split <task>` in a project chat (Build mode) puts several agents on one task at once, with whichever model you've selected: Muse, GPT, Claude, Kimi or a compatible API.
+
+- **Plan.** The model splits the task into 2 to 4 parts that change separate files, and everyone sees the plan.
+- **Build.** Each part gets its own agent in its own git worktree, branched from the chat's current work, and they all run at the same time. A card in the conversation shows a column per agent with its latest step.
+- **Steer one agent.** Start a message with “agent 2:” to steer only that agent; anything else reaches all of them.
+- **Approvals.** File changes and commands still go through the host's approvals, one card at a time.
+- **Merge.** Finished parts are merged into the chat's worktree with git. If a part overlaps one that's already merged, one more agent pass applies it on top, with the usual approvals.
+- **Undo.** *Undo the last run* puts everything back as it was before the split.
+
 ## Tools, presence and replays
 
 - **MCP tools.** Add MCP servers that run on your computer in *Settings → Tools (MCP)*. Their tools are offered to the agent in Build mode, and every call waits for your approval. Server settings and tokens are stored encrypted; a repository can't add servers.

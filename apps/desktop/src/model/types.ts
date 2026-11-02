@@ -92,6 +92,17 @@ export interface PlanStep {
   state: 'todo' | 'active' | 'done';
 }
 
+/** One of several agents working on parts of a task at the same time (/split). */
+export interface AgentLane {
+  index: number;
+  title: string;
+  files: string[];
+  state: 'working' | 'done' | 'failed' | 'resolving' | 'stopped';
+  /** Its latest step, as everyone sees it. */
+  activity: string;
+  steps: number;
+}
+
 export interface Decision {
   id: string;
   text: string;
@@ -114,6 +125,7 @@ export type TimelineItem =
   | (TimelineBase & { type: 'tools'; calls: ToolCall[] })
   | (TimelineBase & { type: 'approval'; title: string; reason: string; descriptor: ApprovalDescriptor; state: ApprovalState; decidedBy?: string })
   | (TimelineBase & { type: 'plan'; title: string; steps: PlanStep[] })
+  | (TimelineBase & { type: 'lanes'; lanes: AgentLane[]; merge?: string })
   | (TimelineBase & { type: 'decision'; decisionId: string })
   | (TimelineBase & { type: 'brief'; text: string; model: string })
   | (TimelineBase & { type: 'conflict'; instructionIds: [string, string]; resolved: boolean })

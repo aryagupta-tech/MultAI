@@ -21,6 +21,7 @@ export const COMMANDS: readonly SlashCommand[] = [
   { name: 'test', description: 'Run the tests and fix failures', kind: 'agent', args: 'which tests' },
   { name: 'explain', description: 'Explain how part of the code works', kind: 'agent', args: 'what' },
   { name: 'init', description: 'Write an AGENTS.md for this project', kind: 'agent' },
+  { name: 'split', description: 'Split a task across agents working in parallel', kind: 'agent', args: 'task', project: true },
   { name: 'compact', description: 'Summarize the conversation to free up context', kind: 'app', session: true },
   { name: 'undo', description: 'Undo the files the last run changed', kind: 'app', session: true, project: true },
   { name: 'diff', description: 'Open the changes', kind: 'app', session: true },

@@ -6,6 +6,9 @@ import {createHash, randomUUID} from 'node:crypto';
 import type {ActionDescriptor, RunAgentOptions, ProviderCredentials, ToolCall} from '@multai/runtime';
 import {ExecutionJournal} from '@multai/runtime';
 import {HostCoordinator} from './coordinator';
+import {PLAN_SYSTEM} from './split';
+import {execFileSync} from 'node:child_process';
+import {writeFile} from 'node:fs/promises';
 import {ProjectRegistry} from './projects';
 import {McpHost} from './mcp';
 import {publicProviderFetch} from './network';
@@ -34,7 +37,7 @@ function deferred<T>() {
 
 async function fixture() {
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'multai-coordinator-')));
-  const state = {generation: 1, userId: randomUUID(), deviceId: randomUUID(), mode: 'build' as 'plan' | 'build'};
+  const state = {generation: 1, userId: randomUUID(), deviceId: randomUUID(), mode: 'build' as 'plan' | 'build', instruction: 'Synthetic selected instruction'};
   const input = {sessionId: randomUUID(), instructionId: randomUUID(), connectionId: randomUUID(), model: 'synthetic-model'};
   const runId = randomUUID();
   const credentials: ProviderCredentials = {kind: 'openai', apiKey: 'opaque-private-key-with-quote"and-slash\\12345'};
@@ -46,7 +49,7 @@ async function fixture() {
     if (method === 'GET') return {session: {runtimeGeneration: 1, capabilities: {manage: true}, status: 'inactive'}};
     if (route.endsWith('/runs')) return {
       run: {id: runId, sessionId: route.split('/')[3], connectionId: value?.connectionId, model: value?.model, generation: 2, mode: state.mode},
-      messages: [], selectedInstruction: {id: value?.instructionId, authorId: state.userId, text: 'Synthetic selected instruction'}, decisions: [],
+      messages: [], selectedInstruction: {id: value?.instructionId, authorId: state.userId, text: state.instruction}, decisions: [],
     };
     if (route.endsWith('/events')) return {sequence: ++sequence};
     if (route.endsWith('/actions')) return {actionId: (value?.descriptor as {requestId?: string})?.requestId, status: 'pending'};
@@ -67,12 +70,13 @@ async function fixture() {
   const connections = {resolve: vi.fn(async () => credentials), models: vi.fn(async () => [{id: input.model, name: 'Synthetic model'}])};
   const changes: HostRunChange[] = [];
   const confirm = vi.fn(async (_descriptor: ActionDescriptor, _hash: string, _signal: AbortSignal, _preview?: string) => true);
-  const host = new HostCoordinator({account, connections, projects: new ProjectRegistry(() => join(directory, 'projects.json')), mcp: new McpHost(async () => []), dataDirectory: () => directory, confirm, emit: change => {changes.push(change);}});
+  const projects = new ProjectRegistry(() => join(directory, 'projects.json'));
+  const host = new HostCoordinator({account, connections, projects, mcp: new McpHost(async () => []), dataDirectory: () => directory, confirm, emit: change => {changes.push(change);}});
   cleanup.push(async () => {await host.invalidate(); await rm(directory, {recursive: true, force: true});});
   const terminal = async () => {await vi.waitFor(() => expect(changes.at(-1)?.status).toMatch(/^(?:completed|failed|stopped)$/u));};
   const scopeDirectory = async () => join(directory, 'runtime-v1', (await readdir(join(directory, 'runtime-v1')))[0]!);
   const workspace = async () => join(await scopeDirectory(), 'workspaces', input.sessionId);
-  return {directory, state, input, runId, credentials, requests, respond, account, connections, changes, confirm, host, terminal, scopeDirectory, workspace};
+  return {directory, state, input, runId, credentials, requests, respond, account, connections, changes, confirm, host, terminal, scopeDirectory, workspace, projects};
 }
 
 describe('synthetic host integration with real private workspace and SQLite journal', () => {
@@ -264,5 +268,135 @@ describe('synthetic host integration with real private workspace and SQLite jour
     const activity = x.requests.find(request => request.route.endsWith('/events') && request.body?.type === 'activity.completed');
     expect(activity?.body?.payload).toMatchObject({tool: 'list_files', summary: 'Listed workspace entries', path: ''});
     expect(activity?.body?.payload).not.toHaveProperty('result');
+  });
+});
+
+describe('parallel agents', () => {
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, {cwd, encoding: 'utf8', env: {...process.env, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@example.com'}});
+  async function project(x: Awaited<ReturnType<typeof fixture>>) {
+    const repo = join(x.directory, 'shop');
+    await mkdir(join(repo, 'src'), {recursive: true});
+    git(repo, 'init', '-q', '-b', 'main');
+    await writeFile(join(repo, 'src', 'cart.js'), 'export const total = items => items.length;\n');
+    git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'init');
+    const registered = await x.projects.register(repo);
+    const root = await x.host.prepareWorkspace(x.input.sessionId, {projectId: registered.projectId, carry: false, title: 'split'});
+    return {repo, root};
+  }
+  const userText = (options: RunAgentOptions) => String(options.messages.at(-1)?.content ?? '');
+  const write = (path: string, content: string, expectedHash: string | null = null): ToolCall => ({id: randomUUID(), name: 'write_file', arguments: {path, content, expectedHash}});
+  const events = (x: Awaited<ReturnType<typeof fixture>>) => x.requests.filter(request => request.route.endsWith('/events')).map(request => request.body as {type: string; payload: Record<string, unknown>});
+
+  test('plans with the run\'s model, builds the parts at the same time, takes turns on approvals and merges into the chat', async () => {
+    const x = await fixture();
+    const {root} = await project(x);
+    x.state.instruction = '/split Add an API and a page';
+    let building = 0, peak = 0, approving = 0, overlapping = false;
+    x.confirm.mockImplementation(async () => {approving++; if (approving > 1) overlapping = true; await new Promise(resolve => setTimeout(resolve, 20)); approving--; return true;});
+    const started = [deferred<void>(), deferred<void>()];
+    runtime.run.mockImplementation(async (options: RunAgentOptions) => {
+      if (options.system === PLAN_SYSTEM) return {text: JSON.stringify({parts: [{title: 'API', task: 'Write src/api.js', files: ['src/api.js']}, {title: 'Page', task: 'Write src/page.js', files: ['src/page.js']}]}), iterations: 1};
+      const lane = Number(/You are agent (\d) of 2/u.exec(userText(options))?.[1]);
+      building++; peak = Math.max(peak, building);
+      started[lane - 1]!.resolve();
+      await Promise.all(started.map(item => item.promise)); // neither finishes before both have started
+      const file = lane === 1 ? 'src/api.js' : 'src/page.js';
+      expect(options.tools?.some(tool => tool.name === 'codebase_search')).toBe(false);
+      expect(await options.executeTool!(write(file, `// agent ${lane}\n`), options.signal)).toMatchObject({path: file});
+      building--;
+      return {text: `Agent ${lane} wrote ${file}.`, iterations: 2};
+    });
+    await x.host.run(x.input); await x.terminal();
+    expect(x.changes.at(-1)?.status).toBe('completed');
+    expect(peak).toBe(2);
+    expect(overlapping).toBe(false);
+    expect(x.confirm).toHaveBeenCalledTimes(2);
+    expect(await readFile(join(root, 'src', 'api.js'), 'utf8')).toBe('// agent 1\n');
+    expect(await readFile(join(root, 'src', 'page.js'), 'utf8')).toBe('// agent 2\n');
+    const published = events(x);
+    expect(published.find(event => event.payload.tool === 'split')?.payload).toMatchObject({lanes: [{index: 1, title: 'API'}, {index: 2, title: 'Page'}]});
+    expect(published.filter(event => event.payload.tool === 'lane' && event.payload.state === 'done').map(event => event.payload.lane).sort()).toEqual([1, 2]);
+    expect(published.some(event => event.payload.tool === 'write_file' && event.payload.lane === 1 && String(event.payload.summary).startsWith('Agent 1 · '))).toBe(true);
+    const report = published.find(event => event.type === 'agent.completed')!.payload.text as string;
+    expect(report).toMatch(/2 agents worked on this in parallel/u);
+    expect(report).toMatch(/Agent 1 · API\*\*: merged/u);
+    // The workers' worktrees are gone.
+    expect(git(root, 'worktree', 'list')).not.toMatch(/\.lane-/u);
+  });
+
+  test('a part that conflicts gets one more pass in the chat\'s worktree, and a failed agent doesn\'t stop the others', async () => {
+    const x = await fixture();
+    const {root} = await project(x);
+    x.state.instruction = '/split Change the total three ways';
+    const cartHash = createHash('sha256').update('export const total = items => items.length;\n').digest('hex');
+    let resolver = '';
+    runtime.run.mockImplementation(async (options: RunAgentOptions) => {
+      if (options.system === PLAN_SYSTEM) return {text: JSON.stringify({parts: [{title: 'One', task: 'a', files: ['src/cart.js']}, {title: 'Two', task: 'b', files: ['src/two.js']}, {title: 'Three', task: 'c', files: []}]}), iterations: 1};
+      const text = userText(options);
+      if (text.includes('overlap work that is already merged')) {
+        resolver = text;
+        const current = createHash('sha256').update('export const total = () => 1;\n').digest('hex');
+        await options.executeTool!(write('src/cart.js', 'export const total = () => 12;\n', current), options.signal);
+        return {text: 'Combined both.', iterations: 2};
+      }
+      const lane = Number(/You are agent (\d) of 3/u.exec(text)?.[1]);
+      if (lane === 3) throw new Error('synthetic provider failure');
+      // Agent 2 ignores its plan and edits agent 1's file too.
+      await options.executeTool!(write('src/cart.js', `export const total = () => ${lane};\n`, cartHash), options.signal);
+      return {text: `done ${lane}`, iterations: 1};
+    });
+    await x.host.run(x.input); await x.terminal();
+    expect(x.changes.at(-1)?.status).toBe('completed');
+    expect(resolver).toMatch(/Agent 2 \(“Two”\)/u);
+    expect(resolver).toMatch(/-export const total = items => items.length;/u);
+    expect(await readFile(join(root, 'src', 'cart.js'), 'utf8')).toBe('export const total = () => 12;\n');
+    const published = events(x);
+    expect(published.find(event => event.type === 'activity.failed' && event.payload.lane === 3)).toBeTruthy();
+    const report = published.find(event => event.type === 'agent.completed')!.payload.text as string;
+    expect(report).toMatch(/Agent 1 · One\*\*: merged/u);
+    expect(report).toMatch(/Agent 2 · Two\*\*: merged after a final pass/u);
+    expect(report).toMatch(/Agent 3 · Three\*\*: stopped/u);
+  });
+
+  test('routes "agent 2: …" to that agent and other directions to every agent', async () => {
+    const x = await fixture();
+    await project(x);
+    x.state.instruction = '/split Two parts';
+    let claimed = false;
+    x.account.request.mockImplementation(async (method: string, route: string, body?: unknown) => {
+      if (route.endsWith('/claim')) {
+        if (claimed) return {instructions: []};
+        claimed = true;
+        return {instructions: [{id: randomUUID(), authorId: x.state.userId, text: 'agent 2: use cents'}, {id: randomUUID(), authorId: x.state.userId, text: 'keep it small'}]};
+      }
+      return x.respond(method, route, body);
+    });
+    const heard: Record<number, string[]> = {1: [], 2: []};
+    runtime.run.mockImplementation(async (options: RunAgentOptions) => {
+      if (options.system === PLAN_SYSTEM) return {text: '{"parts":[{"title":"A","task":"a","files":["a.js"]},{"title":"B","task":"b","files":["b.js"]}]}', iterations: 1};
+      const lane = Number(/You are agent (\d) of 2/u.exec(userText(options))?.[1]);
+      for (let i = 0; i < 3; i++) {heard[lane]!.push(...await options.steer!(options.signal)); await new Promise(resolve => setTimeout(resolve, 600));}
+      return {text: 'ok', iterations: 1};
+    });
+    await x.host.run(x.input);
+    await vi.waitFor(() => expect(x.changes.at(-1)?.status).toBe('completed'), {timeout: 10000});
+    expect(heard[1]!.join('\n')).not.toMatch(/use cents/u);
+    expect(heard[1]!.join('\n')).toMatch(/keep it small/u);
+    expect(heard[2]!.join('\n')).toMatch(/use cents/u);
+    expect(heard[2]!.join('\n')).toMatch(/keep it small/u);
+  }, 15000);
+
+  test('needs a project, Build mode and a task', async () => {
+    for (const [setup, code] of [['private', 'SPLIT_NEEDS_PROJECT'], ['plan', 'SPLIT_NEEDS_BUILD'], ['empty', 'SPLIT_NEEDS_TASK']] as const) {
+      const x = await fixture();
+      if (setup === 'private') await x.host.prepareWorkspace(x.input.sessionId); else await project(x);
+      if (setup === 'plan') x.state.mode = 'plan';
+      x.state.instruction = setup === 'empty' ? '/split' : '/split Build it';
+      await x.host.run(x.input); await x.terminal();
+      expect(x.changes.at(-1)?.status).toBe('failed');
+      expect(events(x).find(event => event.type === 'activity.failed')?.payload.code).toBe(code);
+      expect(runtime.run).not.toHaveBeenCalled();
+      runtime.run.mockClear();
+    }
   });
 });

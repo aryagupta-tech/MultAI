@@ -96,6 +96,7 @@ function TimelineRow({ item, d, people, decisions, grouped }: {
     case 'tools': return <ToolGroup item={item} />;
     case 'approval': return <ApprovalCard item={item} d={d} people={people} />;
     case 'plan': return <PlanCard item={item} />;
+    case 'lanes': return <LanesCard item={item} />;
     case 'brief': return <BriefCard item={item} />;
     case 'decision': return <DecisionRow decision={decisions.get(item.decisionId)} people={people} />;
     case 'conflict': return <ConflictCard item={item} d={d} people={people} />;
@@ -363,6 +364,44 @@ function ApprovalCard({ item, d, people }: { item: Item<'approval'>; d: SessionD
 }
 
 /* ---------------------------------------------------------------- Plan */
+
+const LANE_STATE: Record<Item<'lanes'>['lanes'][number]['state'], string> = { working: 'Working', done: 'Done', failed: 'Stopped', resolving: 'Merging', stopped: 'Stopped' };
+
+/** Parallel agents (/split): one column per agent, live. */
+function LanesCard({ item }: { item: Item<'lanes'> }) {
+  const active = item.lanes.some((lane) => lane.state === 'working' || lane.state === 'resolving');
+  const done = item.lanes.filter((lane) => lane.state === 'done').length;
+  return (
+    <div className="card lanes-card" role="group" aria-label={`${item.lanes.length} agents working in parallel`}>
+      <header className="card-head">
+        <span className="card-icon"><Split size={15} aria-hidden /></span>
+        <div className="card-titles">
+          <span className="card-kicker">Parallel agents · {done} of {item.lanes.length} done</span>
+          <h3 className="card-title">{item.lanes.length} agents, one task</h3>
+        </div>
+      </header>
+      <ol className="lanes" style={{ gridTemplateColumns: `repeat(${Math.min(item.lanes.length, 4)}, minmax(0, 1fr))` }}>
+        {item.lanes.map((lane) => (
+          <li key={lane.index} className={cx('lane', `is-${lane.state}`)}>
+            <div className="lane-head">
+              <span className="lane-badge">Agent {lane.index}</span>
+              <span className="lane-state">
+                {lane.state === 'working' || lane.state === 'resolving' ? <Loader2 size={11} className="spin" aria-hidden /> : lane.state === 'done' ? <Check size={11} strokeWidth={3} aria-hidden /> : <CircleX size={11} aria-hidden />}
+                {LANE_STATE[lane.state]}
+              </span>
+            </div>
+            <strong className="lane-title">{lane.title}</strong>
+            <span className="lane-activity" title={lane.activity}>{lane.activity}</span>
+            {lane.files.length > 0 && <span className="lane-files" title={lane.files.join(', ')}>{lane.files.slice(0, 3).join(', ')}{lane.files.length > 3 ? ` +${lane.files.length - 3}` : ''}</span>}
+            <span className="lane-steps">{lane.steps} {lane.steps === 1 ? 'step' : 'steps'}</span>
+          </li>
+        ))}
+      </ol>
+      {item.merge ? <p className="lanes-foot"><GitMerge size={13} aria-hidden /> {item.merge}</p>
+        : active ? <p className="lanes-foot field-help">To steer one agent, start your message with “agent 2:”. Anything else reaches all of them.</p> : null}
+    </div>
+  );
+}
 
 function PlanCard({ item }: { item: Item<'plan'> }) {
   const done = item.steps.filter((s) => s.state === 'done').length;

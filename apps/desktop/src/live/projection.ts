@@ -2,7 +2,7 @@
 
 import type { WireEvent, WireMe, WireParticipant, WireSession } from '../bridge/wire';
 import { hueFor } from '../model/format';
-import type {Decision, Participant, Person, PlanStep, SessionDetail, SessionSummary, TimelineItem, ToolCall} from '../model/types';
+import type {Decision, Participant, Person, PlanStep, SessionDetail, SessionSummary, TimelineItem, ToolCall, AgentLane } from '../model/types';
 
 export interface LocalSessionMeta {
   pinned: boolean;
@@ -205,6 +205,8 @@ export function projectSession(input: {
   const agents = new Map<string,Extract<TimelineItem,{type:'agent'}>>();
   // One checklist per run; the agent's later update_plan calls replace its steps.
   const plans = new Map<string,Extract<TimelineItem,{type:'plan'}>>();
+  // Parallel agents: one card per split run, updated by every agent's events.
+  const splits = new Map<string,Extract<TimelineItem,{type:'lanes'}>>();
   const models = new Map<string,string>();
   const decisions:Decision[]=[];
   let lastModel = '';
@@ -245,6 +247,36 @@ export function projectSession(input: {
       item.streaming = e.type !== 'agent.completed';
       continue;
     }
+    const laneIndex = Number.isSafeInteger(payload.lane) ? payload.lane as number : null;
+    if (e.type === 'activity.completed' && payload.tool === 'split' && typeof payload.runId === 'string' && Array.isArray(payload.lanes)) {
+      const lanes = payload.lanes.slice(0,4).flatMap((raw):AgentLane[] => {
+        const lane = raw as {index?:unknown;title?:unknown;files?:unknown};
+        if (!Number.isSafeInteger(lane.index) || typeof lane.title !== 'string') return [];
+        const files = Array.isArray(lane.files) ? lane.files.filter((file):file is string => typeof file === 'string').slice(0,20).map(file => file.slice(0,300)) : [];
+        return [{index:lane.index as number,title:lane.title.slice(0,80),files,state:'working',activity:'Starting',steps:0}];
+      });
+      if (lanes.length) {
+        const item:Extract<TimelineItem,{type:'lanes'}> = {id:`lanes:${payload.runId}`,sequence:e.sequence,at:e.createdAt,type:'lanes',lanes};
+        splits.set(payload.runId,item); timeline.push(item);
+        continue;
+      }
+    }
+    const split = typeof payload.runId === 'string' ? splits.get(payload.runId) : undefined;
+    if (split && e.type === 'activity.completed' && payload.tool === 'merge') {
+      if (typeof payload.summary === 'string') split.merge = payload.summary.slice(0,300);
+      continue;
+    }
+    if (split && laneIndex !== null && (e.type === 'activity.completed' || e.type === 'activity.failed')) {
+      const lane = split.lanes.find(item => item.index === laneIndex);
+      if (lane) {
+        if (typeof payload.summary === 'string') lane.activity = payload.summary.replace(/^Agent \d+ · /u,'').slice(0,300);
+        if (payload.tool === 'lane') lane.state = e.type === 'activity.failed' ? 'failed' : payload.state === 'resolving' ? 'resolving' : 'done';
+        else lane.steps++;
+        // An agent's checklist shows in its own column, not as the run's plan.
+        if (payload.tool === 'update_plan') {const steps = planSteps(payload.plan); if (steps) lane.activity = `Plan: ${steps.filter(step => step.state === 'done').length} of ${steps.length} done`;}
+        continue;
+      }
+    }
     if (e.type === 'activity.completed' && payload.tool === 'update_plan' && typeof payload.runId === 'string') {
       const steps = planSteps(payload.plan);
       if (steps) {
@@ -257,8 +289,10 @@ export function projectSession(input: {
       }
       continue;
     }
+    if (e.type === 'run.stopped') for (const item of splits.values()) for (const lane of item.lanes) if (lane.state === 'working' || lane.state === 'resolving') lane.state = 'stopped';
     if ((e.type === 'run.completed' || e.type === 'run.failed') && typeof payload.runId === 'string') {
       const agent = agents.get(payload.runId); if (agent) agent.streaming = false;
+      for (const lane of splits.get(payload.runId)?.lanes ?? []) if (lane.state === 'working' || lane.state === 'resolving') lane.state = 'stopped';
     }
     if (e.type === 'run.stopped') for (const agent of agents.values()) agent.streaming = false;
     if (e.type === 'decision.saved' && typeof payload.id === 'string' && typeof payload.text === 'string' && (typeof payload.authorId === 'string' || e.actorId)) {

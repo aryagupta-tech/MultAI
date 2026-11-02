@@ -96,6 +96,24 @@ describe('execution event projection',()=>{
     expect(after.timeline.find(item=>item.id==='steered')).toMatchObject({queue:'applied',sequence:9});
     expect(after.timeline.some(item=>item.id==='gone')).toBe(false);
   });
+  test('parallel agents show as one card with a column per agent, updated by their events',()=>{
+    const run='run-split';
+    const events=[ev(1,'run.started',me.id,{runId:run,model:'m',runtimeGeneration:4}),
+      ev(2,'activity.completed',me.id,{runId:run,tool:'split',summary:'Split into 2 agents',lanes:[{index:1,title:'API',files:['src/api.js']},{index:2,title:'Page',files:[]},{index:'x',title:7}]}),
+      ev(3,'activity.completed',me.id,{runId:run,lane:1,tool:'write_file',summary:'Agent 1 · Updated src/api.js'}),
+      ev(4,'activity.completed',me.id,{runId:run,lane:2,tool:'update_plan',summary:'Agent 2 · Plan: 1 of 3 done',plan:{steps:[{text:'a',state:'done'},{text:'b',state:'active'},{text:'c',state:'todo'}]}}),
+      ev(5,'activity.completed',me.id,{runId:run,lane:1,tool:'lane',state:'done',summary:'Agent 1 · Finished: API'}),
+      ev(6,'activity.failed',me.id,{runId:run,lane:2,tool:'lane',state:'failed',summary:'Agent 2 · Stopped: limit'})];
+    const d=project(events);
+    const card=d.timeline.find(item=>item.type==='lanes');
+    expect(card).toMatchObject({type:'lanes',lanes:[{index:1,title:'API',files:['src/api.js'],state:'done',activity:'Finished: API',steps:1},{index:2,title:'Page',state:'failed',activity:'Stopped: limit',steps:1}]});
+    // Agent events live in the card, not as rows, and an agent's checklist isn't the run's plan.
+    expect(d.timeline.filter(item=>item.type==='tools'||item.type==='plan')).toEqual([]);
+    const merged=project([...events,ev(7,'activity.completed',me.id,{runId:run,tool:'merge',summary:'Merged 1 agents’ work into this chat'})]);
+    expect(merged.timeline.find(item=>item.type==='lanes')).toMatchObject({merge:'Merged 1 agents’ work into this chat'});
+    const stopped=project([events[0]!,events[1]!,ev(3,'run.stopped',me.id,{runtimeGeneration:4})]);
+    expect((stopped.timeline.find(item=>item.type==='lanes') as {lanes:{state:string}[]}).lanes.map(lane=>lane.state)).toEqual(['stopped','stopped']);
+  });
   test('groups streamed chunks by run and replaces them with its final completed text',()=>{
     const events=[ev(1,'run.started',me.id,{runId:'run-one',model:'provider-model',runtimeGeneration:4}),ev(2,'agent.delta',me.id,{runId:'run-one',text:'Hello '}),ev(3,'agent.delta',me.id,{runId:'run-one',delta:'team'})];
     const streaming=project(events);

@@ -7,11 +7,12 @@ import type {HostRunChange,InferenceSelection,LockedAction,StartInferenceInput} 
 import {ApiFailure,type Account} from '../service/account';
 import type {ConnectionManager} from './connections';
 import {publicProviderFetch} from './network';
-import {ProjectError,applyWork,checkpointChanges,createWork,diffWork,discardWork,gitStatus,keepWork,listWorkFiles,openPullRequest,pushWork,readWork,restoreCheckpoint,revertFile,snapshotWork,toolPath,type ProjectRegistry,type WorkInfo,type WorkSummary} from './projects';
+import {ProjectError,applyWork,checkpointChanges,createWork,diffWork,discardWork,git,gitStatus,keepWork,listWorkFiles,openPullRequest,pushWork,readWork,restoreCheckpoint,revertFile,snapshotWork,toolPath,type ProjectRegistry,type WorkInfo,type WorkSummary} from './projects';
 import {anchorsFor,applyCompaction,attachMentions,autoCompactCut,contextBytes,expandCommand,mentionsCodebase,type Compaction,type ContextMessage} from './context';
 import {CodeIndex,type CodeChunk} from './codeindex';
 import {McpError,type McpHost} from './mcp';
 import {PROJECT_SKILL_FOLDERS,deletePersonalSkill,loadSkills,savePersonalSkill,type Skill} from './skills';
+import {PLAN_SYSTEM,SplitError,applyCommit,captureWork,createLanes,laneResult,mergeLanes,parsePlan,removeLanes,routeDirection,splitTask,type Lane,type LaneResult} from './split';
 
 const selectionSchema=z.object({connectionId:z.uuid(),model:z.string().min(1).max(200),modelName:z.string().max(200).optional()}).strict();
 function selectionValue(input:unknown):InferenceSelection {const value=selectionSchema.parse(input);return {connectionId:value.connectionId,model:value.model,...(value.modelName?{modelName:value.modelName}:{})};}
@@ -28,6 +29,15 @@ interface Running {
   cwd:string;
   /** When the service last confirmed this run's lease. */
   aliveAt:number;
+  /** One approval-and-effect at a time per run: the service allows a single unresolved action. */
+  serial:<T>(task:()=>Promise<T>)=>Promise<T>;
+  /** Set on the copy a parallel agent uses, so its events say which agent they're from. */
+  lane?:{index:number;title:string};
+}
+/** Runs tasks one after another, in the order they were queued. */
+function serialQueue():<T>(task:()=>Promise<T>)=>Promise<T>{
+  let tail:Promise<unknown>=Promise.resolve();
+  return <T,>(task:()=>Promise<T>)=>{const next=tail.then(task,task);tail=next.catch(()=>undefined);return next;};
 }
 interface Slot {lifecycle:number;accountGeneration:number;finished:Promise<void>;settle():void}
 interface StartSlot extends Slot {sessionId:string;controller:AbortController}
@@ -472,14 +482,16 @@ export class HostCoordinator {
       if(known.success)claim={id:known.data.run.id,sessionId:body.sessionId,lease,snapshot:identity};
       this.freshStart(operation,identity);
       const claimed=contextSchema.parse(raw);
+      const split=splitTask(claimed.selectedInstruction.text);
       if(claimed.run.sessionId!==body.sessionId||claimed.run.connectionId!==body.connectionId||claimed.run.model!==body.model||claimed.selectedInstruction.id!==body.instructionId||claimed.run.generation<=snapshot.session.runtimeGeneration)throw new RuntimeError('STALE_EXECUTION','The service claim does not match this exact instruction, model and connection.');
       const controller=operation.controller;
       const authority:Authority={actorId:identity.userId,actorDeviceId:identity.deviceId,role:'owner',sessionId:body.sessionId,originalOwnerId:identity.userId,originalDeviceId:identity.deviceId,accountGeneration:identity.generation,sessionGeneration:claimed.run.generation,runtimeGeneration:claimed.run.generation,connectionId:body.connectionId,payerId:identity.userId,mode:claimed.run.mode,connected:true};
-      const running:Running={...claim!,generation:claimed.run.generation,connectionId:body.connectionId,controller,journal,authority,secrets:[credentials.apiKey],finished:Promise.resolve(),skills,codebase:null,mcp:new Map(),cwd:workspace.root,aliveAt:Date.now()};
+      const running:Running={...claim!,generation:claimed.run.generation,connectionId:body.connectionId,controller,journal,authority,secrets:[credentials.apiKey],finished:Promise.resolve(),skills,codebase:null,mcp:new Map(),cwd:workspace.root,aliveAt:Date.now(),serial:serialQueue()};
       running.codebase=this.codebaseFor(directory,body.sessionId,workspace.root,running.secrets);
       this.freshStart(operation,identity);this.active=running;this.starting=null;activated=true;
       this.emit({sessionId:body.sessionId,status:'running'});
-      const deadline=setTimeout(()=>controller.abort(new Error('Run deadline exceeded')),effortLimits(body.effort??'medium',credentials).runMs);deadline.unref();
+      // Parallel agents take turns on approvals, so a split gets twice the time.
+      const deadline=setTimeout(()=>controller.abort(new Error('Run deadline exceeded')),effortLimits(body.effort??'medium',credentials).runMs*(split===null?1:2));deadline.unref();
       let heartbeatBusy=false;
       const timer=setInterval(()=>{if(heartbeatBusy)return;heartbeatBusy=true;void this.assertLive(running).catch(()=>controller.abort()).finally(()=>{heartbeatBusy=false;});},8000);timer.unref();
       running.finished=(async()=>{
@@ -492,7 +504,7 @@ export class HostCoordinator {
         const shared=async(final=false)=>{await sharing;await flush(final);};
         try{
           // Undo starts here: the worktree as it was before this run.
-          if(work)await snapshotWork(root,claimed.selectedInstruction.text).catch(()=>null);
+          const checkpoint=work?await snapshotWork(root,claimed.selectedInstruction.text).catch(()=>null):null;
           const asked=expandCommand(claimed.selectedInstruction.text,skills);
           const mentionIo={
             read:async(file:string)=>{const {text}=await workspace.read(file);if(redactText(text,running.secrets)!==text)throw new Error('private');return text;},
@@ -501,14 +513,17 @@ export class HostCoordinator {
           // Steering: directions sent while this run works are claimed between steps. A service without the
           // endpoint (or any failure) just means no steering this run; the directions stay queued.
           let steering=true;
-          const steer=async():Promise<string[]>=>{
+          const claimDirections=async():Promise<{authorId:string;text:string}[]>=>{
             if(!steering)return [];
             let raw:unknown;
             try{raw=await this.request(running,'/claim',{});}catch(error){if(controller.signal.aborted)throw error;steering=false;return [];}
             const parsed=z.object({instructions:z.array(z.object({id:z.uuid(),authorId:z.uuid(),text:z.string().max(16000)})).max(5)}).safeParse(raw);
             if(!parsed.success){steering=false;return [];}
-            const texts:string[]=[];
-            for(const item of parsed.data.instructions)texts.push(`Direction from participant ${item.authorId}, sent while you were working. Follow it from now on:\n${expandCommand(item.text,skills).text}${await attachMentions(item.text,mentionIo)}`);
+            return parsed.data.instructions;
+          };
+          const direction=async(item:{authorId:string;text:string})=>`Direction from participant ${item.authorId}, sent while you were working. Follow it from now on:\n${expandCommand(item.text,skills).text}${await attachMentions(item.text,mentionIo)}`;
+          const steer=async():Promise<string[]>=>{
+            const texts=await Promise.all((await claimDirections()).map(direction));
             if(texts.length){await shared();await this.publish(running,'activity.completed',{summary:texts.length===1?'The agent picked up a new direction.':`The agent picked up ${texts.length} new directions.`});}
             return texts;
           };
@@ -529,6 +544,16 @@ export class HostCoordinator {
               await this.publish(running,'activity.completed',{summary:'Context compacted: older messages were summarized so the agent has room to work.'});
             }
           }
+          if(split!==null){
+            if(!work||!checkpoint)throw new RuntimeError('SPLIT_NEEDS_PROJECT','Parallel agents work in copies of a project. Start the chat in a project folder to use /split.');
+            if(claimed.run.mode!=='build')throw new RuntimeError('SPLIT_NEEDS_BUILD','Parallel agents make changes. Switch to Build mode, then send /split again.');
+            if(!split)throw new RuntimeError('SPLIT_NEEDS_TASK','Say what to build after /split, for example “/split add a cart page and its API”.');
+            const report=await this.runSplit({running,root,base:checkpoint.commit,task:split,credentials,model:body.model,effort:body.effort??'medium',system,history,authorId:claimed.selectedInstruction.authorId,skills,claimDirections,direction});
+            const text=textChunks(redactText(report,running.secrets),13500)[0]??'';
+            await this.publish(running,'agent.completed',{messageId,text,model:body.model,truncated:false});
+            await this.request(running,'/finish',{status:'completed'});if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:'completed'});
+            return;
+          }
           // MCP tools only in Build mode: every call is an action the host approves.
           const mcpDefinitions:ToolDefinition[]=[];
           if(claimed.run.mode==='build')for(const tool of (await this.options.mcp.tools(workspace.root).catch(()=>[])).slice(0,40)){
@@ -545,12 +570,7 @@ export class HostCoordinator {
             tools:[...readDefinitions,...(skills.length?[skillDefinition]:[]),...(claimed.run.mode==='plan'?[]:[...effectDefinitions,...mcpDefinitions])],signal:controller.signal,beforeRequest:()=>this.assertLive(running,true),fetch:publicProviderFetch,
             limits:(({runMs:_runMs,...limits})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...limits}))(effortLimits(body.effort??'medium',credentials)),
             ...(nativeEffort(body.effort??'medium',credentials)?{reasoningEffort:nativeEffort(body.effort??'medium',credentials)!}:{}),
-            executeTool:async(call,signal)=>{await shared();try{return await this.executeTool(running,workspace,call,signal);}catch(error){
-              // Looking before creating is normal: a missing path is an answer for read-only tools, never for effects.
-              if(READ_ONLY_TOOLS.has(call.name)&&error instanceof Error&&['ENOENT','ENOTDIR'].includes(String((error as {code?:unknown}).code)))return {error:'not_found',message:'That path does not exist in the workspace yet.'};
-              // Malformed arguments fail before any effect or approval, so the model may correct them.
-              if(error instanceof z.ZodError)return {error:'invalid_arguments',message:`Arguments for ${call.name} did not match its schema: ${error.issues.map(issue=>`${issue.path.join('.')||'(root)'} ${issue.message}`).join('; ').slice(0,500)}`};
-              throw error;}},
+            executeTool:async(call,signal)=>{await shared();return this.tool(running,workspace,call,signal);},
             onEvent:async event=>{
               if(event.type==='text.delta'){pending+=event.text;share();}
               if(event.type==='usage'){await sharing;await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}
@@ -573,7 +593,8 @@ export class HostCoordinator {
   private error(error:unknown):{code:string;message:string}{
     if(error instanceof ApiFailure)return error.error;
     if(error instanceof RuntimeError&&error.code==='SESSION_UNAVAILABLE')return {code:error.code,message:'An earlier action in this chat has an unknown outcome, so the agent can’t act until you review it. Say what happened in the card above the message box, then run again.'};
-    if(error instanceof RuntimeError||error instanceof ProviderError)return {code:error.code,message:error.message};
+    if(error instanceof RuntimeError||error instanceof ProviderError||error instanceof SplitError)return {code:error.code,message:error.message};
+    if(error instanceof ProjectError)return {code:error.code,message:error.message};
     // Names only: messages can quote provider or workspace content.
     console.error('[inference] run failed:',error instanceof Error?`${error.name}${'code' in error?` ${String((error as {code:unknown}).code)}`:''}`:typeof error);
     return {code:'inference_failed',message:'Inference was interrupted. Review the session before starting again.'};
@@ -604,12 +625,112 @@ export class HostCoordinator {
     return this.options.account.request('POST',`/v1/sessions/${run.sessionId}/runs/${run.id}${suffix}`,{...body,leaseToken:run.lease});
   }
   private async publish(run:Running,type:string,payload:Record<string,JsonValue>):Promise<void>{
+    if(run.lane&&type.startsWith('activity.')&&payload.lane===undefined)payload={...payload,lane:run.lane.index,...(typeof payload.summary==='string'?{summary:`Agent ${run.lane.index} · ${payload.summary}`}:{})};
     const eventId=randomUUID();
     const sanitized=redacted(payload,run.secrets);
     if(Buffer.byteLength(JSON.stringify(sanitized))>20000)throw new RuntimeError('OUTPUT_LIMIT','Shared output exceeded its serialized event limit.');
     run.journal.enqueue(eventId,{runId:run.id,type,payload:sanitized});
     z.object({sequence:z.number().int().positive()}).parse(await this.request(run,'/events',{eventId,type,payload:sanitized}));
     run.journal.acknowledge(eventId);
+  }
+  /** A tool call as the model sees it: a missing path or malformed arguments are answers it can correct. */
+  private async tool(run:Running,workspace:ControlledWorkspace,call:ToolCall,signal:AbortSignal):Promise<JsonValue>{
+    try{return await this.executeTool(run,workspace,call,signal);}catch(error){
+      // Looking before creating is normal: a missing path is an answer for read-only tools, never for effects.
+      if(READ_ONLY_TOOLS.has(call.name)&&error instanceof Error&&['ENOENT','ENOTDIR'].includes(String((error as {code?:unknown}).code)))return {error:'not_found',message:'That path does not exist in the workspace yet.'};
+      // Malformed arguments fail before any effect or approval, so the model may correct them.
+      if(error instanceof z.ZodError)return {error:'invalid_arguments',message:`Arguments for ${call.name} did not match its schema: ${error.issues.map(issue=>`${issue.path.join('.')||'(root)'} ${issue.message}`).join('; ').slice(0,500)}`};
+      throw error;
+    }
+  }
+  /**
+   * Parallel agents. The run's model splits the task into parts; each part is built by its own agent in
+   * its own worktree at the same time, with approvals one at a time; their work is merged into the chat's
+   * worktree, and a part that conflicts is applied by one more agent pass on top of the merged result.
+   */
+  private async runSplit(input:{running:Running;root:string;base:string;task:string;credentials:Awaited<ReturnType<ConnectionManager['resolve']>>;model:string;effort:'low'|'medium'|'high'|'xhigh'|'max';system:string;history:ContextMessage[];authorId:string;skills:Skill[];claimDirections:()=>Promise<{authorId:string;text:string}[]>;direction:(item:{authorId:string;text:string})=>Promise<string>}):Promise<string>{
+    const {running,root,base,task,credentials,model}=input;const signal=running.controller.signal;
+    const limits=(({runMs:_runMs,...rest})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...rest}))(effortLimits(input.effort,credentials));
+    const reasoning=nativeEffort(input.effort,credentials);
+    // 1. Plan with the same model, from the task and the repository's file list.
+    const {files}=await listWorkFiles(root,400);
+    const planned=await runAgent({credentials,model,signal,fetch:publicProviderFetch,system:PLAN_SYSTEM,beforeRequest:()=>this.assertLive(running,true),
+      messages:[{role:'user',content:`Task:\n${task}\n\nFiles in the repository${files.length>=400?' (first 400)':''}:\n${files.join('\n')}`}],
+      ...(reasoning?{reasoningEffort:reasoning}:{}),limits:{...limits,maxIterations:1,maxToolCalls:1}});
+    const parts=parsePlan(redactText(planned.text,running.secrets));
+    await this.publish(running,'activity.completed',{tool:'split',summary:parts.length===1?'This task doesn’t split cleanly, so one agent builds it':`Split into ${parts.length} agents working at the same time`,
+      lanes:parts.map((part,index)=>({index:index+1,title:part.title,files:part.files.slice(0,20)}))});
+    // 2. A worktree per part, from the chat's work as it was when the run started.
+    const lanes=await createLanes(root,base,parts);
+    try{
+      // Directions: "agent 2: …" goes to that agent, anything else to all of them. One claim serves all.
+      const inbox=new Map<number,string[]>(lanes.map(lane=>[lane.index,[]]));
+      let pulling:Promise<void>|null=null;let pulledAt=0;
+      const pull=async()=>{
+        if(Date.now()-pulledAt<1500)return;pulledAt=Date.now();
+        for(const item of await input.claimDirections()){
+          const routed=routeDirection(item.text,lanes.length);
+          const text=await input.direction({authorId:item.authorId,text:routed.text});
+          for(const lane of lanes)if(routed.lane===null||routed.lane===lane.index)inbox.get(lane.index)!.push(text);
+          await this.publish(running,'activity.completed',{summary:routed.lane===null?'Every agent picked up a new direction':`Agent ${routed.lane} picked up a new direction`,...(routed.lane===null?{}:{lane:routed.lane})});
+        }
+      };
+      const steerFor=(lane:Lane)=>async():Promise<string[]>=>{pulling??=pull().finally(()=>{pulling=null;});await pulling;return inbox.get(lane.index)!.splice(0);};
+      const others=(lane:Lane)=>lanes.filter(item=>item!==lane).map(item=>`agent ${item.index} (${item.title}${item.files.length?`: ${item.files.join(', ')}`:''})`).join('; ');
+      // 3. Every agent at once. A failed agent doesn't stop the others; Stop stops all of them.
+      const outcomes=await Promise.all(lanes.map(async lane=>{
+        const laneRun:Running={...running,lane:{index:lane.index,title:lane.title}};
+        const workspace=await ControlledWorkspace.open(lane.root);
+        try{
+          const result=await runAgent({credentials,model,signal,fetch:publicProviderFetch,system:input.system,steer:steerFor(lane),beforeRequest:()=>this.assertLive(running,true),
+            messages:[...input.history,{role:'user',content:`Instruction from participant ${input.authorId}, split across ${lanes.length} agents working at the same time:\n${task}\n\nYou are agent ${lane.index} of ${lanes.length}. Your part, “${lane.title}”:\n${lane.task}\n\n${lane.files.length?`Change only these files: ${lane.files.join(', ')}. `:''}The other parts are being built right now by ${others(lane)||'no one else'}, each in their own copy; don't build them yourself. When you're done, reply with a short summary of what you changed and how you checked it.`}],
+            tools:[...readDefinitions.filter(tool=>tool.name!=='codebase_search'),...(input.skills.length?[skillDefinition]:[]),...effectDefinitions],
+            ...(reasoning?{reasoningEffort:reasoning}:{}),limits,
+            executeTool:(call,callSignal)=>this.tool(laneRun,workspace,call,callSignal),
+            onEvent:async event=>{if(event.type==='usage')await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}});
+          const summary=redactText(result.text,running.secrets).trim();
+          await this.publish(laneRun,'activity.completed',{tool:'lane',state:'done',summary:`Finished: ${lane.title}`,detail:summary.slice(0,4000)});
+          return {lane,ok:true as const,summary};
+        }catch(error){
+          if(signal.aborted)throw error;
+          const failure=this.error(error);
+          await this.publish(laneRun,'activity.failed',{tool:'lane',state:'failed',summary:`Stopped: ${failure.message}`,code:failure.code});
+          return {lane,ok:false as const,summary:failure.message};
+        }
+      }));
+      // 4. Merge what the finished agents built into the chat's worktree, on top of anything that changed there meanwhile.
+      const results=(await Promise.all(outcomes.filter(outcome=>outcome.ok).map(outcome=>laneResult(outcome.lane,base)))).filter((result):result is LaneResult=>result!==null);
+      const current=await captureWork(root,base,'MultAI: before merging parallel agents');
+      const merge=await mergeLanes(root,base,current,results);
+      const changed=await applyCommit(root,current,merge.commit);
+      if(results.length)await this.publish(running,'activity.completed',{tool:'merge',summary:merge.conflicts.length?`Merged ${merge.merged.length} of ${results.length} agents’ work; ${merge.conflicts.length} conflicted`:`Merged ${merge.merged.length} agents’ work into this chat`,files:changed.slice(0,50)});
+      // 5. A conflicting part is applied by one more pass in the chat's worktree, with the usual approvals.
+      const resolved:number[]=[];
+      if(merge.conflicts.length){
+        const workspace=await ControlledWorkspace.open(root);
+        for(const conflict of merge.conflicts){
+          const lane=conflict.result.lane;
+          const diff=(await git(root,['-c','core.quotePath=false','diff','--no-color',base,conflict.result.commit])).stdout;
+          if(redactText(diff,running.secrets)!==diff)continue;
+          const resolver:Running={...running,lane:{index:lane.index,title:lane.title}};
+          await this.publish(resolver,'activity.completed',{tool:'lane',state:'resolving',summary:`Its changes to ${conflict.files.join(', ')} overlap another agent’s; applying them on top`});
+          await runAgent({credentials,model,signal,fetch:publicProviderFetch,system:input.system,beforeRequest:()=>this.assertLive(running,true),
+            messages:[...input.history,{role:'user',content:`Parallel agents built parts of this task:\n${task}\n\nAgent ${lane.index} (“${lane.title}”) made the changes below in its own copy, but they overlap work that is already merged into this worktree, in ${conflict.files.join(', ')}. Apply what agent ${lane.index} meant on top of the current files here. Keep the merged work; read each file first and write its complete new content. Then reply with one or two sentences on what you did.\n\n\`\`\`diff\n${diff.slice(0,60_000)}\n\`\`\``}],
+            tools:[...readDefinitions.filter(tool=>tool.name!=='codebase_search'),...effectDefinitions],...(reasoning?{reasoningEffort:reasoning}:{}),limits,
+            executeTool:(call,callSignal)=>this.tool(resolver,workspace,call,callSignal),
+            onEvent:async event=>{if(event.type==='usage')await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}});
+          resolved.push(lane.index);
+          await this.publish(resolver,'activity.completed',{tool:'lane',state:'done',summary:'Its changes are now applied on top'});
+        }
+      }
+      // 6. One report for everyone.
+      const lines=outcomes.map(outcome=>{
+        const result=results.find(item=>item.lane===outcome.lane);
+        const status=!outcome.ok?'stopped':!result?'finished with no changes':merge.conflicts.some(item=>item.result===result)?(resolved.includes(outcome.lane.index)?'merged after a final pass':'not merged (conflict)'):'merged';
+        return `- **Agent ${outcome.lane.index} · ${outcome.lane.title}**: ${status}${result?.files.length?` (${result.files.slice(0,8).map(file=>`\`${file}\``).join(', ')}${result.files.length>8?', …':''})`:''}\n  ${outcome.summary.replace(/\s+/gu,' ').slice(0,500)}`;
+      });
+      return `**${lanes.length} agents worked on this in parallel.**\n\n${lines.join('\n')}\n\n${changed.length||resolved.length?'The combined changes are in this chat’s worktree. Review them in Changes; *Undo the last run* puts everything back as it was before the split.':'Nothing changed in this chat’s worktree.'}`;
+    }finally{await removeLanes(root,lanes).catch(()=>undefined);}
   }
   private async executeTool(run:Running,workspace:ControlledWorkspace,call:ToolCall,signal:AbortSignal):Promise<JsonValue>{
     await this.assertLive(run);
@@ -669,7 +790,17 @@ export class HostCoordinator {
       if(redactText(JSON.stringify(args),run.secrets)!==JSON.stringify(args))throw new RuntimeError('PRIVATE_COMMAND','Provider credentials cannot be sent to an MCP tool.');
       operation={kind:'external',tool:`${target.server}.${target.tool}`.slice(0,512),transport:'stdio',arguments:args as JsonValue};
     }else throw new RuntimeError('UNSUPPORTED_TOOL','The model requested an unavailable tool.');
+    return run.serial(()=>this.dispatch(run,workspace,call,signal,operation,write));
+  }
+  /** Approval, then the effect. Runs inside the run's serial queue, so parallel agents take turns. */
+  private async dispatch(run:Running,workspace:ControlledWorkspace,call:ToolCall,signal:AbortSignal,operation:ActionDescriptor['operation'],write:{path:string;content:string;expectedHash:string|null}|undefined):Promise<JsonValue>{
+    await this.assertLive(run);
     const descriptor:ActionDescriptor={version:1,requestId:randomUUID(),sessionId:run.sessionId,originalOwnerId:run.snapshot.userId,originalDeviceId:run.snapshot.deviceId,accountGeneration:run.snapshot.generation,sessionGeneration:run.generation,runtimeGeneration:run.generation,connectionId:run.connectionId,payerId:run.snapshot.userId,resourceIdentity:`workspace:${run.sessionId}`,cwd:workspace.root,expiresAt:Date.now()+300000,operation};
+    if(write){
+      // Another agent may have taken its turn since this write was checked.
+      const current=await workspace.read(write.path).then(file=>file.hash,(error:unknown)=>{if(['ENOENT','ENOTDIR'].includes(String((error as {code?:unknown}).code)))return null;throw error;});
+      if(current!==write.expectedHash)return {error:'stale_file',message:'This file changed while you waited for approval. Read it again and write the complete new content with its current hash.'};
+    }
     const prepared=run.journal.prepare(descriptor,run.authority);
     await this.request(run,'/actions',{descriptor});
     const approved=await this.options.confirm(descriptor,prepared.fingerprint,signal,write?.content);

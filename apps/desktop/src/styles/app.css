@@ -1172,3 +1172,20 @@ body.is-resizing .app { transition: none; }
 }
 .queue-action:hover { background: var(--surface-4); color: var(--text); }
 .queue-state { font-size: var(--fs-xs); color: var(--accent); padding: 0 8px; flex: none; }
+
+/* ---------------------------------------------------------------- Parallel agents */
+.lanes { display: grid; gap: 8px; margin: 10px 0 0; padding: 0; list-style: none; }
+.lane { display: grid; gap: 4px; align-content: start; min-width: 0; padding: 10px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); }
+.lane.is-working, .lane.is-resolving { border-color: var(--accent-line); }
+.lane.is-failed, .lane.is-stopped { opacity: 0.75; }
+.lane-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.lane-badge { font-size: var(--fs-xs); font-weight: 600; color: var(--accent); }
+.lane-state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--text-3); }
+.lane.is-done .lane-state { color: var(--ok, var(--accent)); }
+.lane.is-failed .lane-state { color: var(--danger, var(--warn)); }
+.lane-title { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-activity { font-size: var(--fs-xs); color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lane-files, .lane-steps { font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, ui-monospace, monospace); }
+.lane-steps { font-family: inherit; }
+.lanes-foot { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; font-size: var(--fs-sm); color: var(--text-2); }
+@media (max-width: 720px) { .lanes { grid-template-columns: 1fr !important; } }

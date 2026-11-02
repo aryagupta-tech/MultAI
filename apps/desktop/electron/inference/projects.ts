@@ -309,11 +309,14 @@ const checkpointRef=(info:WorkInfo,commit:string)=>`refs/multai/checkpoints/${in
  * The worktree as a commit, made through a temporary index so the worktree's own index and HEAD stay
  * as they are. Ignored files are left out, like everywhere else in the review.
  */
-async function snapshotTree(root:string):Promise<string>{
+export async function snapshotTree(root:string):Promise<string>{
   const index=`${root}.snapshot-${randomUUID()}.index`;
   const env={GIT_INDEX_FILE:index};
   try{
-    await git(root,['read-tree','HEAD'],{env});
+    // Starting from a copy of the worktree's own index lets git skip files whose size and time match,
+    // instead of hashing every tracked file again.
+    const own=(await git(root,['rev-parse','--path-format=absolute','--git-path','index'])).stdout.trim();
+    if(!(await copyFile(own,index).then(()=>true,()=>false)))await git(root,['read-tree','HEAD'],{env});
     await git(root,['add','-A'],{env});
     return (await git(root,['write-tree'],{env})).stdout.trim();
   }finally{await unlink(index).catch(()=>undefined);}
