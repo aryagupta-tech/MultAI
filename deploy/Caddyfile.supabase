@@ -44,6 +44,18 @@
 	}
 }
 
+# The short address for the browser companion. It forwards to the companion on the collaboration
+# domain, which owns sign-in, cookies and the API; an invitation code after # carries over.
+{$COMPANION_DOMAIN:app.multai.si} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+	redir https://{$COLLABORATION_DOMAIN}/app{uri} 308
+}
+
 http://127.0.0.1:9080 {
 	bind 127.0.0.1
 	respond /health/proxy "ok" 200
