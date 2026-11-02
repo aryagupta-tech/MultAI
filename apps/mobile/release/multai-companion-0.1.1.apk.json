@@ -1,0 +1,13 @@
+{
+  "product": "MultAI Companion",
+  "applicationId": "si.multai.companion",
+  "versionName": "0.1.1",
+  "versionCode": 2,
+  "service": "https://api.multai.si",
+  "file": "multai-companion-0.1.1.apk",
+  "sha256": "4b6764f9fff4b00aac16ed4472181b867e36563a8d6d44ecd608b19c272d04e6",
+  "signingCertificateSha256": "72:E3:60:27:AE:1C:6C:A8:F9:75:A3:F8:95:EA:11:A6:78:84:80:FF:0C:19:B9:C9:F1:3F:1C:E7:7F:F3:7B:7B",
+  "sourceCommit": "28e9ef6d55d18220bdd77e419724d3c4c13c967e",
+  "sourceDirty": false,
+  "builtAt": "2026-11-02T13:25:12.722Z"
+}

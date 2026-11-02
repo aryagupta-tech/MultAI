@@ -58,6 +58,13 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 
 [Workflow, permissions and verification limits](docs/team-review.md). The current backend and migrations 008–009 are required.
 
+## On your phone
+
+- **Browser companion** at `/app/` on the collaboration service (Android Chrome, iPhone Safari, add to home screen) and a **signed Android APK** ([apps/mobile](apps/mobile/README.md)). Sign in to follow your sessions: live activity, catch-up briefs, people, messages, requirements and evidence reviews, and marking a problem on a shared screenshot. Guests can use review links in it too.
+- **Owner control.** In **Settings → Paired phones** the desktop shows a one-use QR code; you confirm the phone when both screens show the same six digits. The phone can then start a pending instruction you pick, stop, steer, approve or reject the exact waiting action, and resolve conflicting directions. Each request is signed by the phone, checked by the service and checked again by the desktop, which does it with its own authority and acknowledges it. The phone never gets the desktop's sign-in, files, terminal or model keys; signing in alone never grants this.
+
+[How it works, pairing, security and limits](docs/mobile-companion.md). Requires migration 010.
+
 ## Parallel agents
 
 `/split <task>` in a project chat (Build mode) puts several agents on one task at once, with whichever model you've selected: Muse, GPT, Claude, Kimi or a compatible API.

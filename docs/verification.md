@@ -1,3 +1,25 @@
+# Mobile companion · 2 November 2026
+
+The browser companion, the Android app and phone owner control ([guide](mobile-companion.md)). The full suite passed **425 tests: 100 backend, 254 desktop, 59 runtime, 6 companion-core, 6 companion-ui; zero failures or skips** (`npm run test:integration`, disposable PostgreSQL 18). Root typecheck passed for all eight workspaces. Identities, model output and the agent are synthetic; no Google, model provider or production service was contacted, and no production data was touched.
+
+## What was tested, and how
+
+| Layer | How | Result |
+|---|---|---|
+| Service (real PostgreSQL) | 11 new integration tests | Pairing is desktop-initiated, one-use and expires; a substituted key or wider scope cannot be confirmed; declined/revoked/expired phones, revoked host devices and deleted sessions lose access at once. Collaborators, guests, the owner's other devices and plain sign-ins cannot pair, poll or acknowledge. Duplicate taps return one request; a reused id with new content, a tampered field, a changed command fingerprint, a stale generation, an expired or future request, a cross-session request and another phone's envelope are refused. Concurrent controllers both reach the host; acknowledgements are idempotent and attributed. Stop cancels waiting requests. Conflict decisions bind the exact queue. Host reports are validated, aged and coarse for participants. Cookies are HttpOnly/SameSite=Strict and refused without the page's header or with a cross-site Origin/Sec-Fetch-Site; CORS only for header routes; `/app/` serves only its build with a strict CSP; browser and Android sign-ins reuse the Google redirect with fragment hand-off. |
+| Desktop host | 9 vitest cases, real P-256 keys and the real approval broker | Exact-fingerprint approval, first decision wins against a simultaneous desktop decision, Stop invalidates late approvals, forged/foreign/out-of-scope/expired/stale/pre-reconnect requests refused, start/resolve bound to the reviewed queue, local revocation works offline, previews encrypted to the phone, check digits computed locally, IPC arguments validated. |
+| Shared packages | node:test + vitest | WebCrypto (phone) and Node (service) agree byte for byte on envelopes, signatures, thumbprints and check digits; private keys are non-extractable; previews open only for that phone and action; status never says online without a fresh report; timeline output is escaped and attributed; request states never read as done before the desktop says so. |
+| Browsers | `apps/web/test/e2e.ts`: real service process, real `RemoteControlHost`, Playwright | **30/30 steps**: Chromium with Pixel 7 emulation (Android Chrome) and WebKit with iPhone 15 emulation (iPhone Safari): pairing with matching digits, start + approve, reload, Stop, offline, desktop asleep, rotation, revocation, collaborator view with XSS payload, keyboard/composer, screenshot region marking with edge clamping, guest admission and revocation, no script errors; 24 requests/min while an owner screen is open. |
+| Android app | `apps/mobile/test/android-e2e.ts` on an **emulator** (Android 16, WebView 133, userdebug image) | **11/11 steps** with the installed test APK: CSP, pairing, credential only as Keystore ciphertext, non-extractable keys, start + approve, Stop, rotation, process death, in-place update keeping the pairing, downgrade refused, revocation erasing the credential, uninstall. |
+| Release APK | Manual `adb` on the same emulator | 0.1.0 → 0.1.1 installs and updates with the release key, downgrade refused (`INSTALL_FAILED_VERSION_DOWNGRADE`), backup flag absent, uninstall removes it. The packaged config disables WebView debugging and the CSP allows only `https://api.multai.si`. Two builds of 0.1.0 from the same commit were byte-identical. |
+| Service image | Local `docker build` | Builds with the companion at `/service/companion`; no React, Vite or Playwright in the service's `node_modules`. |
+
+## Not established
+
+No physical Android phone and no real iPhone were available: Android results are from an emulator, iPhone results from WebKit emulation in Playwright. Real Google consent on a phone, Android App Links verification and the hosted URL need the production deploy, which was **prepared but not performed**. On the userdebug emulator image, Android's WebView exposes DevTools for every app; the release APK sets debugging off and is not debuggable, but that could not be observed on a user build.
+
+---
+
 # Team review verification · 2 November 2026
 
 The combined `main` implementation now includes team-approved requirements, source-bound process evidence, separate read-only model review, scoped browser guests, screenshot annotations and host conflict decisions. The final full suite passed **384 tests: 89 backend, 237 desktop, 58 runtime; zero failures or skips**, compared with the prior 320-test baseline. Root typecheck, build and `git diff --check` passed. Tests used a disposable PostgreSQL 18 container, real temporary source files/processes and SQLite journals; no production data was modified.

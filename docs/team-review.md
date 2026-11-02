@@ -30,7 +30,7 @@ Reviewer credentials are scoped to one session, held only in browser memory, has
 
 Leaving clears the guest credential; refreshing requires a new admission. Network errors hide private content until a successful refresh, and late responses cannot restore it after leaving or revocation. Revoking an invitation fences all reviewers admitted through it. Session deletion removes review content and receipts along with other collaboration data.
 
-The browser layout supports phone-sized screens. This is not an Android APK, iOS native app, TestFlight release or remote owner-control feature. The owner's future distribution preference is a browser link for iOS and a signed Android APK, without a paid Apple Developer membership.
+The browser layout supports phone-sized screens. The [mobile companion](mobile-companion.md) offers the same review in its own screens (browser and Android app) and adds paired owner control; there is no native iOS app or TestFlight build.
 
 ## Host conflict decisions
 
