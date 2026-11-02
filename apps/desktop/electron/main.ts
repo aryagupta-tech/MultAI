@@ -282,7 +282,7 @@ if (!app.requestSingleInstanceLock()) {
     // Approvals appear as cards in the session; the host's access level decides what runs unasked.
     coordinator=new HostCoordinator({account,connections,projects,mcp,dataDirectory:()=>app.getPath('userData'),emit:change=>send(INFERENCE_IPC.run,change),
       confirm:(descriptor,_hash,signal,preview)=>!mainWindow||mainWindow.isDestroyed()?Promise.resolve(false):approvals!.request(descriptor,signal,preview)});
-    powerMonitor.on('suspend',()=>{connections?.invalidate();live.closeAll();approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);void account.cancelSignIn().catch(()=>undefined);});
+    powerMonitor.on('suspend',()=>{connections?.invalidate();live.suspend();approvals?.rejectAll();void coordinator?.invalidate().catch(()=>undefined);void account.suspend().catch(()=>undefined);});
     // Forget worktrees whose folders are gone (deleted by hand, or left by a crash).
     void projects.all().then(list=>Promise.all(list.map(project=>git(project.root,['worktree','prune'],{allowFail:true}).catch(()=>undefined)))).catch(()=>undefined);
     hardenSession();

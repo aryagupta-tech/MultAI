@@ -92,6 +92,20 @@ export class LiveHub {
   }
   closeAll(): void { for (const id of [...this.subs.keys()]) this.unsubscribe(id); }
 
+  /** The computer is going to sleep: drop each connection; it reconnects and catches up on waking. */
+  suspend(): void {
+    for (const sub of this.subs.values()) {
+      if (sub.timer) clearTimeout(sub.timer);
+      sub.timer = null;
+      const socket = sub.socket;
+      sub.socket = null;
+      socket?.terminate();
+      this.discardBuffered(sub);
+      sub.attempts = 0;
+      this.retry(sub);
+    }
+  }
+
   private current(sub: Subscription): boolean {
     if (sub.closed) return false;
     if (sub.generation !== this.account.accountGeneration) { this.end(sub, 'account_changed'); return false; }

@@ -77,6 +77,8 @@ export class Account {
   // Starts at 1: approval descriptors require positive generations, including for a sign-in restored at launch.
   private generation = 1;
   private blocked = false;
+  /** The generation of a sign-in that is asking the service for a Google link. */
+  private starting: number | null = null;
   private forceRefresh = false;
 
   constructor(readonly origin: string, private readonly onChange: (state: AuthState) => void, options: AccountOptions = {}) {
@@ -154,6 +156,7 @@ export class Account {
     if (existing.active && !this.blocked) return {ok: false, error: {code: 'already_signed_in', message: 'Sign out before switching accounts.'}};
     const generation = this.advance();
     this.pending = null;
+    this.starting = generation;
     const verifier = randomBytes(64).toString('base64url');
     try {
       const start = startSchema.parse(await this.send('POST', '/v1/auth/google/start', {codeChallenge: createHash('sha256').update(verifier).digest('base64url')}));
@@ -173,7 +176,12 @@ export class Account {
     } catch (error) {
       if (generation === this.generation) { this.pending = null; this.onChange({status: 'signed-out', error: toError(error)}); }
       return {ok: false, error: toError(error)};
-    }
+    } finally { if (this.starting === generation) this.starting = null; }
+  }
+
+  /** The computer went to sleep: a sign-in still in progress is abandoned, a finished one stays. */
+  async suspend(): Promise<void> {
+    if (this.pending || this.starting === this.generation) await this.cancelSignIn();
   }
 
   async cancelSignIn(): Promise<void> {

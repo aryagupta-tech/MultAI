@@ -26,4 +26,18 @@ describe('live presence',()=>{
     expect(socket.sent.map(item=>JSON.parse(item))).toEqual([{type:'presence',typing:true,viewing:'cart.js'}]);
     hub.closeAll();
   });
+
+  it('reconnects after the computer sleeps, from where it left off',async()=>{
+    const sockets:FakeSocket[]=[];const urls:URL[]=[];
+    const account={origin:'https://api.example',accountGeneration:1,authorizationHeader:async()=>'Bearer token',forceRefreshOnNextUse:()=>undefined};
+    const hub=new LiveHub(account,()=>undefined,()=>undefined,{socketFactory:url=>{urls.push(url);const socket=new FakeSocket();sockets.push(socket);return socket as unknown as WebSocket;}});
+    hub.subscribe(session,7);
+    await vi.waitFor(()=>expect(sockets).toHaveLength(1));
+    sockets[0]!.emit('open');
+    hub.suspend();
+    expect(sockets[0]!.readyState).toBe(3);
+    await vi.waitFor(()=>expect(sockets).toHaveLength(2));
+    expect(urls[1]!.searchParams.get('after')).toBe('7');
+    hub.closeAll();
+  });
 });

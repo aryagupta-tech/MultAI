@@ -105,6 +105,20 @@ describe('native collaboration identity fences', () => {
     expect((await ctx.instance.state()).status).toBe('signed-out');
   });
 
+  it('sleep abandons a sign-in in progress but keeps a finished one', async () => {
+    const signedIn = account(async () => json({}), new MemoryStore(credentials()));
+    expect((await signedIn.instance.state()).status).not.toBe('signing-in');
+    await signedIn.instance.suspend();
+    expect(signedIn.changes).not.toHaveBeenCalledWith(expect.objectContaining({status: 'signed-out'}));
+    expect(await signedIn.instance.accessToken()).toBe(signedIn.store.record.active?.accessToken);
+
+    const ctx = account(async () => json(start()), new MemoryStore({...credentials(), active: null}));
+    expect((await ctx.instance.signIn()).ok).toBe(true);
+    expect((await ctx.instance.state()).status).toBe('signing-in');
+    await ctx.instance.suspend();
+    expect((await ctx.instance.state()).status).toBe('signed-out');
+  });
+
   it('sign-out fences an in-flight exchange before it can save credentials', async () => {
     const flow = start();
     const pending = deferred<Response>();
