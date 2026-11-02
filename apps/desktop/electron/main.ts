@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell, powerMo
 import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { IPC, type BuildInfo, type FolderPick } from '../src/bridge/contract';
+import { IPC, type AuthState, type BuildInfo, type FolderPick } from '../src/bridge/contract';
 import { Account } from './service/account';
 import { LiveHub } from './service/live';
 import { isServiceOp, route } from './service/router';
@@ -201,7 +201,9 @@ function registerIpc(): void {
       connections?.invalidate();terminal.stopAll();mcp.stopAll();
       approvals?.reset();await coordinator?.invalidate();
     }
+    const generation=account.accountGeneration;
     const result = await route(account, live, op, args);
+    if(op==='authState')remote?.recover(result as AuthState,generation);
     if(op==='createSession'&&coordinator){
       const created=result as {ok?:boolean;value?:{session?:{id?:string}}};
       const id=created.ok?created.value?.session?.id:undefined;

@@ -1,3 +1,24 @@
+# HTTPS invitations and mobile update · 2 November 2026
+
+Final source gate: **537 passing tests** (106 backend on disposable PostgreSQL 18, 344 desktop, 59 runtime, 8 mobile, 6 companion-core and 14 companion-ui), with zero failures or skips. Workspace typechecks and `npm run build` passed. The Android emulator separately passed 12 lifecycle/control acceptance steps and 2 native manifest/security instrumentation checks. These automated identities, agent responses and provider transports are synthetic.
+
+The signed Android **0.1.2 / versionCode 3** artifact was built from clean source `da37e483e7b124cb62e5c2fa536ec6fb3f63ab06`. Its SHA-256 is `4fff6db77eaf45fb07c6af611c0197882b7fa62ed2f259bfb5f25312fbdae1d6`. Signature verification, production package/callback/CSP, disabled WebView debugging and cleartext, and a same-key update from 0.1.1 passed. Test evidence is in `apps/mobile/test/screenshots/`; the provenance and checksum accompany the APK in `apps/mobile/release/`. The later desktop and service lifecycle fixes do not change this APK's mobile source.
+
+Regressions cover:
+
+- HTTPS invitations, no-download browser joining, Google return/reload preservation, explicit join confirmation and clearing abandoned invitations with browser/hardware Back.
+- Android process death during a pending invitation or Google handoff: Keystore-backed flow state, ordered writes and PKCE flush before the Custom Tab opens. Failed storage blocks the handoff.
+- Exact native callback/App Link boundaries, production/development scheme separation, signature/package/version checks and refusing a dirty release.
+- Browser Google completion at `/app/auth`, outside Android's verified invitation paths; legacy in-flight `/app/` flows keep their original one-use/PKCE binding and return to the safe path. Migration 011 is additive; migration 010 is unchanged.
+- Native account reads crossing a rotating refresh; phone-controller recovery after an offline/keyring startup; serialized initialization; sign-out fencing; confirmations/list responses racing local revocation or a newly confirmed phone.
+- APK download MIME/attachment headers, bounded metadata-selected redirects and path denial. Image assembly verifies the release checksum/provenance and rejects oversized bundles and altered or dirty artifacts.
+
+Live acceptance is separate: the installed signed-in macOS app and public AWS service admitted disposable Chromium and WebKit browser reviewers; pending access hid the session, admitted users commented, proposed requirements and marked shared screenshots, and revocation hid content again. Google sign-in in ordinary Chrome completed and returned to explicit invitation confirmation. Mobile viewport checks found no horizontal overflow or page errors. A valid **78,438-byte** synthetic screenshot was rejected before the HTTPS proxy fix and accepted afterward; the API's per-route limits remain in place. QA sessions were deleted after these checks. Android's production APK also opened its real Google Custom Tab, without entering credentials or completing phone consent.
+
+Physical phones and actual iPhone Safari have not been exercised. The desktop must remain online and awake; push notifications are not implemented. Current service and download links are in the [mobile guide](mobile-companion.md).
+
+---
+
 # Desktop audit · 2 November 2026
 
 The later [desktop bug-fix audit](bugfix-audit.md) records 493 passing tests across the current workspaces, native clipboard/cold-invitation checks, browser interaction coverage, and a real Muse Wonder checkout failure/repair/recovery session through MultAI. It distinguishes the installed build used for live inference from the newly rebuilt source, and records deployment limits.

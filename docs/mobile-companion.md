@@ -4,8 +4,8 @@ Follow a MultAI session from a phone, and, as its owner, control your own deskto
 
 | | Where | Status |
 |---|---|---|
-| Browser companion | `https://api.multai.si/app/` (Android Chrome, iPhone Safari; add to home screen) | **Prepared, not deployed.** It ships inside the service image and goes live with the next approved deploy of this commit. No DNS change: it shares the existing `api.multai.si` origin. |
-| Android app | `apps/mobile/release/multai-companion-<version>.apk` (id `si.multai.companion`) | Signed release APK in the repository; see [the Android README](../apps/mobile/README.md) for the path, SHA-256, certificate, install, update and uninstall. It talks to `https://api.multai.si`, so its sign-in and owner control also need that deploy. |
+| Browser companion | `https://api.multai.si/app/` (Android Chrome, iPhone Safari; add to home screen) | **Live.** Served by the existing collaboration backend on `api.multai.si`; no app download is required. |
+| Android app | `apps/mobile/release/multai-companion-<version>.apk` (id `si.multai.companion`) | **0.1.2, versionCode 3.** [Download APK](https://api.multai.si/app/android). Uses the original signing key, so it updates 0.1.1. See [the Android README](../apps/mobile/README.md) for verification and installation. |
 | iPhone | The browser companion in Safari | No native iOS app, TestFlight or Apple membership. |
 
 ## Three separate ways in
@@ -75,16 +75,21 @@ Cookie calls need the page's custom `X-MultAI-Client` header; when the browser s
 ## Service changes
 
 - **Migration `010_owner_control.sql`** (new; earlier migrations untouched): `controller_pairings`, `control_requests`, `host_control_state`, `controller_audit`, and a wider `oauth_flows` client check that adds the companion's web and Android sign-in clients.
-- **Sign-in**: `POST /v1/web/auth/{start,exchange,refresh,logout}` for the browser; `client: "android"` on `/v1/auth/google/start`. Both reuse the existing Google redirect URI (no Google console change) and receive the one-time completion in a fragment: `/app/#signin=…` or `multai-companion://auth/callback#signin=…`.
+- **Sign-in**: `POST /v1/web/auth/{start,exchange,refresh,logout}` for the browser; `client: "android"` on `/v1/auth/google/start`. Both reuse the existing Google redirect URI (no Google console change) and receive the one-time completion in a fragment: `/app/auth#signin=…` or `multai-companion://auth/callback#signin=…`.
+- **Migration `011_browser_auth_callback.sql`** keeps browser completion on `/app/auth`, outside the Android app’s exact `/app` and `/app/` link filters. Existing `/app/` flow records remain valid at the configured origin during rollout and also complete on `/app/auth`; the Android callback scheme is unchanged.
 - **Pairing (host)**: `POST/GET /v1/controller-pairings`, `GET …/:id`, `POST …/:id/confirm`, `POST …/:id/decline`, `DELETE …/:id`, `GET …/:id/audit`.
 - **Host loop**: `GET /v1/host/control-requests?wait=10` (long poll), `POST /v1/host/control-requests/:id/ack`, `PUT /v1/sessions/:id/control-state`.
 - **Phone**: `POST /v1/controller/claim`, `GET /v1/controller/status`, `GET /v1/controller/sessions/:id[/events|/acceptance]`, `POST/GET /v1/controller/requests[/:id]`, `POST /v1/controller/unpair`, `POST /v1/controller/forget`.
 - **Participants**: `GET /v1/sessions/:id/host-presence`, `GET /v1/sessions/:id/shared-screenshots`, `POST /v1/sessions/:id/screenshot-comments`.
 - Stop and session deletion cancel or remove phone requests. CORS is allowed only from `COMPANION_APP_ORIGINS` (default `https://localhost`) on header-authenticated routes. `/app/` serves the companion build (`COMPANION_DIR`); `/.well-known/assetlinks.json` publishes `ANDROID_CERT_SHA256` for App Links.
 
-## Deploying (needs the owner's approval)
+## Deployment
 
-The current production service does not have these routes yet. Deploying this commit with the usual procedure ([AWS deployment](aws-deployment.md)) builds the companion into the image, applies migration 010 (additive) and makes `https://api.multai.si/app/` live. Back up the database first, as for any deploy. Afterwards: `curl -I https://api.multai.si/app/` (200, CSP), `curl https://api.multai.si/.well-known/assetlinks.json`, then pair a phone. Nothing in this change creates cloud resources or changes DNS.
+The production image includes the browser companion and the current signed APK. Migrations 010 and 011 are additive; earlier migration bytes remain unchanged. The existing Google callback and unbilled project are reused. No new AWS resource or DNS change is needed.
+
+The APK download at `/app/android` redirects to its versioned file. `/app/downloads/latest.json` supplies the exact SHA-256 and source revision; the matching `.apk.sha256` file is public. Image assembly checks the artifact provenance, signature fingerprint and checksum, and refuses a bundle exceeding the service’s static-file bound. The HTTPS proxy accepts valid screenshot uploads while the API retains its per-route limits.
+
+Use the usual [deployment procedure](aws-deployment.md), with a server-side restore-tested backup before applying migrations. Verify `/health/ready`, `/app/`, `/app/auth`, `/app/android` and `/.well-known/assetlinks.json`, and compare downloaded APK bytes with the release checksum.
 
 ## Demo for judges (about 4 minutes)
 
@@ -105,9 +110,8 @@ See [verification](verification.md#mobile-companion--2-november-2026) for the fu
 
 ## Known limitations
 
-- **Not deployed**: the browser URL and the APK's sign-in/owner control need the next approved production deploy.
 - **No physical-device or real iPhone Safari test**: Android was tested on an emulator (Android 16, WebView 133); iPhone Safari on Playwright's WebKit with iPhone 15 emulation. Real Google consent on a phone was not exercised (no credentials were used).
-- **Android App Links** need the deployed `assetlinks.json`; until then a scanned QR opens the browser companion, and the app accepts the typed code.
+- **Android App Links** use the public signing certificate in `assetlinks.json`. Android may initially open the browser while domain verification completes; the same link works there, and the app also accepts a typed pairing code.
 - The phone shows the approval preview the desktop sends (file changes up to 6,000 characters, encrypted to the phone); larger files are summarized by path and hash.
 - Owner control polls (2.5 s while a session is open). Notifications/push are not implemented; the phone must be open to see new approvals.
 - Starting a run uses the model currently selected on the desktop; the phone cannot choose a model, change access levels, or use Keep/Apply/Push, the terminal or anything else host-only.

@@ -62,9 +62,16 @@ export function signInClients(config: Config): SignInClient[] {
   const production = config.environment === 'production';
   return [
     {kind: 'desktop', clientId: config.desktopClientId, callbackUri: config.desktopCallbackUri},
-    {kind: 'web', clientId: production ? 'multai-companion-web' : 'multai-companion-web-development', callbackUri: `${config.publicOrigin}/app/`},
+    {kind: 'web', clientId: production ? 'multai-companion-web' : 'multai-companion-web-development', callbackUri: `${config.publicOrigin}/app/auth`},
     {kind: 'android', clientId: production ? 'multai-companion-android' : 'multai-companion-android-development', callbackUri: production ? 'multai-companion://auth/callback' : 'multai-companion-dev://auth/callback'},
   ];
+}
+
+/** Accept already-started web flows during rollout, bound to the same configured origin and mode. */
+function acceptedSignInClients(config: Config): SignInClient[] {
+  const clients = signInClients(config);
+  const web = clients.find(client => client.kind === 'web')!;
+  return [...clients, {...web, callbackUri: `${config.publicOrigin}/app/`}];
 }
 
 export class AuthService {
@@ -86,7 +93,7 @@ export class AuthService {
     return signInClients(this.config).find(client => client.kind === kind)!;
   }
   private clientOf(flow: {desktop_client_id: string; desktop_callback_uri: string}): SignInClient | undefined {
-    return signInClients(this.config).find(client => client.clientId === flow.desktop_client_id && client.callbackUri === flow.desktop_callback_uri);
+    return acceptedSignInClients(this.config).find(client => client.clientId === flow.desktop_client_id && client.callbackUri === flow.desktop_callback_uri);
   }
 
   async start(codeChallenge: string, kind: ClientKind = 'desktop'): Promise<{ flowId: string; authorizationUrl: string; expiresAt: string }> {
@@ -116,7 +123,7 @@ export class AuthService {
   async complete(state: string, code: string): Promise<{url: string; kind: ClientKind}> {
     // Consume the browser state BEFORE network I/O; a failed callback cannot be
     // replayed. The desktop proof is separately required at one-time exchange.
-    const clients = signInClients(this.config);
+    const clients = acceptedSignInClients(this.config);
     const claimed = await this.db.query<Flow>(
       `UPDATE oauth_flows SET state_consumed_at=now()
        WHERE state_hash=$1 AND state_consumed_at IS NULL AND expires_at>now()
@@ -145,7 +152,10 @@ export class AuthService {
     if (result.rowCount !== 1) throw new ApiError(401, 'invalid_flow', 'Sign-in flow expired. Start again.');
     if (client.kind !== 'desktop') {
       // Companions read the one-time completion from the fragment, which is never sent to a server.
-      return {url: `${client.callbackUri}#signin=${flow.id}.${completionCode}`, kind: client.kind};
+      // Browser callbacks must stay outside Android's verified /app and /app/ paths. This also
+      // upgrades an in-flight legacy web flow without changing its original PKCE/client binding.
+      const callbackUri = client.kind === 'web' ? this.client('web').callbackUri : client.callbackUri;
+      return {url: `${callbackUri}#signin=${flow.id}.${completionCode}`, kind: client.kind};
     }
     const callback = new URL(flow.desktop_callback_uri);
     callback.searchParams.set('flowId', flow.id);

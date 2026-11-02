@@ -73,6 +73,7 @@ export class Account {
   private readonly inFlight = new Set<AbortController>();
   private pending: PendingFlow | null = null;
   private refreshing: Refresh | null = null;
+  private refreshRevision = 0;
   private me: WireMe | null = null;
   // Starts at 1: approval descriptors require positive generations, including for a sign-in restored at launch.
   private generation = 1;
@@ -128,15 +129,21 @@ export class Account {
     if (this.pending) return {status: 'signing-in', expiresAt: new Date(this.pending.expiresAt).toISOString()};
     if (this.blocked) return {status: 'signed-out'};
     try {
-      if (this.refreshing?.generation === generation) await this.refreshing.promise;
-      const record = await this.store.load();
-      this.check(generation);
-      if (!record.active) return {status: 'signed-out'};
-      const me = this.me ?? meSchema.parse(await this.request('GET', '/v1/me'));
-      this.check(generation);
-      if (me.id !== record.active.userId) throw stale();
-      this.me = me;
-      return {status: 'signed-in', me, persisted: this.store.encrypted};
+      for (;;) {
+        if (this.refreshing?.generation === generation) {await this.refreshing.promise;this.check(generation);continue;}
+        const revision = this.refreshRevision;
+        const record = await this.store.load();
+        this.check(generation);
+        // Rotation temporarily clears active credentials. The read may have been queued before
+        // it began, and its snapshot can arrive even after the replacement has been saved.
+        if (revision !== this.refreshRevision) continue;
+        if (!record.active) return {status: 'signed-out'};
+        const me = this.me ?? meSchema.parse(await this.request('GET', '/v1/me'));
+        this.check(generation);
+        if (me.id !== record.active.userId) throw stale();
+        this.me = me;
+        return {status: 'signed-in', me, persisted: this.store.encrypted};
+      }
     } catch (error) {
       if (generation !== this.generation) return {status: 'signed-out'};
       return {status: 'signed-out', error: toError(error)};
@@ -257,17 +264,24 @@ export class Account {
   async accessToken(): Promise<string> {
     const generation = this.generation;
     if (this.blocked || this.pending) throw signedOut();
-    if (this.refreshing?.generation === generation) return this.refreshing.promise;
-    const record = await this.store.load();
-    this.check(generation);
-    if (!record.active) throw signedOut();
-    if (!this.forceRefresh && record.active.accessExpiresAt - REFRESH_MARGIN_MS > this.now()) return record.active.accessToken;
-    return this.refresh();
+    for (;;) {
+      if (this.refreshing?.generation === generation) {await this.refreshing.promise;this.check(generation);continue;}
+      const revision = this.refreshRevision;
+      const record = await this.store.load();
+      this.check(generation);
+      if (revision !== this.refreshRevision) continue;
+      if (!record.active) throw signedOut();
+      if (!this.forceRefresh && record.active.accessExpiresAt - REFRESH_MARGIN_MS > this.now()) return record.active.accessToken;
+      const token = await this.refresh();
+      this.check(generation);
+      return token;
+    }
   }
 
   private refresh(): Promise<string> {
     const generation = this.generation;
     if (this.refreshing?.generation === generation) return this.refreshing.promise;
+    this.refreshRevision++;
     const promise = this.doRefresh(generation).finally(() => { if (this.refreshing?.promise === promise) this.refreshing = null; });
     this.refreshing = {generation, promise};
     return promise;

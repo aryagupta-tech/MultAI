@@ -163,6 +163,78 @@ describe('native collaboration identity fences', () => {
     expect(store.record.active?.refreshToken).toBe(next.refreshToken);
   });
 
+  it.each(['state','accessToken'] as const)('%s joins a refresh that starts while its credential read is queued', async reader => {
+    const store=new MemoryStore(credentials()),response=deferred<Response>(),delivered=deferred<void>(),read=deferred<void>();
+    const next=bundle();let refreshes=0;
+    const ctx=account(async url=>{
+      if(url.pathname==='/v1/me')return json(identity);
+      if(url.pathname.endsWith('/refresh')){refreshes++;delivered.resolve();return response.promise;}
+      throw new Error('Unexpected endpoint');
+    },store);
+    await ctx.instance.identitySnapshot();
+    const load=store.load.bind(store);vi.spyOn(store,'load').mockImplementationOnce(async()=>{await read.promise;return load();});
+    let finished=false;
+    const reading=(reader==='state'?ctx.instance.state():ctx.instance.accessToken()).finally(()=>{finished=true;});
+    ctx.instance.forceRefreshOnNextUse();const rotating=ctx.instance.accessToken();
+    await delivered.promise;expect(store.record.active).toBeNull();
+    read.resolve();await settle();expect(finished).toBe(false);
+    response.resolve(json(next));await expect(rotating).resolves.toBe(next.accessToken);
+    if(reader==='state')await expect(reading).resolves.toMatchObject({status:'signed-in',me:identity});
+    else await expect(reading).resolves.toBe(next.accessToken);
+    expect(refreshes).toBe(1);expect(ctx.changes).not.toHaveBeenCalledWith(expect.objectContaining({status:'signed-out'}));
+  });
+
+  it.each(['state','accessToken'] as const)('%s retries a rotation-window snapshot even when refresh finishes before the read returns', async reader => {
+    const store=new MemoryStore(credentials()),response=deferred<Response>(),delivered=deferred<void>(),read=deferred<CredentialRecord>();
+    const next=bundle();let refreshes=0;
+    const ctx=account(async url=>{
+      if(url.pathname==='/v1/me')return json(identity);
+      if(url.pathname.endsWith('/refresh')){refreshes++;delivered.resolve();return response.promise;}
+      throw new Error('Unexpected endpoint');
+    },store);
+    await ctx.instance.identitySnapshot();
+    const load=store.load.bind(store);vi.spyOn(store,'load').mockImplementationOnce(()=>read.promise);
+    const reading=reader==='state'?ctx.instance.state():ctx.instance.accessToken();
+    ctx.instance.forceRefreshOnNextUse();const rotating=ctx.instance.accessToken();await delivered.promise;
+    const duringRotation=await load();expect(duringRotation.active).toBeNull();
+    response.resolve(json(next));await rotating;read.resolve(duringRotation);
+    if(reader==='state')await expect(reading).resolves.toMatchObject({status:'signed-in',me:identity});
+    else await expect(reading).resolves.toBe(next.accessToken);
+    expect(refreshes).toBe(1);
+  });
+
+  it.each(['state','accessToken'] as const)('%s waiting for rotation cannot revive a signed-out account', async reader=>{
+    const store=new MemoryStore(credentials()),response=deferred<Response>(),delivered=deferred<void>(),read=deferred<void>();
+    const ctx=account(async url=>{
+      if(url.pathname==='/v1/me')return json(identity);
+      if(url.pathname.endsWith('/refresh')){delivered.resolve();return response.promise;}
+      if(url.pathname.endsWith('/logout'))return new Response(null,{status:204});
+      throw new Error('Unexpected endpoint');
+    },store);
+    await ctx.instance.identitySnapshot();
+    const load=store.load.bind(store);vi.spyOn(store,'load').mockImplementationOnce(async()=>{await read.promise;return load();});
+    const reading=reader==='state'?ctx.instance.state():ctx.instance.accessToken();
+    const checked=reader==='state'?expect(reading).resolves.toEqual({status:'signed-out'}):expect(reading).rejects.toBeInstanceOf(ApiFailure);
+    ctx.instance.forceRefreshOnNextUse();const rotating=ctx.instance.accessToken();
+    const rejected=expect(rotating).rejects.toBeInstanceOf(ApiFailure);
+    await delivered.promise;read.resolve();await settle();await ctx.instance.signOut();
+    response.resolve(json(bundle()));await Promise.all([checked,rejected]);
+    expect(store.record.active).toBeNull();expect((await ctx.instance.state()).status).toBe('signed-out');
+  });
+
+  it('a delayed pre-rotation credential snapshot cannot return the old access token',async()=>{
+    const before=credentials(),store=new MemoryStore(before),response=deferred<Response>(),delivered=deferred<void>(),read=deferred<CredentialRecord>(),next=bundle();
+    const ctx=account(async url=>{
+      if(url.pathname.endsWith('/refresh')){delivered.resolve();return response.promise;}
+      throw new Error('Unexpected endpoint');
+    },store);
+    vi.spyOn(store,'load').mockImplementationOnce(()=>read.promise);
+    const reading=ctx.instance.accessToken();ctx.instance.forceRefreshOnNextUse();
+    const rotating=ctx.instance.accessToken();await delivered.promise;response.resolve(json(next));await rotating;
+    read.resolve(before);await expect(reading).resolves.toBe(next.accessToken);
+    expect(next.accessToken).not.toBe(before.active!.accessToken);
+  });
+
   it('a late refresh failure cannot clear an account signed in after it', async () => {
     const pending = deferred<Response>();
     const flow = start();

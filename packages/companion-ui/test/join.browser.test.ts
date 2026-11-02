@@ -36,7 +36,7 @@ describe.skipIf(!existsSync(chromium.executablePath()))('browser invitations',()
     await page.route(`${ORIGIN}/**`,async route=>{
       const request=route.request(),path=new URL(request.url()).pathname;
       const json=(data:unknown,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
-      if(path==='/app/')return route.fulfill({contentType:'text/html',body:`<!doctype html><div id="root"></div><script>${bundle}</script>`});
+      if(path==='/app/'||path==='/app/auth')return route.fulfill({contentType:'text/html',body:`<!doctype html><div id="root"></div><script>${bundle}</script>`});
       if(path==='/v1/web/auth/refresh')return signedIn?json(session):json({error:{code:'unauthorized',message:'Sign in first.'}},401);
       if(path==='/v1/web/auth/start')return json({flowId:FLOW,authorizationUrl:'https://accounts.example.test/fixture',expiresAt:new Date(Date.now()+300000).toISOString()});
       if(path==='/v1/web/auth/exchange'){exchangeCount++;signedIn=true;return json(session);}
@@ -54,9 +54,9 @@ describe.skipIf(!existsSync(chromium.executablePath()))('browser invitations',()
     await page.getByRole('button',{name:'Sign in with Google',exact:true}).click();
     await page.waitForFunction(()=>Boolean((window as any).__signInOpened));
     await page.goto('https://accounts.example.test/fixture');
-    await page.goto(`${ORIGIN}/app/#signin=${FLOW}.${'C'.repeat(43)}`);
+    await page.goto(`${ORIGIN}/app/auth#signin=${FLOW}.${'C'.repeat(43)}`);
     await page.getByRole('button',{name:'Ask to join',exact:true}).waitFor();
-    expect(exchangeCount).toBe(1);expect(joinCount).toBe(0);
+    expect(page.url()).toBe(`${ORIGIN}/app/auth`);expect(exchangeCount).toBe(1);expect(joinCount).toBe(0);
     await page.reload();await page.getByRole('button',{name:'Ask to join',exact:true}).waitFor();
     expect(joinCount).toBe(0);
     await page.getByRole('button',{name:'Ask to join',exact:true}).evaluate((button:HTMLButtonElement)=>{button.click();button.click();});

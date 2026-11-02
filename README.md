@@ -60,7 +60,7 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 
 ## On your phone
 
-- **Browser companion** at `/app/` on the collaboration service (Android Chrome, iPhone Safari, add to home screen) and a **signed Android APK** ([apps/mobile](apps/mobile/README.md)). Sign in to follow your sessions: live activity, catch-up briefs, people, messages, requirements and evidence reviews, and marking a problem on a shared screenshot. Guests can use review links in it too.
+- **[Browser companion](https://api.multai.si/app/)** (Android Chrome, iPhone Safari, add to home screen) and a **[signed Android APK](https://api.multai.si/app/android)** ([installation details](apps/mobile/README.md)). Sign in to follow your sessions: live activity, catch-up briefs, people, messages, requirements and evidence reviews, and marking a problem on a shared screenshot. Guests can use review links in it too.
 - **Owner control.** In **Settings → Paired phones** the desktop shows a one-use QR code; you confirm the phone when both screens show the same six digits. The phone can then start a pending instruction you pick, stop, steer, approve or reject the exact waiting action, and resolve conflicting directions. Each request is signed by the phone, checked by the service and checked again by the desktop, which does it with its own authority and acknowledges it. The phone never gets the desktop's sign-in, files, terminal or model keys; signing in alone never grants this.
 
 [How it works, pairing, security and limits](docs/mobile-companion.md). Requires migration 010.
@@ -85,7 +85,7 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 ## What happens in a session
 
 1. **Host starts a chat** and gives the agent a task (Plan mode to agree first, Build mode to make changes).
-2. **Invites a teammate** with a `multai://` link. The host admits them as collaborator or viewer.
+2. **Invites a teammate** with an HTTPS link. They can join in a browser without installing MultAI; the host admits them as collaborator or viewer.
 3. **Muse Wonder writes a catch-up brief** for the newcomer automatically.
 4. **Anyone can send directions** to the agent or talk to the team; a pasted screenshot goes to the agent too.
 5. **The host approves** file changes and commands from cards in the chat, or chooses an access level:
@@ -98,7 +98,7 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 
 Everything in this repository was built during the hackathon: the first commit is from 29 October 2026, after building started on 26 October, and the full history is public. That includes:
 
-- **Desktop app** (Electron + React) for macOS, Windows and Linux, with Google sign-in, `multai://` invite links, a sandboxed renderer and OS-encrypted credentials.
+- **Desktop app** (Electron + React) for macOS, Windows and Linux, with Google sign-in, HTTPS invitations, a sandboxed renderer and OS-encrypted credentials.
 - **Collaboration service** (Fastify + PostgreSQL), deployed at `https://api.multai.si` on AWS Lightsail with Supabase Postgres: sessions, admission and roles, ordered live events, decisions, host-only run leases and approvals.
 - **Host runtime**: provider adapters (Meta Model API, OpenAI, Claude, Kimi, ChatGPT plan, compatible APIs), a controlled workspace, exact approval descriptors and a durable effect journal so an interrupted action is never silently repeated.
 - **Meta features**: Muse Spark as the agent, Muse Wonder catch-up briefs and pull request drafts, screenshot input, access levels and in-chat approvals.
@@ -132,7 +132,7 @@ node node_modules/electron/install.js
 npm run dev --workspace @multai/desktop
 ~~~
 
-Sign in with Google, open **Settings → Models & accounts → Meta Muse Spark**, paste a key from [dev.meta.ai](https://dev.meta.ai), start a chat and choose **Run instruction**. Release builds use `multai://` links and talk to `https://api.multai.si`; development builds use `multai-dev://` and the local service.
+Sign in with Google, open **Settings → Models & accounts → Meta Muse Spark**, paste a key from [dev.meta.ai](https://dev.meta.ai), start a chat and choose **Run instruction**. Invitations use HTTPS links to the browser companion. Release builds talk to `https://api.multai.si` and use `multai://auth/callback` for native sign-in; development builds use the local service and `multai-dev://auth/callback`.
 
 ## Tests
 

@@ -1,5 +1,7 @@
 # Implementation status · 29 October 2026
 
+This is a historical snapshot. See the current [mobile guide](mobile-companion.md), [desktop audit](bugfix-audit.md) and [verification record](verification.md) for the later integrated application and live service.
+
 The repository began at empty commit d8d6f36. The newly written backend/runtime and fresh frontend are integrated on **backend**; this task's new commits belong only to that branch. The public repository's chosen [MIT license](../LICENSE) is preserved. Development identity remains 0.0.0-dev.1 with desktop callback multai-dev://auth/callback.
 
 | Area | Implemented and checked | Remaining acceptance or capability |

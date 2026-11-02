@@ -464,6 +464,10 @@ test('the browser companion is served with a strict policy and nothing outside i
   assert.equal(index.headers['cache-control'], 'no-cache');
   const deep = await ctx.app.inject({method: 'GET', url: '/app/sessions/123'});
   assert.equal(deep.statusCode, 200, 'app routes load the app');
+  const browserCallback = await ctx.app.inject({method: 'GET', url: '/app/auth'});
+  assert.equal(browserCallback.statusCode, 200, 'the browser-only completion path loads the companion');
+  assert.equal(browserCallback.body, index.body);
+  assert.equal(browserCallback.headers['content-security-policy'], index.headers['content-security-policy']);
   const asset = await ctx.app.inject({method: 'GET', url: '/app/assets/app-abc.js'});
   assert.equal(asset.headers['cache-control'], 'public, max-age=31536000, immutable');
   const download=await ctx.app.inject({method:'GET',url:'/app/android'});
@@ -504,7 +508,7 @@ test('browser and Android sign-ins use the same Google redirect and hand off in 
   const callback = await ctx.app.inject({method: 'GET', url: `/v1/auth/google/callback?state=${state}&code=synthetic`});
   assert.equal(callback.statusCode, 303);
   const location = String(callback.headers.location);
-  assert.ok(location.startsWith(`${ORIGIN}/app/#signin=`), location);
+  assert.ok(location.startsWith(`${ORIGIN}/app/auth#signin=`), location);
   assert.ok(!location.split('#')[0]!.includes('signin'), 'nothing secret in the query string');
   const [flowId, completionCode] = location.split('#signin=')[1]!.split('.');
   // A web flow cannot be completed through the native exchange.
