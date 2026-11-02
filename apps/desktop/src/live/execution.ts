@@ -1,6 +1,7 @@
 import {getBridge} from '../bridge/client';
 import type {AccessLevel,InferenceSelection} from '../bridge/execution';
 import type {ConnectionSummary} from '../bridge/inference';
+import type {ConflictAnalysis,DirectionResolution} from '../bridge/conflicts';
 import type {ServiceError} from '../bridge/contract';
 import {useApp} from '../model/store';
 import {nextPendingInstruction} from './projection';
@@ -145,30 +146,71 @@ export async function selectConnection(connectionId:string,model:string,modelNam
   }catch{useApp.getState().toast('The app could not select this AI connection. Try again.','error');}
 }
 
-/** Explicit human decision; no timeout, fallback answer or automatic submission. */
-async function resolveDirections():Promise<string|null> {
-  if(typeof document==='undefined')return null;
+/** Explicit host decision against one immutable queue snapshot; model suggestions are optional advice. */
+async function resolveDirections(sessionId:string):Promise<DirectionResolution|null> {
+  const inference=api(),openedSelection=getSelection(),openedEpoch=accountEpoch;
+  if(typeof document==='undefined'||!inference||!openedSelection)return null;
+  const loaded=await inference.conflictContext(sessionId);
+  const latestSelection=getSelection();
+  if(openedEpoch!==accountEpoch||latestSelection?.connectionId!==openedSelection.connectionId||latestSelection?.model!==openedSelection.model)return null;
+  if(!loaded.ok){showError(loaded.error,sessionId);return null;}
+  const context=loaded.value;
+  if(!context.pending.length){useApp.getState().toast('The queue changed. Refresh and choose a pending instruction.','info');return null;}
   const previous=document.activeElement;
-  const openedEpoch=accountEpoch,openedSelection=getSelection();
-  const dialog=document.createElement('dialog');
-  const form=document.createElement('form');
-  const title=document.createElement('h2');title.textContent='Resolve the pending directions';title.id=`owner-decision-${crypto.randomUUID()}`;
-  const explanation=document.createElement('p');explanation.textContent='Several people have pending instructions. Write the agreed direction to save as an owner decision before this run starts.';explanation.id=`${title.id}-description`;
+  const dialog=document.createElement('dialog'),form=document.createElement('form');
+  const title=document.createElement('h2');title.textContent='Review the team’s directions';title.id=`owner-decision-${crypto.randomUUID()}`;
+  const explanation=document.createElement('p');explanation.textContent='Different participants may have compatible requests or a disagreement. You decide which direction to follow. Saving replaces all the directions shown below with your decision; none of the other messages will run later.';explanation.id=`${title.id}-description`;
   dialog.setAttribute('aria-labelledby',title.id);dialog.setAttribute('aria-describedby',explanation.id);
-  const input=document.createElement('textarea');input.required=true;input.maxLength=8000;input.rows=7;input.setAttribute('aria-label','Agreed owner decision');
+  const directions=document.createElement('div');directions.setAttribute('aria-label','Directions being reviewed');
+  Object.assign(directions.style,{display:'grid',gap:'12px',maxHeight:'220px',overflow:'auto'});
+  if(context.previousDirection){const prior=document.createElement('p');prior.textContent=`Previous run — ${context.previousDirection.authorName}: ${context.previousDirection.text}`;prior.style.whiteSpace='pre-wrap';directions.append(prior);}
+  let instructionId=context.pending[0]!.id;
+  const input=document.createElement('textarea');input.required=true;input.maxLength=8000;input.rows=6;input.setAttribute('aria-label','Final host decision');
+  for(const row of context.pending){
+    const item=document.createElement('section'),author=document.createElement('strong'),body=document.createElement('p'),follow=document.createElement('button');
+    author.textContent=row.authorName;body.textContent=row.text;body.style.whiteSpace='pre-wrap';
+    follow.type='button';follow.className='btn btn-secondary';follow.textContent=`Use ${row.authorName}’s direction`;
+    follow.onclick=()=>{instructionId=row.id;if(row.text.length>8000){input.value='';useApp.getState().toast('This direction is longer than the decision limit. Summarize the agreed direction in 8,000 characters.','info');}else input.value=row.text;input.focus();};
+    item.append(author,body,follow);directions.append(item);
+  }
+  const label=document.createElement('label');label.textContent='Your decision (combine, choose or write a different direction)';label.htmlFor=`${title.id}-decision`;input.id=label.htmlFor;
+  const ask=document.createElement('button');ask.type='button';ask.className='btn btn-secondary';ask.textContent='Ask the agent to compare';
+  const advice=document.createElement('div');advice.setAttribute('aria-live','polite');
+  const notice=document.createElement('p');notice.textContent='Comparing uses your selected AI connection. Suggestions do not authorize a run.';
   const controls=document.createElement('div'),cancel=document.createElement('button'),save=document.createElement('button');
-  cancel.type='button';cancel.textContent='Cancel';cancel.className='btn btn-secondary';save.type='submit';save.textContent='Save decision and run';save.className='btn btn-primary';
-  Object.assign(dialog.style,{background:'var(--surface-1)',color:'var(--text)',border:'1px solid var(--border-strong)',borderRadius:'14px',padding:'24px',width:'min(520px, 90vw)'});
+  cancel.type='button';cancel.textContent='Cancel';cancel.className='btn btn-secondary';save.type='submit';save.textContent='Save my decision and run';save.className='btn btn-primary';
+  Object.assign(dialog.style,{background:'var(--surface-1)',color:'var(--text)',border:'1px solid var(--border-strong)',borderRadius:'14px',padding:'24px',width:'min(660px, 94vw)',maxHeight:'90vh',overflow:'auto'});
   Object.assign(form.style,{display:'grid',gap:'14px'});Object.assign(input.style,{width:'100%',resize:'vertical'});Object.assign(controls.style,{display:'flex',justifyContent:'flex-end',gap:'12px'});
-  controls.append(cancel,save);form.append(title,explanation,input,controls);dialog.append(form);document.body.append(dialog);
+  controls.append(cancel,save);form.append(title,explanation,directions,ask,notice,advice,label,input,controls);dialog.append(form);document.body.append(dialog);
   return new Promise(resolve=>{
     let done=false;
-    const canceled=()=>{const latest=getSelection();if(openedEpoch!==accountEpoch||latest?.connectionId!==openedSelection?.connectionId||latest?.model!==openedSelection?.model)finish(null);};
-    const finish=(value:string|null)=>{if(done)return;done=true;window.removeEventListener('multai:selection-changed',canceled);dialog.close();dialog.remove();if(previous instanceof HTMLElement)previous.focus();resolve(value);};
+    const canceled=()=>{const latest=getSelection();if(openedEpoch!==accountEpoch||latest?.connectionId!==openedSelection.connectionId||latest?.model!==openedSelection.model)finish(null);};
+    const finish=(value:DirectionResolution|null)=>{if(done)return;done=true;window.removeEventListener('multai:selection-changed',canceled);dialog.close();dialog.remove();if(previous instanceof HTMLElement)previous.focus();resolve(value);};
+    const showAdvice=(analysis:ConflictAnalysis)=>{
+      advice.replaceChildren();const summary=document.createElement('p');summary.textContent=`Agent’s assessment (advice): ${analysis.summary}`;advice.append(summary);
+      for(const conflict of analysis.possibleConflicts){
+        const line=document.createElement('p');
+        const authors=conflict.instructionIds.map(id=>context.pending.find(row=>row.id===id)?.authorName??(context.previousDirection?.id===id?context.previousDirection.authorName:'Participant'));
+        line.textContent=`Possible disagreement — ${authors.join(' / ')}: ${conflict.explanation}`;advice.append(line);
+      }
+      if(!analysis.possibleConflicts.length){const line=document.createElement('p');line.textContent='No specific contradiction identified. Review the directions yourself before combining them.';advice.append(line);}
+      for(const option of analysis.options){const button=document.createElement('button');button.type='button';button.className='btn btn-secondary';button.textContent=`Review suggestion: ${option.label}`;button.onclick=()=>{input.value=option.text;input.focus();};advice.append(button);}
+    };
+    ask.onclick=async()=>{
+      ask.disabled=true;advice.textContent='Comparing the directions…';
+      try{
+        const result=await inference.analyzeConflict({sessionId,connectionId:openedSelection.connectionId,model:openedSelection.model});
+        if(done)return;canceled();if(done)return;
+        if(!result.ok){advice.textContent='The comparison is unavailable. You can still review the attributed directions and decide yourself.';return;}
+        if(result.value.context.fingerprint!==context.fingerprint){save.disabled=true;advice.textContent='The directions changed during comparison. Cancel and run again to review the latest queue.';return;}
+        if(result.value.analysis)showAdvice(result.value.analysis);else advice.textContent='No usable comparison was returned. Review the original directions above and make your own decision.';
+      }catch{if(!done)advice.textContent='The comparison failed. Your decision is still required.';}
+      finally{if(!done)ask.disabled=false;}
+    };
     window.addEventListener('multai:selection-changed',canceled);
     cancel.onclick=()=>finish(null);dialog.oncancel=event=>{event.preventDefault();finish(null);};
-    form.onsubmit=event=>{event.preventDefault();const value=input.value.trim();if(value)finish(value);else input.focus();};
-    dialog.showModal();input.focus();
+    form.onsubmit=event=>{event.preventDefault();const resolution=input.value.trim();if(resolution&&resolution.length<=8000)finish({instructionId,resolution,resolutionFingerprint:context.fingerprint});else input.focus();};
+    dialog.showModal();cancel.focus();
   });
 }
 
@@ -192,9 +234,9 @@ async function run(sessionId:string,retried=false):Promise<void> {
     let result=await inference.run(input);
     if(epoch!==accountEpoch||user!==currentUser())return;
     if(!result.ok&&result.error.code==='instruction_conflict'){
-      const resolution=await resolveDirections();
+      const resolution=await resolveDirections(sessionId);
       if(!resolution||epoch!==accountEpoch||user!==currentUser())return;
-      result=await inference.run({...input,resolution});
+      result=await inference.run({...input,...resolution});
     }
     if(epoch!==accountEpoch||user!==currentUser())return;
     // This view still listed a message the service already took out of the queue: catch up, then run

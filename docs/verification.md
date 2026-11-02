@@ -1,3 +1,31 @@
+# Team review verification · 2 November 2026
+
+The combined `main` implementation now includes team-approved requirements, source-bound process evidence, separate read-only model review, scoped browser guests, screenshot annotations and host conflict decisions. The final full suite passed **384 tests: 89 backend, 237 desktop, 58 runtime; zero failures or skips**, compared with the prior 320-test baseline. Root typecheck, build and `git diff --check` passed. Tests used a disposable PostgreSQL 18 container, real temporary source files/processes and SQLite journals; no production data was modified.
+
+## New edge cases checked
+
+- Requirement approval, versions and locked command bytes; wrong actors/devices, viewers, revoked identity, cross-session IDs and immutable retries are denied. Concurrent revisions cannot overwrite one another. Changing a decision or requirement invalidates old evidence even when source bytes remain identical.
+- Evidence rejects fabricated status fields and substituted commands. Nonzero/unknown exits, termination, cancellation, rejected approvals, source mutations and missing results cannot produce passing proofs. Manual acceptance stays separate from automated verdicts. Latest-proof ordering follows session sequence even when transaction clocks disagree.
+- Native revision fingerprints include safe tracked/untracked source bytes, deletions and executable bits, and reject symlinks, special/oversized/changing files. Real shell tests exercise locked commands, failed outcomes, refusal, cancellation and source-changing checks. Output fits the backend limit with a visible truncation marker.
+- The reviewer has a fresh context and read-only tools. Malicious write/command calls are denied. Requirement changes between preparation and the actual run cannot execute an old check. Unavailable connections/models do not leave an orphan verifier instruction. A model-review outage preserves completed process evidence while disclosing the missing review.
+- Browser guests see no private session content before admission. Guest credentials cannot call native execution routes. Invitation expiry/revocation, participant revocation, session deletion, concurrent retries, wrong origins, XSS payloads, screenshot sharing/bounds and capacity behavior are tested. Late responses cannot restore content after leaving.
+- Conflict resolutions bind the exact queue, preserve attribution and remove superseded alternatives. Changed/removed/steered directions reject stale choices. Cross-author steering halts for review, and restarting does not bypass it. Model comparisons validate source IDs and remain advisory. Browser feedback reaches builder/catch-up context without acquiring instruction authority.
+- Renderer tests cover viewer restrictions, stale evidence while running, prior human acceptance, escaped names/content and native service routing.
+
+## Actual browser and native checks
+
+An isolated Electron/Chromium browser exercised the served review page against a local service and disposable PostgreSQL, with explicitly synthetic identities and fixture data. Admission, comments, requirement proposals, human acceptance, pointer-drag screenshot annotation, 390-pixel layout, network failure/recovery, leaving, reload, reopening the same invitation tab, re-admission and host revocation passed. Database rows confirmed the actual mutations.
+
+The newly compiled macOS arm64 app passed native renderer/preload mounting, real IPC, sandbox/context isolation, untrusted-window rejection, signed-out denial for review/verification/conflict endpoints, and an actual macOS Keychain encryption/decryption round trip. The existing hosted backend was contacted only for its health endpoint; protocol registration was stubbed and no real account or provider was used.
+
+## Limits and deployment
+
+This is broad regression coverage, not proof of every possible edge case. Live Meta/other-provider inference, real multi-person use and interactive OAuth were not retested. Provider outputs in integration tests were synthetic. iOS Safari and Android hardware were not exercised; the mobile check used a phone-sized Chromium viewport. Windows/Linux installer checks run separately in CI.
+
+Deploy the current backend with migrations **008–009** and use the matching new desktop build before trying the workflow on the hosted service. No cloud deployment, production migration, native mobile app, APK, TestFlight build or Apple membership purchase was performed in this change. See [team review](team-review.md) for the source fingerprint's environmental limits and polling freshness.
+
+---
+
 # Verification · 2 November 2026
 
 The current combined `main` checkout was reviewed directly; no historical branch or application changes were reapplied. Baseline: **303 passing tests**. After the edge-case regressions and fixes: **320 passing tests — 63 backend, 199 desktop, 58 runtime; zero failures or skips**. `npm run test:integration` used a disposable PostgreSQL 18 container without changing the existing development database. Root typecheck, build and `git diff --check` passed on Node 24.22.0/macOS arm64.

@@ -29,6 +29,7 @@ async function transcribe(manager:ConnectionManager,coordinator:HostCoordinator,
 }
 
 const schemas={
+  conflictContext:z.tuple([z.uuid()]),analyzeConflict:z.tuple([z.unknown()]),verify:z.tuple([z.unknown()]),syncVerification:z.tuple([z.uuid()]),
   list:z.tuple([]),add:z.tuple([z.object({provider:z.enum(['meta','openai','anthropic','kimi','compatible','local']),apiKey:z.string().min(1).max(8192).optional(),name:z.string().max(120).optional(),baseUrl:z.string().max(2048).optional()}).strict()]),
   remove:z.tuple([z.uuid()]),models:z.tuple([z.uuid()]),connectChatGPT:z.tuple([z.uuid().optional()]),cancelChatGPT:z.tuple([]),
   manageChatGPTUsage:z.tuple([]),acknowledgeChatGPTPlan:z.tuple([z.uuid()]),
@@ -58,6 +59,10 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
   try{
     let value:unknown;
     switch(key){
+      case 'conflictContext':value=await coordinator.conflictContext(values[0] as string);break;
+      case 'analyzeConflict':value=await coordinator.analyzeConflict(values[0]);break;
+      case 'verify':value=await coordinator.verify(values[0]);break;
+      case 'syncVerification':value=await coordinator.syncVerification(values[0] as string);break;
       case 'list':value=await manager.list();break;
       case 'add':value=await manager.add(values[0] as AddConnectionInput);break;
       case 'remove':await coordinator.invalidate();await manager.remove(values[0] as string);value=null;break;
@@ -84,7 +89,7 @@ export async function routeInference(manager:ConnectionManager,coordinator:HostC
       case 'workDiscard':value=await coordinator.workDiscard(values[0] as string);break;
       case 'draftPullRequest':value=await coordinator.draftPullRequest(values[0]);break;
       case 'workPush':value=await coordinator.workPush(values[0] as string,values[1] as {title:string;body:string});break;
-      case 'terminalRun':value=host.terminal.run(values[0] as string,await coordinator.terminalRoot(values[0] as string),values[1] as string);break;
+      case 'terminalRun':await coordinator.invalidateVerification(values[0] as string);value=host.terminal.run(values[0] as string,await coordinator.terminalRoot(values[0] as string),values[1] as string);break;
       case 'terminalStop':value=host.terminal.stop(values[0] as string);break;
       case 'listFiles':value=await coordinator.listFiles(values[0] as string|null,values[1] as string|null);break;
       case 'skills':value=await coordinator.skills(values[0] as string|null,values[1] as string|null);break;

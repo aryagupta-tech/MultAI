@@ -14,8 +14,10 @@ import { useEditorItems } from './AssistDialogs';
 import { hueFor, relativeTime } from '../model/format';
 import type { FileChange, InspectorTab, SessionDetail, ToolCall } from '../model/types';
 import { Avatar, Button, Dialog, EmptyState, IconButton, Menu, Segmented, Spinner, cx } from '../ui/primitives';
+import {VerificationPanel,BrowserReviewPanel} from './VerificationPanel';
 
 const TABS: { id: InspectorTab; label: string; icon: typeof FileDiff }[] = [
+  { id:'verification',label:'Verification',icon:CircleCheck },
   { id: 'changes', label: 'Changes', icon: FileDiff },
   { id: 'activity', label: 'Activity', icon: Activity },
   { id: 'approvals', label: 'Approvals', icon: ShieldCheck },
@@ -86,6 +88,7 @@ export function Inspector({ d }: { d: SessionDetail }) {
         {tab === 'activity' && <ActivityPanel d={d} />}
         {tab === 'approvals' && <ApprovalsPanel d={d} />}
         {tab === 'decisions' && <DecisionsPanel d={d} />}
+        {tab === 'verification' && <VerificationPanel key={d.id} d={d} />}
         {tab === 'people' && <PeoplePanel d={d} />}
         {tab === 'files' && (
           <EmptyState icon={FolderTree} title="File browser isn’t available yet">
@@ -99,6 +102,7 @@ export function Inspector({ d }: { d: SessionDetail }) {
 }
 
 const LIVE_COPY: Record<Exclude<InspectorTab, 'people'>, { icon: typeof FileDiff; title: string; body: string }> = {
+  verification:{icon:CircleCheck,title:'Team verification',body:'Agree on requirements and inspect recorded evidence.'},
   changes: { icon: FileDiff, title: 'Changes are reviewed on the host', body: 'The host reviews the agent’s changes to their project here. Every file the agent writes is also shown in full on its approval card in the chat.' },
   terminal: { icon: SquareTerminal, title: 'The terminal is the host’s', body: 'Only the host can run commands in this session’s worktree. They can share output to the chat.' },
   activity: { icon: Activity, title: 'No agent activity yet', body: 'Tool calls show up here once the service can run an agent. For now, plan and discuss together.' },
@@ -692,6 +696,7 @@ function PeoplePanel({ d }: { d: SessionDetail }) {
       </ul>
 
       <div className="role-explainer">
+        {isLive && d.capabilities.configure && <BrowserReviewPanel key={d.id} d={d} />}
         <h3 className="sub-label">What each role can do</h3>
         <dl>
           <div><dt>Owner</dt><dd>Everything, including approving commands on the host computer.</dd></div>

@@ -1,7 +1,8 @@
 import type {ProjectGit,Result} from './contract';
 import type {FileChange} from '../model/types';
+import type {ConflictContext,ConflictReview} from './conflicts';
 export interface InferenceSelection {connectionId:string;model:string;modelName?:string}
-export interface StartInferenceInput extends InferenceSelection {sessionId:string;instructionId:string;resume?:boolean;resolution?:string;effort?:'low'|'medium'|'high'|'xhigh'|'max';webSearch?:boolean}
+export interface StartInferenceInput extends InferenceSelection {sessionId:string;instructionId:string;resume?:boolean;resolution?:string;resolutionFingerprint?:string;verification?:boolean;effort?:'low'|'medium'|'high'|'xhigh'|'max';webSearch?:boolean}
 export interface HostRunChange {sessionId:string;status:'running'|'completed'|'failed'|'stopped';error?:{code:string;message:string}}
 export type AccessLevel='ask'|'auto'|'full';
 /** An action waiting for the original host, shown as a card in that session's conversation. */
@@ -21,6 +22,10 @@ export type Editor='vscode'|'cursor'|'zed'|'finder';
 export interface LockedAction {id:string;kind:'file_write'|'shell'|'external';label:string;hint:'happened'|'did_not_happen'|'unknown';at:string}
 export type TerminalEvent={sessionId:string;id:string}&({kind:'output';text:string}|{kind:'exit';code:number|null;stopped:boolean});
 export interface HostExecutionApi {
+  conflictContext(sessionId:string):Promise<Result<ConflictContext>>;
+  analyzeConflict(input:{sessionId:string;connectionId:string;model:string}):Promise<Result<ConflictReview>>;
+  verify(input:{sessionId:string;connectionId:string;model:string}):Promise<Result<{runId:string}>>;
+  syncVerification(sessionId:string):Promise<Result<{revision:string|null}>>;
   select(input:InferenceSelection):Promise<Result<InferenceSelection>>;
   selection():Promise<Result<InferenceSelection|null>>;
   run(input:StartInferenceInput):Promise<Result<{runId:string}>>;

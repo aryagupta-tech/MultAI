@@ -6,6 +6,7 @@ import type {
 } from './wire';
 import type {InferenceConnectionsApi} from './inference';
 import type {HostExecutionApi} from './execution';
+import type {ReviewOperation} from './review';
 
 export type BuildChannel = 'development' | 'demo' | 'production';
 
@@ -63,6 +64,7 @@ export interface LiveStatusChange {
 }
 
 export interface ServiceApi {
+  review(sessionId:string,operation:ReviewOperation):Promise<Result<unknown>>;
   health(): Promise<ServiceHealth>;
   authState(): Promise<AuthState>;
   signIn(): Promise<Result<null>>;
@@ -119,6 +121,7 @@ export const IPC = {
 
 /** Service operations routed through the single validated `multai:service` channel. */
 export type ServiceOp =
+  | 'review'
   | 'health' | 'authState' | 'signIn' | 'cancelSignIn' | 'signOut' | 'listSessions' | 'getSession' | 'readEvents'
   | 'createSession' | 'postMessage' | 'setMode' | 'createInvitation' | 'joinInvitation' | 'listJoinRequests' | 'admit'
   | 'revokeParticipant' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe' | 'sendPresence'

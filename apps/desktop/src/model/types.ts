@@ -130,6 +130,7 @@ export type TimelineItem =
   | (TimelineBase & { type: 'brief'; text: string; model: string })
   | (TimelineBase & { type: 'conflict'; instructionIds: [string, string]; resolved: boolean })
   | (TimelineBase & { type: 'question'; prompt: string; options: string[]; answer?: string })
+  | (TimelineBase & {type:'browser-review';name:string;text:string;screenshotId?:string;region?:{x:number;y:number;width:number;height:number}})
   | (TimelineBase & { type: 'system'; tone: 'info' | 'warn' | 'error'; text: string });
 
 export interface FileChange {
@@ -179,4 +180,4 @@ export interface Account {
 
 export type ConnectionState = 'connected' | 'connecting' | 'offline';
 
-export type InspectorTab = 'changes' | 'activity' | 'approvals' | 'decisions' | 'people' | 'files' | 'terminal';
+export type InspectorTab = 'changes' | 'activity' | 'approvals' | 'decisions' | 'people' | 'files' | 'terminal' | 'verification';

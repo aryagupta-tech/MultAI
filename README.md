@@ -48,6 +48,15 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 - **`@codebase`.** Finds the code most related to your request from a local search index of the project, and attaches it. The agent can search the same way with its `codebase_search` tool.
 - **Web search.** For Muse (Meta's built-in `web_search`), GPT (OpenAI or your ChatGPT plan) and Claude models, turn on *Allow web search* in the access menu: the provider runs the searches, the timeline shows each one, and replies cite their sources. Muse runs on Meta's Responses API for this.
 
+## Team verification and browser reviewers
+
+- **Shared requirements.** Propose a required behavior and an optional check command in the Verification panel. The original host approves it; changes need approval again.
+- **Actual evidence.** Run the locked checks on the host, then a separate model reviewer inspects their coverage using read-only tools. Results identify the source revision and requirement version. Source changes make old results stale; human acceptance is recorded separately from test success.
+- **Review from a browser.** In People, create a browser reviewer invitation. Admit the guest to let them comment, propose requirements and review evidence without installing the desktop app. Explicitly shared screenshots can be marked with a rectangle. Guests cannot run agents or approve commands. Public watch links remain read-only.
+- **Explain conflicting directions.** The host sees the participants' requests, can explicitly ask the selected model to compare them, and decides what to follow. Changed queues reject stale resolutions; cross-author steering also stops for review.
+
+[Workflow, permissions and verification limits](docs/team-review.md). The current backend and migrations 008–009 are required.
+
 ## Parallel agents
 
 `/split <task>` in a project chat (Build mode) puts several agents on one task at once, with whichever model you've selected: Muse, GPT, Claude, Kimi or a compatible API.

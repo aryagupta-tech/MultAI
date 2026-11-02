@@ -62,6 +62,20 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
   const p = (e.payload ?? {}) as Record<string, unknown>;
   const actor = nameOf(e.actorId);
   switch (e.type) {
+    case 'reviewer.comment': {
+      if(typeof p.text!=='string'||typeof p.reviewerName!=='string')return null;
+      const r=p.region as {x?:unknown;y?:unknown;width?:unknown;height?:unknown}|undefined;
+      const region=r&&[r.x,r.y,r.width,r.height].every(value=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1)?r as {x:number;y:number;width:number;height:number}:undefined;
+      return {...base,type:'browser-review',name:p.reviewerName,text:p.text,...(typeof p.screenshotId==='string'&&region?{screenshotId:p.screenshotId,region}:{})};
+    }
+    case 'reviewer.requested':case 'reviewer.admitted':case 'reviewer.revoked':
+      return {...base,type:'system',tone:'info',text:`${typeof p.reviewerName==='string'?p.reviewerName:'A browser reviewer'} ${e.type==='reviewer.requested'?'requested browser access.':e.type==='reviewer.admitted'?'was admitted for browser review.':'lost browser access.'}`};
+    case 'acceptance.proposed':case 'acceptance.approved':case 'acceptance.revised':
+      return {...base,type:'system',tone:'info',text:`${typeof p.authorName==='string'?p.authorName:actor} ${e.type==='acceptance.proposed'?'proposed':e.type==='acceptance.approved'?'approved':'revised'} a requirement: ${typeof p.text==='string'?p.text:''}`};
+    case 'acceptance.evidence':
+      return {...base,type:'system',tone:p.status==='failed'?'warn':'info',text:`Verification evidence recorded: ${p.status==='passed'?'check passed':p.status==='failed'?'check failed':'human review needed'}. Inspect the Verification panel for its source revision and result.`};
+    case 'acceptance.reviewed':
+      return {...base,type:'system',tone:'info',text:`${typeof p.authorName==='string'?p.authorName:actor} ${p.decision==='accept'?'accepted the behavior':'requested changes'}${typeof p.comment==='string'?`: ${p.comment}`:'.'}`};
     case 'message.discussion':
     case 'message.instruction': {
       const m = messagePayload(e);

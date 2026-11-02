@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Result, ServiceOp } from '../../src/bridge/contract';
 import { type Account, toError } from './account';
 import type { LiveHub } from './live';
+import {reviewSchema,routeReview} from './review';
 
 const uuid = z.uuid();
 const kind = z.enum(['discussion', 'instruction']);
@@ -10,6 +11,7 @@ const image = z.string().max(110_000).regex(/^data:image\/(png|jpeg|webp);base64
 
 // Every renderer-supplied argument is validated here before any request is built.
 const schemas = {
+  review:z.tuple([uuid,reviewSchema]),
   health: z.tuple([]),
   authState: z.tuple([]),
   signIn: z.tuple([]),
@@ -58,6 +60,7 @@ export async function route(account: Account, live: LiveHub, op: ServiceOp, rawA
   const req = account.request.bind(account);
 
   switch (op) {
+    case 'review':return wrap(()=>routeReview(account,s(0),args[1]));
     case 'health': return account.health();
     case 'authState': return account.state();
     case 'signIn': return account.signIn();

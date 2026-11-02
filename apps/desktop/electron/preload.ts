@@ -13,6 +13,7 @@ function listen<T>(channel: string) {
 }
 
 const ops: ServiceOp[] = [
+  'review',
   'health', 'authState', 'signIn', 'cancelSignIn', 'signOut', 'listSessions', 'getSession', 'readEvents', 'createSession',
   'postMessage', 'setMode', 'createInvitation', 'joinInvitation', 'listJoinRequests', 'admit', 'revokeParticipant',
   'deleteSession', 'saveDecision', 'subscribe', 'unsubscribe', 'sendPresence', 'createReplay', 'listReplays', 'revokeReplay',
@@ -33,6 +34,10 @@ const bridge: DesktopBridge = {
   pickProjectFolder: () => ipcRenderer.invoke(IPC.pickFolder),
   service: Object.freeze(service),
   inference:Object.freeze({
+    conflictContext:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'conflictContext',[sessionId]),
+    analyzeConflict:(input)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'analyzeConflict',[input]),
+    verify:(input)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'verify',[input]),
+    syncVerification:(sessionId)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'syncVerification',[sessionId]),
     list:()=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'list',[]),
     add:(input)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'add',[input]),
     remove:(id)=>ipcRenderer.invoke(INFERENCE_IPC.invoke,'remove',[id]),

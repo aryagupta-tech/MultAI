@@ -13,6 +13,8 @@ import { ApiError } from './errors.js';
 import { PresenceHub } from './presence.js';
 import { ReplayService, registerReplayRoutes } from './replay.js';
 import {ExecutionService,registerExecutionRoutes} from './execution.js';
+import {AcceptanceService,registerAcceptanceRoutes} from './acceptance.js';
+import {BrowserReviewService,registerBrowserReviewRoutes} from './browser-review.js';
 
 export interface AppOptions {
   db: Database;
@@ -83,6 +85,8 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
   await registerCollaborationRoutes(app, {service, authenticate: request => auth.authenticateRequest(request)});
   await registerExecutionRoutes(app,execution,request=>auth.authenticateRequest(request));
   await registerReplayRoutes(app, new ReplayService(db), request => auth.authenticateRequest(request));
+  await registerAcceptanceRoutes(app,new AcceptanceService(db),request=>auth.authenticateRequest(request));
+  await registerBrowserReviewRoutes(app,new BrowserReviewService(db),request=>auth.authenticateRequest(request),config.publicOrigin);
 
   const connectionCounts = new Map<string, number>();
   const presence = new PresenceHub();

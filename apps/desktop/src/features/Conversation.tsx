@@ -10,6 +10,8 @@ import { Avatar, Button, cx } from '../ui/primitives';
 import { Markdown } from '../ui/Markdown';
 import { LogoMark } from '../ui/Logo';
 import * as execution from '../live/execution';
+import {getBridge} from '../bridge/client';
+import type {BrowserReviewers} from '../bridge/review';
 
 type Item<T extends TimelineItem['type']> = Extract<TimelineItem, { type: T }>;
 
@@ -91,6 +93,7 @@ function TimelineRow({ item, d, people, decisions, grouped }: {
   item: TimelineItem; d: SessionDetail; people: Map<string, Participant>; decisions: Map<string, Decision>; grouped: boolean;
 }) {
   switch (item.type) {
+    case 'browser-review':return <BrowserReviewRow item={item} d={d}/>;
     case 'message': return <MessageRow item={item} author={people.get(item.authorId)} grouped={grouped} />;
     case 'agent': return <AgentRow item={item} />;
     case 'tools': return <ToolGroup item={item} />;
@@ -103,6 +106,25 @@ function TimelineRow({ item, d, people, decisions, grouped }: {
     case 'question': return <QuestionCard item={item} d={d} />;
     case 'system': return <SystemRow item={item} />;
   }
+}
+
+function BrowserReviewRow({item,d}:{item:Item<'browser-review'>;d:SessionDetail}){
+  const [image,setImage]=useState<string|null>(null),[error,setError]=useState('');
+  const account=useApp(s=>s.account?.id),live=useRef(true);
+  useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
+  const show=async()=>{
+    const result=await getBridge()?.service.review(d.id,{kind:'reviewers'});
+    if(!live.current||useApp.getState().account?.id!==account)return;
+    if(!result?.ok){setError('This shared screenshot is unavailable.');return;}
+    const screenshot=(result.value as BrowserReviewers).screenshots.find(row=>row.id===item.screenshotId);
+    if(screenshot)setImage(screenshot.image);else setError('The host stopped sharing this screenshot.');
+  };
+  return <article className="requirement-card" style={{margin:'12px 0'}}><strong>{item.name} · browser reviewer</strong><p style={{whiteSpace:'pre-wrap'}}>{item.text}</p>
+    {item.region&&<p className="field-help">Marked region: {Math.round(item.region.x*100)}% from left, {Math.round(item.region.y*100)}% from top; {Math.round(item.region.width*100)}% wide × {Math.round(item.region.height*100)}% high.</p>}
+    {d.capabilities.configure&&item.screenshotId&&!image&&<Button size="sm" onClick={()=>void show()}>View marked screenshot</Button>}
+    {error&&<p role="status">{error}</p>}
+    {image&&item.region&&<div style={{position:'relative',lineHeight:0}}><img src={image} alt="Screenshot marked by the browser reviewer" style={{width:'100%'}}/><div aria-label="Marked problem region" style={{position:'absolute',border:'3px solid #e34b51',background:'rgba(227,75,81,.15)',left:`${item.region.x*100}%`,top:`${item.region.y*100}%`,width:`${item.region.width*100}%`,height:`${item.region.height*100}%`}}/></div>}
+  </article>;
 }
 
 /* ---------------------------------------------------------------- Human messages */

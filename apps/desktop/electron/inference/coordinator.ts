@@ -2,6 +2,8 @@ import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {mkdir,readFile,writeFile,rename,lstat,unlink,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {z} from 'zod';
+import {acceptanceSchema,checkRequirements,sourceRevision,REVIEWER_SYSTEM,type VerificationCriterion} from './verification';
+import {conflictContextSchema,conflictSystem,conflictPrompt,parseConflictAnalysis} from './conflicts';
 import {ControlledWorkspace,ExecutionJournal,isDeniedPath,RuntimeError,ProviderError,fingerprint,runAgent,executeApprovedShell,hostShell,redactSecrets,type ActionDescriptor,type Authority,type JsonValue,type ToolCall,type ToolDefinition} from '@multai/runtime';
 import type {HostRunChange,InferenceSelection,LockedAction,StartInferenceInput} from '../../src/bridge/execution';
 import {ApiFailure,type Account} from '../service/account';
@@ -18,7 +20,7 @@ import {PLAN_SYSTEM,SplitError,applyCommit,captureWork,createLanes,laneResult,me
 
 const selectionSchema=z.object({connectionId:z.uuid(),model:z.string().min(1).max(200),modelName:z.string().max(200).optional()}).strict();
 function selectionValue(input:unknown):InferenceSelection {const value=selectionSchema.parse(input);return {connectionId:value.connectionId,model:value.model,...(value.modelName?{modelName:value.modelName}:{})};}
-const runSchema=selectionSchema.extend({sessionId:z.uuid(),instructionId:z.uuid(),resume:z.boolean().optional(),resolution:z.string().trim().min(1).max(8000).optional(),effort:z.enum(['low','medium','high','xhigh','max']).optional(),webSearch:z.boolean().optional()}).strict();
+const runSchema=selectionSchema.extend({sessionId:z.uuid(),instructionId:z.uuid(),resume:z.boolean().optional(),resolution:z.string().trim().min(1).max(8000).optional(),resolutionFingerprint:z.string().regex(/^[a-f0-9]{64}$/u).optional(),verification:z.boolean().optional(),effort:z.enum(['low','medium','high','xhigh','max']).optional(),webSearch:z.boolean().optional()}).strict();
 const contextSchema=z.object({run:z.object({id:z.uuid(),sessionId:z.uuid(),connectionId:z.uuid(),model:z.string(),generation:z.number().int().positive(),mode:z.enum(['plan','build'])}),messages:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(100),selectedInstruction:z.object({id:z.uuid(),authorId:z.uuid(),text:z.string().min(1).max(16000),image:z.string().max(110_000).optional()}),decisions:z.array(z.object({id:z.uuid(),text:z.string()})).max(100)});
 interface Running {
   id:string;sessionId:string;generation:number;connectionId:string;lease:string;controller:AbortController;
@@ -97,7 +99,7 @@ const effectDefinitions:ToolDefinition[]=[
 
 /** One native owner executes at a time. The collaboration service grants no filesystem capability. */
 const BRIEF_MODEL='muse-wonder-1.0';
-const BRIEF_LABELS:Record<string,string>={'message.discussion':'Team message','message.instruction':'Instruction to agent','agent.completed':'Agent reply','activity.completed':'Agent action','activity.failed':'Agent action failed','decision.saved':'Decision saved','participant.admitted':'Joined','brief.created':'Earlier brief'};
+const BRIEF_LABELS:Record<string,string>={'reviewer.comment':'Browser reviewer feedback','message.discussion':'Team message','message.instruction':'Instruction to agent','agent.completed':'Agent reply','activity.completed':'Agent action','activity.failed':'Agent action failed','decision.saved':'Decision saved','participant.admitted':'Joined','brief.created':'Earlier brief'};
 const briefContextSchema=z.object({title:z.string(),mode:z.string(),throughSequence:z.number().int().nonnegative(),events:z.array(z.object({sequence:z.number().int(),type:z.string(),author:z.string(),text:z.string()})).max(200)});
 const READ_ONLY_TOOLS=new Set(['list_files','read_file','search_files','codebase_search']);
 const EXPAND_SYSTEM='Turn a request about a codebase into search terms for a full-text code search. Reply with one line of at most 15 space-separated terms: likely identifiers in camelCase or snake_case, function and file name parts, domain words and close synonyms. No explanation.';
@@ -150,7 +152,22 @@ export class HostCoordinator {
   private invalidating:Promise<void>|null=null;
   private lifecycle=0;
   private journals=new Map<string,ExecutionJournal>();
+  private verifiedSessions=new Set<string>();
+  private verificationMonitor:NodeJS.Timeout|undefined;
   constructor(private readonly options:CoordinatorOptions){}
+  private trackVerification(sessionId:string):void {
+    this.verifiedSessions.add(sessionId);
+    if(this.verifiedSessions.size>20)this.verifiedSessions.delete(this.verifiedSessions.values().next().value!);
+    if(this.verificationMonitor)return;
+    this.verificationMonitor=setInterval(()=>{
+      if(this.active||this.starting||this.selecting||this.invalidating)return;
+      void (async()=>{for(const id of this.verifiedSessions){try{await this.syncVerification(id);}catch(error){if(error instanceof ApiFailure&&[401,403,404].includes(error.error.status??0))this.verifiedSessions.delete(id);}}})();
+    },60000);this.verificationMonitor.unref();
+  }
+  async invalidateVerification(sessionId:string):Promise<void>{
+    z.uuid().parse(sessionId);
+    await this.options.account.request('POST',`/v1/sessions/${sessionId}/acceptance/revision`,{requestId:randomUUID(),revision:null});
+  }
   private emit(change:HostRunChange):void {try{this.options.emit(change);}catch{/* A gone renderer has no native authority. */}}
   private available():void {if(this.active||this.starting||this.selecting||this.invalidating)throw new RuntimeError('SESSION_ACTIVE','Stop the current inference or connection operation before starting another.');}
   private fresh(operation:Slot,identity?:{generation:number}):void {
@@ -219,11 +236,12 @@ export class HostCoordinator {
     }catch(error){if(error instanceof ProjectError&&error.code==='NO_PROJECT')return null;throw error;}
   }
   async workDiff(sessionId:string){const {root,info}=await this.work(sessionId);return diffWork(root,info);}
-  async workRevert(sessionId:string,file:string){const {root,info}=await this.work(sessionId,{idle:true});await revertFile(root,info,file);return null;}
+  async workRevert(sessionId:string,file:string){const {root,info}=await this.work(sessionId,{idle:true});await this.invalidateVerification(sessionId);await revertFile(root,info,file);return null;}
   async workKeep(sessionId:string,message:string){const {root,info}=await this.work(sessionId,{idle:true});return keepWork(root,info,message);}
   async workApply(sessionId:string){const {root,info}=await this.work(sessionId,{idle:true});return applyWork(root,info,await this.options.projects.get(info.projectId));}
   async workDiscard(sessionId:string){
     const {root,info}=await this.work(sessionId,{idle:true});
+    await this.invalidateVerification(sessionId);
     const project=await this.options.projects.get(info.projectId);
     await discardWork(root,project,{branch:info.branch,deleteBranch:!info.kept&&!info.pushedTo});
     return null;
@@ -433,7 +451,7 @@ export class HostCoordinator {
   }
   /** Files the last run changed, for the undo confirmation. */
   async undoPreview(sessionId:string){const {root}=await this.work(sessionId);return checkpointChanges(root);}
-  async undo(sessionId:string){const {root}=await this.work(sessionId,{idle:true});return restoreCheckpoint(root);}
+  async undo(sessionId:string){const {root}=await this.work(sessionId,{idle:true});await this.invalidateVerification(sessionId);return restoreCheckpoint(root);}
   /** A pull request title and description from the session, written with the host's connection. */
   async draftPullRequest(input:unknown):Promise<{title:string;body:string}>{
     const body=z.object({sessionId:z.uuid(),connectionId:z.uuid(),model:z.string().min(1).max(200)}).strict().parse(input);
@@ -457,6 +475,88 @@ export class HostCoordinator {
       return {title,body:rest.join('\n').trim().slice(0,20_000)};
     }finally{clearTimeout(deadline);}
   }
+  async conflictContext(sessionId:string){
+    z.uuid().parse(sessionId);
+    const {previousDirection,...context}=conflictContextSchema.parse(await this.options.account.request('GET',`/v1/sessions/${sessionId}/conflict-context`));
+    return {...context,...(previousDirection?{previousDirection}:{})};
+  }
+  async analyzeConflict(input:unknown){
+    const body=z.object({sessionId:z.uuid(),connectionId:z.uuid(),model:z.string().min(1).max(200)}).strict().parse(input);
+    this.available();const operation:StartSlot={...slot(this.lifecycle,this.options.account.accountGeneration),sessionId:body.sessionId,controller:new AbortController()};this.starting=operation;
+    const timer=setTimeout(()=>operation.controller.abort(),90000);timer.unref();
+    try{
+      const context=await this.conflictContext(body.sessionId);this.freshStart(operation);
+      const credentials=await this.options.connections.resolve(body.connectionId);this.freshStart(operation);
+      if(!await this.modelAvailable(body.connectionId,body.model))throw new RuntimeError('MODEL_UNAVAILABLE','The selected model is unavailable.');
+      const result=await runAgent({credentials,model:body.model,system:conflictSystem,messages:[{role:'user',content:conflictPrompt(context)}],signal:operation.controller.signal,fetch:providerFetch(credentials),beforeRequest:async()=>{this.freshStart(operation);},limits:{maxIterations:1,maxToolCalls:1,maxOutputTokens:reasoningBudget(credentials),maxInputBytes:200000,maxTextBytes:12000,deadlineMs:90000,idleMs:30000}});
+      this.freshStart(operation);const current=await this.conflictContext(body.sessionId);this.freshStart(operation);
+      if(current.fingerprint!==context.fingerprint)throw new RuntimeError('instruction_conflict_changed','The queued directions changed. Review them again.');
+      return {context,analysis:parseConflictAnalysis(redactText(result.text,[credentials.apiKey]),context)};
+    }finally{clearTimeout(timer);if(this.starting===operation)this.starting=null;operation.settle();}
+  }
+  async verify(input:unknown):Promise<{runId:string}>{
+    const body=z.object({sessionId:z.uuid(),connectionId:z.uuid(),model:z.string().min(1).max(200)}).strict().parse(input);
+    this.available();const operation=slot(this.lifecycle,this.options.account.accountGeneration);this.selecting=operation;
+    let instructionId:string;
+    try{
+      const context=await this.conflictContext(body.sessionId);this.fresh(operation);
+      if(context.pending.length)throw new RuntimeError('VERIFICATION_PENDING','Resolve or remove pending instructions before starting a separate verification run.');
+      const snapshot=acceptanceSchema.parse(await this.options.account.request('GET',`/v1/sessions/${body.sessionId}/acceptance`));this.fresh(operation);
+      const approved=snapshot.criteria.filter(item=>item.state==='approved');
+      if(!approved.length||approved.length>20)throw new RuntimeError('VERIFICATION_REQUIREMENTS','Approve between 1 and 20 requirements before verification.');
+      await this.options.connections.resolve(body.connectionId);this.fresh(operation);
+      if(!await this.modelAvailable(body.connectionId,body.model))throw new RuntimeError('MODEL_UNAVAILABLE','The selected model is unavailable.');this.fresh(operation);
+      const session=z.object({session:z.object({mode:z.string(),status:z.string()})}).parse(await this.options.account.request('GET',`/v1/sessions/${body.sessionId}`));this.fresh(operation);
+      if(session.session.mode!=='build'||session.session.status==='running')throw new RuntimeError('VERIFICATION_NOT_READY','Switch to Build and stop the builder before verification.');
+      const created=await this.options.account.request('POST',`/v1/sessions/${body.sessionId}/messages`,{requestId:randomUUID(),kind:'instruction',text:'Review the team-approved acceptance requirements in a separate verification pass. Run only their locked checks, inspect coverage, and leave manual acceptance to people.'});this.fresh(operation);
+      instructionId=z.object({event:z.object({payload:z.object({messageId:z.uuid()})})}).parse(created).event.payload.messageId;
+    }finally{if(this.selecting===operation)this.selecting=null;operation.settle();}
+    return this.run({...body,instructionId,verification:true,effort:'medium',resume:true});
+  }
+  /** Polling this while idle rechecks source bytes; no inference or commands are started. */
+  async syncVerification(sessionId:string):Promise<{revision:string|null}>{
+    z.uuid().parse(sessionId);this.available();const operation=slot(this.lifecycle,this.options.account.accountGeneration);this.selecting=operation;
+    try{
+      await this.conflictContext(sessionId);this.fresh(operation); // independent original-host authorization
+      const {directory}=await this.scope();this.fresh(operation);
+      const root=path.join(directory,'workspaces',sessionId);
+      let revision:string|null=null;
+      try{revision=await sourceRevision(root);}catch{/* Unknown source can only invalidate evidence. */}
+      this.fresh(operation);
+      const current=acceptanceSchema.parse(await this.options.account.request('GET',`/v1/sessions/${sessionId}/acceptance`));this.fresh(operation);
+      if(current.revision!==revision)await this.options.account.request('POST',`/v1/sessions/${sessionId}/acceptance/revision`,{requestId:randomUUID(),revision});this.fresh(operation);
+      this.trackVerification(sessionId);
+      return {revision};
+    }finally{if(this.selecting===operation)this.selecting=null;operation.settle();}
+  }
+  private async runVerification(run:Running,workspace:ControlledWorkspace,criteria:VerificationCriterion[],credentials:Awaited<ReturnType<ConnectionManager['resolve']>>,model:string):Promise<void>{
+    const signal=run.controller.signal;
+    const current=acceptanceSchema.parse(await this.options.account.request('GET',`/v1/sessions/${run.sessionId}/acceptance`)).criteria.filter(item=>item.state==='approved');
+    if(JSON.stringify(current)!==JSON.stringify(criteria))throw new RuntimeError('VERIFICATION_CHANGED','Requirements changed while verification was starting. Review them and try again.');
+    await this.publish(run,'activity.completed',{summary:'Separate verification started: running the checks the host approved, then reviewing coverage.'});
+    const checked=await checkRequirements(workspace.root,criteria,command=>this.tool(run,workspace,{id:randomUUID(),name:'run_command',arguments:{command}},signal),signal);
+    let report:{text:string};
+    try{report=await runAgent({credentials,model,system:REVIEWER_SYSTEM,messages:[{role:'user',content:JSON.stringify({requirements:criteria.map(item=>({id:item.id,text:item.text,command:item.checkCommand})),results:checked.records.map(item=>({...item,output:item.output.slice(0,3000)})),notes:checked.notes})}],
+      tools:readDefinitions.filter(tool=>READ_ONLY_TOOLS.has(tool.name)),signal,fetch:providerFetch(credentials),beforeRequest:()=>this.assertLive(run,true),
+      executeTool:(call,callSignal)=>{if(!READ_ONLY_TOOLS.has(call.name))throw new RuntimeError('VERIFIER_READ_ONLY','The reviewer cannot change files or choose new commands.');return this.tool(run,workspace,call,callSignal);},
+      limits:{maxIterations:6,maxToolCalls:16,maxOutputTokens:reasoningBudget(credentials),maxInputBytes:200000,maxTextBytes:12000,deadlineMs:120000,idleMs:30000}});
+    }catch(error){
+      signal.throwIfAborted();await this.assertLive(run);
+      await this.publish(run,'activity.failed',{summary:'The separate model reviewer could not finish. Completed command results are retained; review coverage manually.'});
+      report={text:'Automated checks finished, but the separate model review was unavailable. Inspect the recorded command evidence and review coverage manually. No AI review is claimed.'};
+    }
+    if(checked.notes.length)report.text+='\n\nVerification notes:\n'+checked.notes.join('\n');
+    await this.assertLive(run);const finalRevision=await sourceRevision(workspace.root);signal.throwIfAborted();
+    await this.publish(run,'agent.completed',{messageId:randomUUID(),model,text:redactText(report.text,run.secrets).slice(0,12000),verification:true});
+    await this.request(run,'/finish',{status:'completed'});
+    const fresh=()=>{signal.throwIfAborted();if(this.options.account.accountGeneration!==run.snapshot.generation||this.active!==run)throw new RuntimeError('STALE_ACCOUNT','Verification authority changed.');};
+    fresh();await this.options.account.request('POST',`/v1/sessions/${run.sessionId}/acceptance/revision`,{requestId:randomUUID(),revision:finalRevision});
+    for(const record of checked.records){
+      fresh();if(record.revision!==finalRevision)continue;
+      await this.options.account.request('POST',`/v1/sessions/${run.sessionId}/acceptance/evidence`,{requestId:randomUUID(),...record,output:redactText(record.output,run.secrets)});
+    }
+    this.trackVerification(run.sessionId);
+  }
   async run(input:unknown):Promise<{runId:string}>{
     const body=runSchema.parse(input) as StartInferenceInput;
     this.available();
@@ -478,8 +578,11 @@ export class HostCoordinator {
       const skills=await this.sessionSkills(root).catch(()=>[] as Skill[]);
       const journal=this.journalFor(key,directory,identity);
       this.freshStart(operation,identity);
+      const requirements=body.verification?acceptanceSchema.parse(await this.options.account.request('GET',`/v1/sessions/${body.sessionId}/acceptance`)).criteria.filter(item=>item.state==='approved'):null;
+      if(requirements&&(!requirements.length||requirements.length>20))throw new RuntimeError('VERIFICATION_REQUIREMENTS','Approve between 1 and 20 requirements before a verification run.');
+      if(requirements&&snapshot.session.status==='running')throw new RuntimeError('SESSION_ACTIVE','Stop the builder before verification.');
       const lease=randomBytes(32).toString('base64url');
-      const raw=await this.options.account.request('POST',`/v1/sessions/${body.sessionId}/runs`,{requestId:randomUUID(),connectionId:body.connectionId,model:body.model,instructionId:body.instructionId,leaseToken:lease,expectedGeneration:snapshot.session.runtimeGeneration,resume:body.resume??false,...(body.resolution?{resolution:body.resolution}:{})});
+      const raw=await this.options.account.request('POST',`/v1/sessions/${body.sessionId}/runs`,{requestId:randomUUID(),connectionId:body.connectionId,model:body.model,instructionId:body.instructionId,leaseToken:lease,expectedGeneration:snapshot.session.runtimeGeneration,resume:body.resume??false,...(body.resolution?{resolution:body.resolution,resolutionFingerprint:body.resolutionFingerprint}:{})});
       const known=z.object({run:z.object({id:z.uuid()})}).safeParse(raw);
       if(known.success)claim={id:known.data.run.id,sessionId:body.sessionId,lease,snapshot:identity};
       this.freshStart(operation,identity);
@@ -514,6 +617,12 @@ export class HostCoordinator {
         const share=()=>{if(scheduled||Date.now()-lastFlush<250)return;scheduled=true;sharing=sharing.then(()=>{scheduled=false;return flush();});sharing.catch(()=>undefined);};
         const shared=async(final=false)=>{await sharing;await flush(final);};
         try{
+          if(requirements){
+            if(claimed.run.mode!=='build')throw new RuntimeError('PLAN_MODE','Switch to Build to run the agreed verification commands.');
+            await this.runVerification(running,workspace,requirements,credentials,body.model);
+            if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:'completed'});
+            return;
+          }
           // Undo starts here: the worktree as it was before this run.
           const checkpoint=work?await snapshotWork(root,claimed.selectedInstruction.text).catch(()=>null):null;
           const asked=expandCommand(claimed.selectedInstruction.text,skills);
@@ -527,7 +636,7 @@ export class HostCoordinator {
           const claimDirections=async():Promise<{authorId:string;text:string}[]>=>{
             if(!steering)return [];
             let raw:unknown;
-            try{raw=await this.request(running,'/claim',{});}catch(error){if(controller.signal.aborted)throw error;steering=false;return [];}
+            try{raw=await this.request(running,'/claim',{});}catch(error){if(controller.signal.aborted||(error instanceof ApiFailure&&error.error.code==='instruction_conflict'))throw error;steering=false;return [];}
             const parsed=z.object({instructions:z.array(z.object({id:z.uuid(),authorId:z.uuid(),text:z.string().max(16000)})).max(5)}).safeParse(raw);
             if(!parsed.success){steering=false;return [];}
             return parsed.data.instructions;
@@ -893,6 +1002,7 @@ export class HostCoordinator {
   }
   invalidate():Promise<void>{
     if(this.invalidating)return this.invalidating;
+    if(this.verificationMonitor)clearInterval(this.verificationMonitor);this.verificationMonitor=undefined;this.verifiedSessions.clear();
     this.lifecycle++;const pending=this.starting;const selection=this.selecting;const current=this.active;
     pending?.controller.abort();if(current){current.controller.abort();current.journal.invalidateSession(current.sessionId);}
     this.invalidating=(async()=>{await pending?.finished;await selection?.finished;await current?.finished;for(const journal of this.journals.values())journal.close();this.journals.clear();for(const index of this.indexes.values())index.close();this.indexes.clear();})().finally(()=>{this.invalidating=null;});

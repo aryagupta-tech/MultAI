@@ -436,6 +436,11 @@ export class CollaborationService {
       await client.query('DELETE FROM shared_events WHERE session_id=$1', [sessionId]);
       await client.query('DELETE FROM execution_runs WHERE session_id=$1', [sessionId]);
       await client.query('DELETE FROM decisions WHERE session_id=$1', [sessionId]);
+      await client.query('DELETE FROM acceptance_criteria WHERE session_id=$1', [sessionId]);
+      await client.query('DELETE FROM acceptance_workspaces WHERE session_id=$1', [sessionId]);
+      await client.query('DELETE FROM acceptance_requests WHERE session_id=$1', [sessionId]);
+      await client.query('DELETE FROM browser_review_invitations WHERE session_id=$1', [sessionId]);
+      await client.query('DELETE FROM browser_review_screenshots WHERE session_id=$1', [sessionId]);
       await client.query('UPDATE request_results SET response=NULL WHERE session_id=$1', [sessionId]);
       await client.query("UPDATE sessions SET deleted_at=now(),title=NULL,mode='plan',status='inactive',runtime_generation=runtime_generation+1,updated_at=now() WHERE id=$1", [sessionId]);
       return { deleted: true, sessionId };

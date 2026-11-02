@@ -151,10 +151,17 @@ function nativeHarness() {
             const health = await window.multai.service.health();
             const auth = await window.multai.service.authState();
             const connections = await window.multai.inference.list();
+            const sessionId='11111111-1111-4111-8111-111111111111';
+            const review=await window.multai.service.review(sessionId,{kind:'acceptance'});
+            const verification=await window.multai.inference.verify({sessionId,connectionId:'22222222-2222-4222-8222-222222222222',model:'synthetic-unavailable-model'});
+            const conflict=await window.multai.inference.conflictContext(sessionId);
             return {
               build, health, authStatus: auth.status,
               inferenceDenied: connections.ok === false,
               inferenceError: connections.ok === false ? connections.error.code : null,
+              reviewDenied:review.ok===false&&review.error.code==='signed_out',
+              verificationDenied:verification.ok===false&&verification.error.code==='signed_out',
+              conflictDenied:conflict.ok===false&&conflict.error.code==='signed_out',
               nodeUnavailable: typeof process === 'undefined' && typeof require === 'undefined',
               bridgeFrozen: Object.isFrozen(window.multai),
               rendererMounted: Boolean(document.querySelector('#root')?.childElementCount),
@@ -164,6 +171,7 @@ function nativeHarness() {
           assert(observed.nodeUnavailable && observed.bridgeFrozen && observed.rendererMounted && observed.titlePresent, 'renderer_bridge_contract');
           assert(observed.authStatus === 'signed-out', 'fresh_profile_must_be_signed_out');
           assert(observed.inferenceDenied && observed.inferenceError === 'signed_out', 'signed_out_inference_boundary');
+          assert(observed.reviewDenied&&observed.verificationDenied&&observed.conflictDenied,'signed_out_review_boundaries');
           assert(observed.build.channel === 'development' && typeof observed.build.dirty === 'boolean' && Number.isFinite(Date.parse(observed.build.builtAt)), 'development_build_provenance');
           assert(process.env.MULTAI_NATIVE_SMOKE_COMMIT && observed.build.commit === process.env.MULTAI_NATIVE_SMOKE_COMMIT, 'compiled_commit_mismatch');
           assert(observed.health.reachable === true && observed.health.database === 'ready', 'real_backend_not_ready');
