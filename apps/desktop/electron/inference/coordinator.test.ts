@@ -14,6 +14,7 @@ import {McpHost} from './mcp';
 import {publicProviderFetch} from './network';
 import {LookError, type LookInput, type Shot} from './look';
 import type {HostRunChange} from '../../src/bridge/execution';
+import {ApiFailure} from '../service/account';
 
 const runtime = vi.hoisted(() => ({run: vi.fn()}));
 vi.mock('@multai/runtime', async () => ({...await vi.importActual<typeof import('@multai/runtime')>('@multai/runtime'), runAgent: runtime.run}));
@@ -646,5 +647,40 @@ describe('team verification uses actual host checks and a separate read-only rev
     local.connections.resolve.mockResolvedValue({kind: 'compatible', apiKey: 'k', baseUrl: 'https://models.example/v1'} as ProviderCredentials);
     await local.host.run(local.input); await local.terminal();
     expect((runtime.run.mock.calls.at(-1)![0] as RunAgentOptions).tools?.some(tool => tool.name === 'look_at_app')).toBe(false);
+  });
+
+  test('a rate-limited report is sent again instead of failing the run, and a run that ends anyway tells the service', async () => {
+    const limited = () => new ApiFailure({code: 'rate_limited', message: 'Too many requests. Wait a moment and try again.', status: 429} as never);
+    const x = await fixture({rateLimitRetries: [0, 0]});
+    let refusals = 0;
+    x.account.request.mockImplementation(async (method: string, route: string, body?: unknown) => {
+      // The first event and the first command completion are refused once, as a busy service would.
+      if ((route.endsWith('/events') || (body as {decision?: string})?.decision === 'complete') && refusals < 2) {refusals++; throw limited();}
+      return x.respond(method, route, body);
+    });
+    runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
+      await options.onEvent?.({type: 'text.delta', text: 'Running the tests.'});
+      const result = await options.executeTool!({id: 'call_1', name: 'run_command', arguments: {command: 'true'}} as ToolCall, options.signal);
+      expect(result).toMatchObject({exitCode: 0});
+      return {text: 'Done.', iterations: 2};
+    });
+    await x.host.run(x.input); await x.terminal();
+    expect(refusals).toBe(2);
+    expect(x.changes.at(-1)?.status).toBe('completed');
+    // Refused attempts never reach the service; each report arrived exactly once.
+    expect(x.requests.filter(request => request.body?.decision === 'complete')).toHaveLength(1);
+
+    // Refused every time: the run fails, but its end still reaches the service once the limit lifts.
+    const y = await fixture({rateLimitRetries: [0, 0]});
+    let blocked = true;
+    y.account.request.mockImplementation(async (method: string, route: string, body?: unknown) => {
+      if (blocked && route.endsWith('/events')) throw limited();
+      if (route.endsWith('/finish') && blocked) {blocked = false; throw limited();}
+      return y.respond(method, route, body);
+    });
+    await y.host.run(y.input); await y.terminal();
+    expect(y.changes.at(-1)?.status).toBe('failed');
+    expect(blocked).toBe(false);
+    expect(y.requests.filter(request => request.route.endsWith('/finish'))).toHaveLength(1);
   });
 });

@@ -58,7 +58,10 @@ interface CoordinatorOptions {
   mcp:McpHost;
   /** Opens a page of the workspace in a hidden window and screenshots it; absent where there's no browser. */
   look?:LookAtPage;
+  /** Waits before retrying a request the service refused as rate limited (it processed nothing). */
+  rateLimitRetries?:number[];
 }
+const RATE_LIMIT_RETRIES=[2000,5000,10000,20000];
 function slot(lifecycle:number,accountGeneration:number):Slot {
   let settle=()=>{};
   const finished=new Promise<void>(resolve=>{settle=resolve;});
@@ -740,8 +743,9 @@ export class HostCoordinator {
     try{
       const identity=await this.options.account.identitySnapshot();
       if(identity.generation!==run.snapshot.generation||identity.userId!==run.snapshot.userId||identity.deviceId!==run.snapshot.deviceId||this.options.account.accountGeneration!==run.snapshot.generation)return;
-      if(stopped)await this.options.account.request('POST',`/v1/sessions/${run.sessionId}/stop`,{runId:run.id,leaseToken:run.lease});
-      else await this.options.account.request('POST',`/v1/sessions/${run.sessionId}/runs/${run.id}/finish`,{leaseToken:run.lease,status:'failed'});
+      // Retried when rate limited, so the service doesn't keep showing a run that has ended here.
+      if(stopped)await this.retryRateLimited(()=>this.options.account.request('POST',`/v1/sessions/${run.sessionId}/stop`,{runId:run.id,leaseToken:run.lease}));
+      else await this.retryRateLimited(()=>this.options.account.request('POST',`/v1/sessions/${run.sessionId}/runs/${run.id}/finish`,{leaseToken:run.lease,status:'failed'}));
     }catch{/* Revoked or expired leases are already fenced. Never retry as another account. */}
   }
   private async assertLive(run:Running,recent=false):Promise<void>{
@@ -755,9 +759,29 @@ export class HostCoordinator {
     run.controller.signal.throwIfAborted();
   }
   private request(run:Running,suffix:string,body:Record<string,unknown>):Promise<unknown>{
-    run.controller.signal.throwIfAborted();
-    if(this.options.account.accountGeneration!==run.snapshot.generation)throw new RuntimeError('STALE_ACCOUNT','The signed-in account changed.');
-    return this.options.account.request('POST',`/v1/sessions/${run.sessionId}/runs/${run.id}${suffix}`,{...body,leaseToken:run.lease});
+    return this.retryRateLimited(()=>{
+      run.controller.signal.throwIfAborted();
+      if(this.options.account.accountGeneration!==run.snapshot.generation)throw new RuntimeError('STALE_ACCOUNT','The signed-in account changed.');
+      return this.options.account.request('POST',`/v1/sessions/${run.sessionId}/runs/${run.id}${suffix}`,{...body,leaseToken:run.lease});
+    },run.controller.signal);
+  }
+  /**
+   * A rate-limited request was refused before the service did anything, so sending it again is safe. Without
+   * this, one refused report (a busy parallel run) failed the run and left the service thinking it still ran.
+   */
+  private async retryRateLimited<T>(send:()=>Promise<T>,signal?:AbortSignal):Promise<T>{
+    const waits=this.options.rateLimitRetries??RATE_LIMIT_RETRIES;
+    for(let attempt=0;;attempt++){
+      try{return await send();}
+      catch(error){
+        if(!(error instanceof ApiFailure&&error.error.code==='rate_limited')||attempt>=waits.length)throw error;
+        await new Promise<void>((resolve,reject)=>{
+          const timer=setTimeout(()=>{signal?.removeEventListener('abort',stop);resolve();},waits[attempt]);
+          const stop=()=>{clearTimeout(timer);reject(signal!.reason);};
+          if(signal?.aborted)stop();else signal?.addEventListener('abort',stop,{once:true});
+        });
+      }
+    }
   }
   private async publish(run:Running,type:string,payload:Record<string,JsonValue>):Promise<void>{
     if(run.lane&&type.startsWith('activity.')&&payload.lane===undefined)payload={...payload,lane:run.lane.index,...(typeof payload.summary==='string'?{summary:`Agent ${run.lane.index} · ${payload.summary}`}:{})};

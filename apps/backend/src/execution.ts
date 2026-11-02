@@ -387,10 +387,13 @@ export async function registerExecutionRoutes(app:FastifyInstance,service:Execut
   app.get('/v1/sessions/:sessionId/brief-context',async request=>service.briefContext(await authenticate(request),params(request).sessionId));
   app.post('/v1/sessions/:sessionId/briefs',async request=>service.postBrief(await authenticate(request),params(request).sessionId,request.body));
   app.post('/v1/sessions/:sessionId/decisions',async request=>service.saveDecision(await authenticate(request),params(request).sessionId,request.body));
-  app.post('/v1/sessions/:sessionId/runs/:runId/claim',async request=>{const p=params(request);return service.claim(await authenticate(request),p.sessionId,p.runId!,request.body);});
-  app.post('/v1/sessions/:sessionId/runs/:runId/heartbeat',async request=>{const p=params(request);return service.heartbeat(await authenticate(request),p.sessionId,p.runId!,request.body);});
-  app.post('/v1/sessions/:sessionId/runs/:runId/events',async request=>{const p=params(request);return service.publish(await authenticate(request),p.sessionId,p.runId!,request.body);});
-  app.post('/v1/sessions/:sessionId/runs/:runId/actions',async request=>{const p=params(request);return service.requestAction(await authenticate(request),p.sessionId,p.runId!,request.body);});
-  app.post('/v1/sessions/:sessionId/runs/:runId/actions/:actionId',async request=>{const p=params(request);return service.decideAction(await authenticate(request),p.sessionId,p.runId!,p.actionId!,request.body);});
-  app.post('/v1/sessions/:sessionId/runs/:runId/finish',async request=>{const p=params(request);return service.finish(await authenticate(request),p.sessionId,p.runId!,request.body);});
+  // A run's own lease-guarded traffic (heartbeats, events, approvals) has its own budget per run, so a few
+  // parallel agents can't exhaust the per-address limit that everything else on that home IP shares.
+  const run={config:{rateLimit:{max:900,timeWindow:'1 minute',keyGenerator:(request:FastifyRequest)=>`run:${request.ip}:${(request.params as {runId?:string}).runId??''}`}}};
+  app.post('/v1/sessions/:sessionId/runs/:runId/claim',run,async request=>{const p=params(request);return service.claim(await authenticate(request),p.sessionId,p.runId!,request.body);});
+  app.post('/v1/sessions/:sessionId/runs/:runId/heartbeat',run,async request=>{const p=params(request);return service.heartbeat(await authenticate(request),p.sessionId,p.runId!,request.body);});
+  app.post('/v1/sessions/:sessionId/runs/:runId/events',run,async request=>{const p=params(request);return service.publish(await authenticate(request),p.sessionId,p.runId!,request.body);});
+  app.post('/v1/sessions/:sessionId/runs/:runId/actions',run,async request=>{const p=params(request);return service.requestAction(await authenticate(request),p.sessionId,p.runId!,request.body);});
+  app.post('/v1/sessions/:sessionId/runs/:runId/actions/:actionId',run,async request=>{const p=params(request);return service.decideAction(await authenticate(request),p.sessionId,p.runId!,p.actionId!,request.body);});
+  app.post('/v1/sessions/:sessionId/runs/:runId/finish',run,async request=>{const p=params(request);return service.finish(await authenticate(request),p.sessionId,p.runId!,request.body);});
 }

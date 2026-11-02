@@ -299,6 +299,18 @@ test('hitting the rate limit says so with a stable code', async (t) => {
   assert.equal(last.json().error.code, 'rate_limited');
 });
 
+test('a run\'s own traffic has its own budget, so parallel agents never use up the address limit', async (t) => {
+  const context = await createTestContext({ config: { ...syntheticConfig, environment: 'production' } }); t.after(context.close);
+  const run = '/v1/sessions/00000000-0000-4000-8000-000000000001/runs/00000000-0000-4000-8000-000000000002/heartbeat';
+  // 300 unauthenticated run requests are refused for credentials, never for rate.
+  for (let i = 0; i < 300; i++) {
+    const answer = await context.app.inject({ method: 'POST', url: run, payload: {} });
+    assert.notEqual(answer.statusCode, 429, `run request ${i + 1} was rate limited`);
+  }
+  // The shared address budget is untouched by them.
+  assert.equal((await context.app.inject({ method: 'GET', url: '/health/live' })).statusCode, 200);
+});
+
 test('the liveness check reports the real version and whether this is a development build', async (t) => {
   const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
   const production = await createTestContext({ config: { ...syntheticConfig, environment: 'production' } }); t.after(production.close);
