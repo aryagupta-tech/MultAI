@@ -1160,7 +1160,7 @@ body.is-resizing .app { transition: none; }
   max-width: calc(var(--content-w) - 28px); margin: 0 auto; padding: 4px 6px 10px; margin-bottom: -6px;
   border: 1px solid var(--border); border-bottom: 0; border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--surface-2);
 }
-.queue-strip ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; max-height: 168px; overflow: auto; }
+.queue-strip ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; max-height: 168px; overflow-x: hidden; overflow-y: auto; }
 .queue-item { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 2px 0 8px; border-radius: var(--r-md); }
 .queue-item:hover { background: var(--chip-hover); }
 .queue-icon { color: var(--text-3); flex: none; }
