@@ -43,7 +43,7 @@ class MemoryStore implements CredentialPersistence {
 function account(fetcher: (url: URL, init?: RequestInit) => Promise<Response>, store = new MemoryStore(), callbackScheme?: 'multai' | 'multai-dev') {
   const changes = vi.fn();
   const openExternal = vi.fn(async () => undefined);
-  const instance = new Account(origin, changes, {store, fetch: fetcher as typeof fetch, openExternal, now: () => now, hostname: () => 'Synthetic device', ...(callbackScheme ? {callbackScheme} : {})});
+  const instance = new Account(origin, changes, {store, fetch: fetcher as typeof fetch, openExternal, now: () => now, hostname: () => 'Synthetic device', refreshRetries: [0, 0], ...(callbackScheme ? {callbackScheme} : {})});
   return {instance, store, changes, openExternal};
 }
 
@@ -177,17 +177,34 @@ describe('native collaboration identity fences', () => {
     expect((await ctx.instance.state()).status).toBe('signed-in');
   });
 
-  it('uncertain refresh clears authority while a provably unsent refresh remains retryable', async () => {
+  it('a network failure during refresh is retried and never costs the sign-in', async () => {
     for (const unsent of [true, false]) {
       const store = new MemoryStore(credentials());
+      const before = store.record.active?.refreshToken;
+      let calls = 0;
       const ctx = account(async () => {
+        calls++;
         if (unsent) throw Object.assign(new Error('Synthetic refusal'), {cause: {code: 'ECONNREFUSED'}});
         throw new TypeError('Synthetic uncertain network failure');
       }, store);
       ctx.instance.forceRefreshOnNextUse();
       await expect(ctx.instance.accessToken()).rejects.toBeInstanceOf(ApiFailure);
-      expect(store.record.active === null).toBe(!unsent);
+      expect(calls).toBe(3);
+      expect(store.record.active?.refreshToken).toBe(before);
+      expect(ctx.changes).not.toHaveBeenCalledWith(expect.objectContaining({status: 'signed-out'}));
     }
+  });
+
+  it('a dropped refresh succeeds on the retry', async () => {
+    const store = new MemoryStore(credentials());
+    let calls = 0;
+    const ctx = account(async () => {
+      if (++calls === 1) throw new TypeError('Synthetic dropped connection');
+      return json({accessToken: 'A'.repeat(43), refreshToken: 'R'.repeat(43), tokenType: 'Bearer', expiresIn: 900, deviceId: store.record.devices[userId]?.deviceId ?? randomUUID()});
+    }, store);
+    ctx.instance.forceRefreshOnNextUse();
+    await expect(ctx.instance.accessToken()).resolves.toBe('A'.repeat(43));
+    expect(store.record.active?.refreshToken).toBe('R'.repeat(43));
   });
 
   it('a proxy gateway error during refresh keeps the sign-in; a service error does not', async () => {

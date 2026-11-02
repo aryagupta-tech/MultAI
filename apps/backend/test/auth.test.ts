@@ -116,18 +116,34 @@ test('refresh reuse durably revokes the entire access-token family', async (t) =
   await assert.rejects(auth.refresh(rotated.refreshToken), rejectedWith('invalid_credentials'));
 });
 
-test('concurrent refresh admits one rotation and reuse fences the racing winner', async (t) => {
+test('concurrent refresh leaves exactly one working token pair', async (t) => {
   const context = await createTestContext(); t.after(context.close);
   const auth = new AuthService(context.db, syntheticConfig, syntheticOidc());
   const { tokens } = await signIn(auth);
   const results = await Promise.allSettled([auth.refresh(tokens.refreshToken), auth.refresh(tokens.refreshToken)]);
-  const winners = results.filter((result) => result.status === 'fulfilled');
-  assert.equal(winners.length, 1);
-  assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
-  assert.equal(winners[0]!.status, 'fulfilled');
-  if (winners[0]!.status === 'fulfilled') {
-    await assert.rejects(auth.authenticateRequest(requestFor(winners[0]!.value.accessToken)), rejectedWith('invalid_credentials'));
-  }
+  const issued = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+  const working = await Promise.all(issued.map((pair) => auth.authenticateRequest(requestFor(pair.accessToken)).then(() => true, () => false)));
+  assert.equal(working.filter(Boolean).length, 1);
+});
+
+test('a refresh whose response was lost can be retried briefly, only while what it issued is unused', async (t) => {
+  const context = await createTestContext(); t.after(context.close);
+  const auth = new AuthService(context.db, syntheticConfig, syntheticOidc());
+  const { tokens } = await signIn(auth);
+  const lost = await auth.refresh(tokens.refreshToken);
+  const retried = await auth.refresh(tokens.refreshToken);
+  // The lost pair is gone; the retried one works and keeps rotating.
+  await assert.rejects(auth.authenticateRequest(requestFor(lost.accessToken)), rejectedWith('invalid_credentials'));
+  await assert.rejects(auth.refresh(lost.refreshToken), rejectedWith('invalid_credentials'));
+  await auth.authenticateRequest(requestFor(retried.accessToken));
+  // Once the retried tokens are used, the old token is plain reuse again and revokes everything.
+  await assert.rejects(auth.refresh(tokens.refreshToken), rejectedWith('invalid_credentials'));
+  await assert.rejects(auth.authenticateRequest(requestFor(retried.accessToken)), rejectedWith('invalid_credentials'));
+
+  const second = await signIn(auth, 'Late retry');
+  await auth.refresh(second.tokens.refreshToken);
+  await context.db.query("UPDATE refresh_tokens SET consumed_at=consumed_at-interval '3 minutes' WHERE consumed_at IS NOT NULL");
+  await assert.rejects(auth.refresh(second.tokens.refreshToken), rejectedWith('invalid_credentials'));
 });
 
 test('logout, device revocation, and cross-account device ownership are enforced', async (t) => {

@@ -48,6 +48,9 @@ interface Flow {
   consumed_at: Date | null;
 }
 
+/** How long a refresh whose response was lost can be retried with the same token. */
+const REFRESH_GRACE_MS = 120_000;
+
 export class AuthService {
   private resolvedOidc: OidcClient | undefined;
   constructor(private readonly db: Database, private readonly config: Config, private readonly oidc?: OidcClient) {}
@@ -198,6 +201,25 @@ export class AuthService {
       const row = result.rows[0];
       if (!row) return { error: true } as const;
       if (row.consumed_at) {
+        // A lost response: the app retries the token it sent moments ago and never received what it
+        // issued. Within two minutes, and only while those tokens are unused, replace them instead.
+        if (!row.revoked_at && !row.device_revoked_at && row.session_expires_at.getTime() > Date.now() && Date.now() - row.consumed_at.getTime() < REFRESH_GRACE_MS) {
+          // What that refresh issued shares its transaction time: one refresh token and one access token.
+          // Compared in SQL, since a JavaScript Date drops the microseconds.
+          const at = '(SELECT consumed_at FROM refresh_tokens WHERE token_hash=$2)';
+          const issued = await client.query<{unused: boolean}>(
+            `SELECT (SELECT count(*) FROM refresh_tokens WHERE auth_session_id=$1 AND created_at=${at} AND consumed_at IS NULL)=1
+                AND NOT EXISTS(SELECT 1 FROM refresh_tokens WHERE auth_session_id=$1 AND created_at=${at} AND consumed_at IS NOT NULL)
+                AND NOT EXISTS(SELECT 1 FROM access_tokens WHERE auth_session_id=$1 AND created_at=${at} AND used_at IS NOT NULL) AS unused`,
+            [row.auth_session_id, hash(refreshToken)],
+          );
+          if (issued.rows[0]!.unused) {
+            await client.query(`DELETE FROM access_tokens WHERE auth_session_id=$1 AND created_at=${at}`, [row.auth_session_id, hash(refreshToken)]);
+            await client.query(`DELETE FROM refresh_tokens WHERE auth_session_id=$1 AND created_at=${at}`, [row.auth_session_id, hash(refreshToken)]);
+            await client.query('UPDATE refresh_tokens SET consumed_at=now() WHERE token_hash=$1', [hash(refreshToken)]);
+            return { tokens: await this.issueTokens(client, row.auth_session_id, row.device_id) } as const;
+          }
+        }
         // Return and commit before throwing: refresh reuse must revoke all
         // access credentials in this family durably, including a racing winner.
         await client.query('UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE id=$1', [row.auth_session_id]);
@@ -216,11 +238,14 @@ export class AuthService {
   async authenticateRequest(request: FastifyRequest): Promise<Actor> {
     const authorization = request.headers.authorization;
     if (!authorization || !/^Bearer [A-Za-z0-9_-]{43}$/.test(authorization)) throw invalidCredentials();
+    // The first use is recorded: tokens that were used are never replaced by a refresh retry.
     const result = await this.db.query<{ user_id: string; device_id: string; id: string }>(
-      `SELECT a.id,a.user_id,a.device_id FROM access_tokens t
-       JOIN auth_sessions a ON a.id=t.auth_session_id JOIN devices d ON d.id=a.device_id
-       WHERE t.token_hash=$1 AND t.expires_at>now() AND a.expires_at>now()
-       AND a.revoked_at IS NULL AND d.revoked_at IS NULL`, [hash(authorization.slice(7))],
+      `WITH found AS (SELECT a.id,a.user_id,a.device_id FROM access_tokens t
+         JOIN auth_sessions a ON a.id=t.auth_session_id JOIN devices d ON d.id=a.device_id
+         WHERE t.token_hash=$1 AND t.expires_at>now() AND a.expires_at>now()
+         AND a.revoked_at IS NULL AND d.revoked_at IS NULL),
+       first_use AS (UPDATE access_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL AND EXISTS (SELECT 1 FROM found))
+       SELECT * FROM found`, [hash(authorization.slice(7))],
     );
     const row = result.rows[0];
     if (!row) throw invalidCredentials();

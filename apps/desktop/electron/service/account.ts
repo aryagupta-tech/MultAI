@@ -8,6 +8,9 @@ import {CredentialStorageError, CredentialStore, type CredentialPersistence} fro
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const REFRESH_MARGIN_MS = 60_000;
+/** Failures where the service may never have answered; they never sign anyone out. */
+const NETWORK_FAILURES = ['offline_unsent', 'network_uncertain'];
+const REFRESH_RETRIES: readonly number[] = [1_000, 4_000];
 const opaque = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const errorBody = z.object({error: z.object({code: z.string().max(100), message: z.string().max(500)})});
 const tokenBundle = z.object({accessToken: opaque, refreshToken: opaque, expiresIn: z.number().int().positive().max(86_400), deviceId: z.uuid(), deviceSecret: opaque.optional()});
@@ -28,6 +31,8 @@ export interface AccountOptions {
   hostname?: () => string;
   /** Link scheme the service's sign-in callback uses: `multai` in release builds. */
   callbackScheme?: 'multai' | 'multai-dev';
+  /** Waits before each retry of a refresh the network dropped. */
+  refreshRetries?: readonly number[];
 }
 interface PendingFlow {flowId: string; verifier: string; expiresAt: number; generation: number; completing: boolean}
 interface Refresh {generation: number; promise: Promise<string>}
@@ -64,6 +69,7 @@ export class Account {
   private readonly now: () => number;
   private readonly hostname: () => string;
   private readonly callbackProtocol: string;
+  private readonly refreshRetries: readonly number[];
   private readonly inFlight = new Set<AbortController>();
   private pending: PendingFlow | null = null;
   private refreshing: Refresh | null = null;
@@ -83,6 +89,7 @@ export class Account {
     this.now = options.now ?? Date.now;
     this.hostname = options.hostname ?? os.hostname;
     this.callbackProtocol = `${options.callbackScheme ?? 'multai-dev'}:`;
+    this.refreshRetries = options.refreshRetries ?? REFRESH_RETRIES;
   }
 
   get accountGeneration(): number { return this.generation; }
@@ -269,7 +276,7 @@ export class Account {
       // provider consumption and replacement cannot replay a stale refresh on restart.
       await this.store.clearActive();
       this.check(generation);
-      const bundle = tokenBundle.parse(await this.send('POST', '/v1/auth/refresh', {refreshToken: active.refreshToken}));
+      const bundle = tokenBundle.parse(await this.sendRefresh(active.refreshToken, generation));
       issued = bundle;
       this.check(generation);
       if (this.me && bundle.deviceId !== this.me.deviceId) throw new Error('Unexpected refreshed device');
@@ -282,12 +289,14 @@ export class Account {
         if (issued) await this.send('POST', '/v1/auth/logout', undefined, issued.accessToken).catch(() => undefined);
         throw stale();
       }
-      if (error instanceof ApiFailure && error.error.code === 'offline_unsent') {
+      // The network failed (the Mac slept, Wi-Fi dropped): keep the sign-in and try again on the next
+      // request. A refresh that did reach the service can be retried for a short while (see sendRefresh).
+      if (error instanceof ApiFailure && NETWORK_FAILURES.includes(error.error.code)) {
         await this.store.save(record);
         this.check(generation);
         throw error;
       }
-      // A refresh may already be consumed: uncertain delivery cannot be replayed.
+      // The service refused the refresh (expired, revoked or reused): sign in again.
       this.advance();
       this.me = null;
       this.blocked = true;
@@ -295,6 +304,21 @@ export class Account {
       const expired = {code: 'session_expired', message: 'Your sign-in expired. Sign in again to continue.', status: 401};
       this.onChange({status: 'signed-out', error: expired});
       throw new ApiFailure(expired);
+    }
+  }
+
+  /**
+   * The service lets a refresh whose answer was lost be sent again for two minutes, so a dropped
+   * connection is retried right away instead of costing the sign-in.
+   */
+  private async sendRefresh(refreshToken: string, generation: number): Promise<unknown> {
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.send('POST', '/v1/auth/refresh', {refreshToken}); }
+      catch (error) {
+        if (!(error instanceof ApiFailure) || !NETWORK_FAILURES.includes(error.error.code) || attempt >= this.refreshRetries.length) throw error;
+        await new Promise(resolve => setTimeout(resolve, this.refreshRetries[attempt]));
+        this.check(generation);
+      }
     }
   }
 
