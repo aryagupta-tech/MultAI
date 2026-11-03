@@ -132,7 +132,7 @@ function Label({ text }: { text?: string }) {
 function captionGroups(words: Beat['voice']['words']) {
   const groups: { text: string; start: number; end: number }[] = [];
   let current: typeof words = [];
-  const flush = () => { if (current.length) groups.push({ text: current.map((w) => w.word).join(' '), start: current[0].start, end: current[current.length - 1].end }); current = []; };
+  const flush = () => { if (current.length) groups.push({ text: current.map((w) => w.word.replace(/Multigh/g, 'MultAI')).join(' '), start: current[0].start, end: current[current.length - 1].end }); current = []; };
   for (const w of words) {
     current.push(w);
     if (/[.,:?!]$/.test(w.word) && current.length >= 3 || current.length >= 8) flush();

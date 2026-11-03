@@ -7,7 +7,7 @@
     },
     {
       "id": "02-reveal",
-      "text": "This is MultAI: one AI coding agent, shared by your whole team, in real time. Built on Meta's Muse models."
+      "text": "This is Multigh: one AI coding agent, shared by your whole team, in real time. Built on Meta's Muse models."
     },
     {
       "id": "03-host",
@@ -39,7 +39,7 @@
     },
     {
       "id": "10-close",
-      "text": "Your code, keys and terminal never leave your machine. For teams, classrooms and open source: MultAI. Build with AI, together."
+      "text": "Your code, keys and terminal never leave your machine. For teams, classrooms and open source: Multigh. Build with AI, together."
     }
   ]
 }

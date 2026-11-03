@@ -134,7 +134,7 @@
    "voice": {
     "file": "voice/02-reveal.wav",
     "at": 0.45,
-    "duration": 6.986258503401361,
+    "duration": 7.25328798185941,
     "words": [
      {
       "word": "This",
@@ -147,24 +147,24 @@
       "end": 0.64
      },
      {
-      "word": "MultAI:",
+      "word": "Multigh:",
       "start": 0.683,
-      "end": 1.387
+      "end": 1.259
      },
      {
       "word": "one",
-      "start": 1.536,
-      "end": 1.749
+      "start": 1.451,
+      "end": 1.7067
      },
      {
       "word": "AI",
-      "start": 1.877,
-      "end": 2.133
+      "start": 1.835,
+      "end": 2.0907
      },
      {
       "word": "coding",
       "start": 2.176,
-      "end": 2.432
+      "end": 2.389
      },
      {
       "word": "agent,",
@@ -178,63 +178,63 @@
      },
      {
       "word": "by",
-      "start": 3.328,
-      "end": 3.456
+      "start": 3.413,
+      "end": 3.541
      },
      {
       "word": "your",
-      "start": 3.499,
-      "end": 3.584
+      "start": 3.584,
+      "end": 3.669
      },
      {
       "word": "whole",
-      "start": 3.627,
-      "end": 3.797
+      "start": 3.712,
+      "end": 3.8827
      },
      {
       "word": "team,",
-      "start": 3.925,
-      "end": 4.224
+      "start": 3.968,
+      "end": 4.288
      },
      {
       "word": "in",
-      "start": 4.352,
-      "end": 4.48
+      "start": 4.437,
+      "end": 4.565
      },
      {
       "word": "real",
-      "start": 4.523,
-      "end": 4.6507
+      "start": 4.608,
+      "end": 4.736
      },
      {
       "word": "time.",
-      "start": 4.736,
-      "end": 5.163
+      "start": 4.821,
+      "end": 5.291
      },
      {
       "word": "Built",
-      "start": 5.419,
-      "end": 5.632
+      "start": 5.589,
+      "end": 5.76
      },
      {
       "word": "on",
-      "start": 5.717,
-      "end": 5.8027
+      "start": 5.888,
+      "end": 5.973
      },
      {
       "word": "Meta's",
-      "start": 5.845,
-      "end": 6.144
-     },
-     {
-      "word": "Muse",
-      "start": 6.187,
+      "start": 6.059,
       "end": 6.357
      },
      {
+      "word": "Muse",
+      "start": 6.4,
+      "end": 6.5707
+     },
+     {
       "word": "models.",
-      "start": 6.485,
-      "end": 6.786
+      "start": 6.656,
+      "end": 7.053
      }
     ]
    },
@@ -2267,7 +2267,7 @@
    "voice": {
     "file": "voice/10-close.wav",
     "at": 0.45,
-    "duration": 8.73936507936508,
+    "duration": 8.483945578231292,
     "words": [
      {
       "word": "Your",
@@ -2277,97 +2277,97 @@
      {
       "word": "code,",
       "start": 0.512,
-      "end": 0.917
+      "end": 0.896
      },
      {
       "word": "keys",
       "start": 1.067,
-      "end": 1.28
+      "end": 1.237
      },
      {
       "word": "and",
-      "start": 1.536,
-      "end": 1.7067
+      "start": 1.451,
+      "end": 1.621
      },
      {
       "word": "terminal",
-      "start": 1.749,
-      "end": 2.176
+      "start": 1.664,
+      "end": 2.048
      },
      {
       "word": "never",
-      "start": 2.261,
-      "end": 2.56
+      "start": 2.133,
+      "end": 2.389
      },
      {
       "word": "leave",
-      "start": 2.688,
-      "end": 2.816
+      "start": 2.517,
+      "end": 2.688
      },
      {
       "word": "your",
-      "start": 2.901,
-      "end": 2.9867
+      "start": 2.731,
+      "end": 2.816
      },
      {
       "word": "machine.",
-      "start": 3.029,
-      "end": 3.477
+      "start": 2.859,
+      "end": 3.243
      },
      {
       "word": "For",
-      "start": 3.84,
-      "end": 3.968
+      "start": 3.541,
+      "end": 3.669
      },
      {
       "word": "teams,",
-      "start": 4.011,
-      "end": 4.437
+      "start": 3.712,
+      "end": 4.117
      },
      {
       "word": "classrooms",
-      "start": 4.651,
-      "end": 5.1627
+      "start": 4.309,
+      "end": 4.821
      },
      {
       "word": "and",
-      "start": 5.291,
-      "end": 5.4187
+      "start": 4.907,
+      "end": 4.992
      },
      {
       "word": "open",
-      "start": 5.461,
-      "end": 5.632
+      "start": 5.035,
+      "end": 5.12
      },
      {
       "word": "source:",
-      "start": 5.76,
-      "end": 6.165
+      "start": 5.291,
+      "end": 5.653
      },
      {
-      "word": "MultAI.",
-      "start": 6.357,
-      "end": 6.997
+      "word": "Multigh.",
+      "start": 5.845,
+      "end": 6.528
      },
      {
       "word": "Build",
-      "start": 7.125,
-      "end": 7.381
+      "start": 6.869,
+      "end": 7.0827
      },
      {
       "word": "with",
-      "start": 7.467,
-      "end": 7.552
+      "start": 7.211,
+      "end": 7.296
      },
      {
       "word": "AI,",
-      "start": 7.595,
-      "end": 8
+      "start": 7.339,
+      "end": 7.744
      },
      {
       "word": "together.",
-      "start": 8.149,
-      "end": 8.539
+      "start": 7.893,
+      "end": 8.283945578231293
      }
     ]
    },
