@@ -120,7 +120,7 @@ See [verification](verification.md#mobile-companion--2-november-2026) for the fu
 
 ## Known limitations
 
-- **No physical-device or real iPhone Safari test**: Android was tested on an emulator (Android 16, WebView 133); iPhone Safari on Playwright's WebKit with iPhone 15 emulation. Real Google consent on a phone was not exercised (no credentials were used).
+- **Physical Android test confirmed by the owner** after receiving the 0.1.5 APK. Device details and individual scenarios were not specified. Automated Android checks used an emulator (Android 16, WebView 133); actual iPhone Safari remains untested (Playwright WebKit with iPhone 15 emulation only). Phone Google consent was not independently observed by the automated audit.
 - **Android App Links** use the public signing certificate in `assetlinks.json`. Android may initially open the browser while domain verification completes; the same link works there, and the app also accepts a typed pairing code.
 - The phone shows the approval preview the desktop sends (file changes up to 6,000 characters, encrypted to the phone); larger files are summarized by path and hash.
 - Owner control polls (2.5 s while a session is open). Notifications/push are not implemented; the phone must be open to see new approvals.
