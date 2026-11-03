@@ -67,17 +67,20 @@ jobs:
         env:
           MULTAI_SERVICE_ORIGIN: https://api.multai.si
           MULTAI_NATIVE_SMOKE_KEYRING: '1'
+          # Chromium chooses libsecret from the desktop environment; headless Xvfb otherwise
+          # chooses basic_text even while an unlocked Secret Service is running on D-Bus.
+          XDG_CURRENT_DESKTOP: GNOME
         run: |
-          dbus-run-session -- sh -c 'printf "ci\n" | gnome-keyring-daemon --unlock --components=secrets >/dev/null; xvfb-run -a node apps/desktop/scripts/native-smoke.cjs' | tee smoke-keyring.json
-          grep -q '"ok":true' smoke-keyring.json
+          dbus-run-session -- xvfb-run -a sh -eu -c 'printf "ci\n" | gnome-keyring-daemon --unlock --components=secrets >/dev/null; node apps/desktop/scripts/native-smoke.cjs' | tee smoke-keyring.json
+          node -e 'const r=JSON.parse(require("node:fs").readFileSync("smoke-keyring.json","utf8"));require("node:assert/strict").deepEqual({ok:r.ok,...r.osCrypto},{ok:true,available:true,backend:"gnome_libsecret",approvedBackend:true,roundTrip:"passed"})'
       - name: Native smoke without any keyring (credentials must be refused, not stored in clear)
         if: ${{ !cancelled() }}
         env:
           MULTAI_SERVICE_ORIGIN: https://api.multai.si
           MULTAI_NATIVE_SMOKE_KEYRING: '1'
         run: |
-          dbus-run-session -- xvfb-run -a node apps/desktop/scripts/native-smoke.cjs | tee smoke-nokeyring.json || true
-          grep -o '"osCrypto":{[^}]*}' smoke-nokeyring.json
+          dbus-run-session -- xvfb-run -a node apps/desktop/scripts/native-smoke.cjs | tee smoke-nokeyring.json
+          node -e 'const r=JSON.parse(require("node:fs").readFileSync("smoke-nokeyring.json","utf8"));const a=require("node:assert/strict");a.deepEqual({ok:r.ok,...r.osCrypto},{ok:true,available:false,backend:"basic_text",approvedBackend:false,roundTrip:"unavailable"});a.deepEqual(r.denialCodes,{review:"secure_storage_unavailable",verification:"secure_storage_unavailable",conflict:"secure_storage_unavailable"})'
       - name: AppImage acceptance
         if: ${{ !cancelled() }}
         run: |
@@ -104,6 +107,8 @@ jobs:
         with:
           name: multai-linux
           path: |
+            smoke-keyring.json
+            smoke-nokeyring.json
             apps/desktop/release/linux/*.AppImage
             apps/desktop/release/linux/*.deb
             apps/desktop/release/linux/*.tar.gz
@@ -165,7 +170,9 @@ jobs:
           MULTAI_NATIVE_SMOKE_KEYRING: '1'
         run: |
           node apps/desktop/scripts/native-smoke.cjs | Tee-Object smoke.json
-          if (-not (Select-String -Path smoke.json -Pattern '"ok":true' -Quiet)) { throw 'Native smoke failed.' }
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $smoke = Get-Content -Raw smoke.json | ConvertFrom-Json
+          if ($smoke.ok -ne $true -or $smoke.osCrypto.available -ne $true -or $smoke.osCrypto.backend -ne 'Windows-DPAPI' -or $smoke.osCrypto.approvedBackend -ne $true -or $smoke.osCrypto.roundTrip -ne 'passed') { throw 'Native smoke did not verify DPAPI encryption.' }
       - name: Silent uninstall keeps the user's data
         if: ${{ !cancelled() }}
         run: |
@@ -185,6 +192,7 @@ jobs:
         with:
           name: multai-windows
           path: |
+            smoke.json
             apps/desktop/release/win/*.exe
             apps/desktop/release/win/build-manifest.json
           if-no-files-found: warn
