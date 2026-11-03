@@ -21,7 +21,7 @@ for (const mode of modes) {
   test(`${mode.environment}: browser completion stays outside Android App Links; native completion is unchanged`, async t => {
     const ctx = await createTestContext({config, oidc}); t.after(() => ctx.close());
     const auth = new AuthService(ctx.db, config, oidc);
-    const headers = {origin: config.publicOrigin, 'x-multai-client': 'web'};
+    const headers = {host:new URL(config.publicOrigin).host,origin: config.publicOrigin, 'x-multai-client': 'web'};
     const verifier = secret() + secret();
     const started = await ctx.app.inject({method: 'POST', url: '/v1/web/auth/start', headers, payload: {codeChallenge: pkceChallenge(verifier)}});
     assert.equal(started.statusCode, 200, started.body);
@@ -90,7 +90,7 @@ for (const mode of modes) {
     for (const suffix of ['/app/auth/', '/app/login', '/app/auth?next=https://foreign.invalid', '/app/auth#signin=bad']) {
       await assert.rejects(ctx.db.query('UPDATE oauth_flows SET desktop_callback_uri=$1 WHERE id=$2', [`${config.publicOrigin}${suffix}`, current.flowId]), error => (error as {code?: string}).code === '23514');
     }
-    const rejected = await ctx.app.inject({method: 'POST', url: '/v1/web/auth/start', headers: {origin: config.publicOrigin, 'x-multai-client': 'web'}, payload: {codeChallenge: pkceChallenge(secret() + secret()), callbackUri: 'https://foreign.invalid/app/auth'}});
+    const rejected = await ctx.app.inject({method: 'POST', url: '/v1/web/auth/start', headers: {host:new URL(config.publicOrigin).host,origin: config.publicOrigin, 'x-multai-client': 'web'}, payload: {codeChallenge: pkceChallenge(secret() + secret()), callbackUri: 'https://foreign.invalid/app/auth'}});
     assert.equal(rejected.statusCode, 400, 'clients cannot choose a completion destination');
     assert.equal(signInClients(config).find(client => client.kind === 'web')!.callbackUri, `${config.publicOrigin}/app/auth`);
   });

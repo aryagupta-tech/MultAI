@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 
 const {version} = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {version: string};
 
-// Served by the collaboration service at /app/ on its own origin, under a strict CSP: no inline scripts or styles.
+// Served at /app/ on the browser's origin, alongside its /v1/ proxy, under a strict CSP: no inline scripts or styles.
 export default defineConfig({
   base: '/app/',
   plugins: [react()],

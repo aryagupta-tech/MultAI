@@ -11,7 +11,7 @@ import {createTestContext,seedActor,testConfig} from './helpers.js';
 const token=()=>randomBytes(32).toString('base64url');
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4V8AAAAASUVORK5CYII=';
 const headers=(identity:{token:string})=>({authorization:`Bearer ${identity.token}`});
-const browserHeaders=(credential:string)=>({origin:testConfig.publicOrigin,authorization:`Review ${credential}`});
+const browserHeaders=(credential:string)=>({host:new URL(testConfig.publicOrigin).host,origin:testConfig.publicOrigin,authorization:`Review ${credential}`});
 async function setup(){
   const ctx=await createTestContext(),owner=await seedActor(ctx.db,'Host'),outsider=await seedActor(ctx.db,'Other host');
   const collaboration=new CollaborationService(ctx.db),service=new BrowserReviewService(ctx.db),acceptance=new AcceptanceService(ctx.db);
@@ -145,11 +145,11 @@ test('browser HTTP routes reject cross-origin and ambient credentials, accept sc
     const response=await c.app.inject({method:'POST',url:'/v1/browser-review/join',headers:origin?{origin}:{},payload:join});
     assert.equal(response.statusCode,403,response.body);
   }
-  const joined=await c.app.inject({method:'POST',url:'/v1/browser-review/join',headers:{origin:testConfig.publicOrigin},payload:join});
+  const joined=await c.app.inject({method:'POST',url:'/v1/browser-review/join',headers:{host:new URL(testConfig.publicOrigin).host,origin:testConfig.publicOrigin},payload:join});
   assert.equal(joined.statusCode,200,joined.body);
   const pending=await c.app.inject({method:'POST',url:'/v1/browser-review/view',headers:browserHeaders(join.credential),payload:{}});
   assert.deepEqual(pending.json(),{status:'pending'});
-  const native=await c.app.inject({method:'POST',url:'/v1/browser-review/view',headers:{origin:testConfig.publicOrigin,...headers(c.owner)},payload:{}});assert.equal(native.statusCode,403);
+  const native=await c.app.inject({method:'POST',url:'/v1/browser-review/view',headers:{host:new URL(testConfig.publicOrigin).host,origin:testConfig.publicOrigin,...headers(c.owner)},payload:{}});assert.equal(native.statusCode,403);
   await c.service.decideReviewer(c.owner.actor,c.sessionId,joined.json().reviewer.id,{decision:'admit'});
   const comment=await c.app.inject({method:'POST',url:'/v1/browser-review/comment',headers:browserHeaders(join.credential),payload:{requestId:randomUUID(),text:'<img src=x onerror=alert(1)> sk-abcdefghijklmnop'}});
   assert.equal(comment.statusCode,200,comment.body);

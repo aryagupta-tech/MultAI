@@ -7,6 +7,7 @@ import { assertActor, transaction, type Database } from './db.js';
 import { ApiError } from './errors.js';
 import { GoogleOidcClient, pkceChallenge, type OidcClient, type OidcIdentity } from './oidc.js';
 import type { Actor } from './types.js';
+import {browserOrigins, companionWebOrigin, requireBrowserOrigin} from './web-origin.js';
 
 const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -62,7 +63,7 @@ export function signInClients(config: Config): SignInClient[] {
   const production = config.environment === 'production';
   return [
     {kind: 'desktop', clientId: config.desktopClientId, callbackUri: config.desktopCallbackUri},
-    {kind: 'web', clientId: production ? 'multai-companion-web' : 'multai-companion-web-development', callbackUri: `${config.publicOrigin}/app/auth`},
+    {kind: 'web', clientId: production ? 'multai-companion-web' : 'multai-companion-web-development', callbackUri: `${companionWebOrigin(config)}/app/auth`},
     {kind: 'android', clientId: production ? 'multai-companion-android' : 'multai-companion-android-development', callbackUri: production ? 'multai-companion://auth/callback' : 'multai-companion-dev://auth/callback'},
   ];
 }
@@ -71,7 +72,7 @@ export function signInClients(config: Config): SignInClient[] {
 function acceptedSignInClients(config: Config): SignInClient[] {
   const clients = signInClients(config);
   const web = clients.find(client => client.kind === 'web')!;
-  return [...clients, {...web, callbackUri: `${config.publicOrigin}/app/`}];
+  return [...clients, ...browserOrigins(config).flatMap(origin => ['/app/', '/app/auth'].map(path => ({...web, callbackUri: `${origin}${path}`})))];
 }
 
 export class AuthService {
@@ -154,7 +155,7 @@ export class AuthService {
       // Companions read the one-time completion from the fragment, which is never sent to a server.
       // Browser callbacks must stay outside Android's verified /app and /app/ paths. This also
       // upgrades an in-flight legacy web flow without changing its original PKCE/client binding.
-      const callbackUri = client.kind === 'web' ? this.client('web').callbackUri : client.callbackUri;
+      const callbackUri = client.kind === 'web' ? `${new URL(flow.desktop_callback_uri).origin}/app/auth` : client.callbackUri;
       return {url: `${callbackUri}#signin=${flow.id}.${completionCode}`, kind: client.kind};
     }
     const callback = new URL(flow.desktop_callback_uri);
@@ -178,7 +179,7 @@ export class AuthService {
     return { accessToken, refreshToken, tokenType: 'Bearer', expiresIn: 900, deviceId };
   }
 
-  async exchange(input: { flowId: string; completionCode: string; codeVerifier: string; deviceName: string; deviceId?: string | undefined; deviceSecret?: string | undefined }, kinds: readonly ClientKind[] = ['desktop', 'android']): Promise<TokenBundle> {
+  async exchange(input: { flowId: string; completionCode: string; codeVerifier: string; deviceName: string; deviceId?: string | undefined; deviceSecret?: string | undefined }, kinds: readonly ClientKind[] = ['desktop', 'android'], webOrigin?: string): Promise<TokenBundle> {
     if (Boolean(input.deviceId) !== Boolean(input.deviceSecret)) {
       throw new ApiError(400, 'invalid_device_proof', 'Device identity and proof must be supplied together.');
     }
@@ -188,6 +189,7 @@ export class AuthService {
       const signInClient = flow ? this.clientOf(flow) : undefined;
       if (!flow || flow.consumed_at || flow.expires_at.getTime() <= Date.now() || !flow.completion_hash || !flow.identity ||
           !signInClient || !kinds.includes(signInClient.kind) ||
+          (signInClient.kind === 'web' && webOrigin !== undefined && new URL(flow.desktop_callback_uri).origin !== webOrigin) ||
           flow.provider_redirect_uri !== this.config.googleRedirectUri || flow.provider_client_id !== (this.config.googleClientId ?? null) ||
           !equal(flow.completion_hash, hash(input.completionCode)) || !equal(flow.desktop_challenge, pkceChallenge(input.codeVerifier))) {
         throw new ApiError(401, 'invalid_flow', 'Sign-in proof is invalid, expired, or already used.');
@@ -349,12 +351,8 @@ const WEB_REFRESH_PATH = '/v1/web/auth';
  * these routes, and its short access token only in memory. Each route requires this origin's own page
  * and a custom header, so another site can neither read nor forge these calls.
  */
-function registerWebAuthRoutes(app: FastifyInstance, auth: AuthService, publicOrigin: string) {
-  // Every route here is a POST: browsers always send Origin, and it must be this origin.
-  const guard = (request: FastifyRequest) => {
-    const site = request.headers['sec-fetch-site'];
-    if (request.headers.origin !== publicOrigin || request.headers['x-multai-client'] !== 'web' || (site !== undefined && site !== 'same-origin')) throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
-  };
+function registerWebAuthRoutes(app: FastifyInstance, auth: AuthService, publicOrigin: string, webOrigin = publicOrigin) {
+  const guard = (request: FastifyRequest) => requireBrowserOrigin(request, [...new Set([webOrigin, publicOrigin])]);
   const cookie = (request: FastifyRequest) => {
     for (const part of (request.headers.cookie ?? '').split(';')) {
       const [key, ...value] = part.trim().split('=');
@@ -362,47 +360,47 @@ function registerWebAuthRoutes(app: FastifyInstance, auth: AuthService, publicOr
     }
     return undefined;
   };
-  const setCookie = (reply: import('fastify').FastifyReply, value: string, maxAge: number) => reply.header('set-cookie',
-    `${WEB_REFRESH_COOKIE}=${value}; Path=${WEB_REFRESH_PATH}; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${publicOrigin.startsWith('https:') ? '; Secure' : ''}`);
+  const setCookie = (reply: import('fastify').FastifyReply, value: string, maxAge: number, origin: string) => reply.header('set-cookie',
+    `${WEB_REFRESH_COOKIE}=${value}; Path=${WEB_REFRESH_PATH}; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${origin.startsWith('https:') ? '; Secure' : ''}`);
   const session = (tokens: TokenBundle) => ({accessToken: tokens.accessToken, tokenType: tokens.tokenType, expiresIn: tokens.expiresIn, deviceId: tokens.deviceId});
   app.post('/v1/web/auth/start', async (request) => {
-    guard(request);
+    if (guard(request) !== webOrigin) throw new ApiError(403, 'companion_origin_required', `Open ${webOrigin}/app/ to sign in.`);
     const body = z.object({ codeChallenge: opaqueSecret }).strict().parse(request.body);
     return auth.start(body.codeChallenge, 'web');
   });
   app.post('/v1/web/auth/exchange', async (request, reply) => {
-    guard(request);
+    const origin = guard(request);
     const body = z.object({flowId: z.uuid(), completionCode: opaqueSecret, codeVerifier: verifierSchema, deviceName: z.string().trim().min(1).max(120)}).strict().parse(request.body);
-    const tokens = await auth.exchange(body, ['web']);
-    setCookie(reply, tokens.refreshToken, 30 * 86_400);
+    const tokens = await auth.exchange(body, ['web'], origin);
+    setCookie(reply, tokens.refreshToken, 30 * 86_400, origin);
     return session(tokens);
   });
   app.post('/v1/web/auth/refresh', async (request, reply) => {
-    guard(request);
+    const origin = guard(request);
     const token = cookie(request);
     if (!token || !/^[A-Za-z0-9_-]{43}$/u.test(token)) throw invalidCredentials();
     try {
       const tokens = await auth.refresh(token);
-      setCookie(reply, tokens.refreshToken, 30 * 86_400);
+      setCookie(reply, tokens.refreshToken, 30 * 86_400, origin);
       return session(tokens);
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'invalid_credentials') setCookie(reply, '', 0);
+      if (error instanceof ApiError && error.code === 'invalid_credentials') setCookie(reply, '', 0, origin);
       throw error;
     }
   });
   app.post('/v1/web/auth/logout', async (request, reply) => {
-    guard(request);
+    const origin = guard(request);
     // Signing out works even when the access token already expired: the cookie names the sign-in.
     try {await auth.logout(await auth.authenticateRequest(request));} catch {/* already signed out */}
     const token = cookie(request);
     if (token && /^[A-Za-z0-9_-]{43}$/u.test(token)) await auth.revokeByRefresh(token);
-    setCookie(reply, '', 0);
+    setCookie(reply, '', 0, origin);
     return reply.code(204).send();
   });
 }
 
-export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService, publicOrigin?: string): Promise<void> {
-  if (publicOrigin) registerWebAuthRoutes(app, auth, publicOrigin);
+export async function registerAuthRoutes(app: FastifyInstance, auth: AuthService, publicOrigin?: string, webOrigin?: string): Promise<void> {
+  if (publicOrigin) registerWebAuthRoutes(app, auth, publicOrigin, webOrigin);
   app.post('/v1/auth/google/start', async (request) => {
     const body = z.object({ codeChallenge: opaqueSecret, client: z.enum(['desktop', 'android']).optional() }).strict().parse(request.body);
     return auth.start(body.codeChallenge, body.client);

@@ -33,3 +33,16 @@ test('only private proxy addresses can be trusted for client IPs', () => {
   assert.deepEqual(readConfig({...base, TRUST_PROXY: '172.30.0.0/24, 10.0.0.1'}).trustedProxies, ['172.30.0.0/24', '10.0.0.1']);
   for (const bad of ['0.0.0.0/0', '8.8.8.8', '172.30.0.0/8', 'true', '*', '::1']) assert.throws(() => readConfig({...base, TRUST_PROXY: bad}), bad);
 });
+
+test('the companion web origin is explicit and cannot select provider redirect or insecure production hosts', () => {
+  const api = 'https://api.multai.test', web = 'https://app.multai.test';
+  const production = {...base, NODE_ENV: 'production', PUBLIC_ORIGIN: api, HOST: '0.0.0.0', GOOGLE_CLIENT_ID:'synthetic-client', GOOGLE_CLIENT_SECRET:'synthetic-secret'};
+  const configured = readConfig({...production, COMPANION_WEB_ORIGIN:web});
+  assert.equal(configured.companionWebOrigin, web);
+  assert.equal(configured.googleRedirectUri, `${api}/v1/auth/google/callback`);
+  assert.equal(readConfig(production).companionWebOrigin, api, 'existing deployments remain same-origin by default');
+  assert.equal(readConfig({...base, COMPANION_WEB_ORIGIN:'http://localhost:4311'}).companionWebOrigin, 'http://localhost:4311');
+  for (const origin of ['http://app.multai.test','https://localhost','https://user@app.multai.test','https://app.multai.test/path','https://app.multai.test?x=1','https://app.multai.test#x','https://*.multai.test']) {
+    assert.throws(()=>readConfig({...production,COMPANION_WEB_ORIGIN:origin}),origin);
+  }
+});

@@ -23,6 +23,8 @@ describe('links', () => {
     expect(parseInvitation('javascript:alert(1)')).toBeNull();
     expect(parseInvitation(token)).toEqual({kind:'join',token});
     expect(parseInvitation(`https://api.multai.si/app/#join=${token}`)).toEqual({kind:'join',token});
+    expect(parseInvitation(`https://app.multai.si/app/#join=${token}`)).toEqual({kind:'join',token});
+    expect(parseInvitation(`https://app.multai.si/app/#review=${token}`)).toEqual({kind:'review',token});
   });
 });
 

@@ -1,4 +1,4 @@
-// The browser companion on the service's own origin. Secrets live only in HttpOnly cookies (sign-in
+// The browser companion calls /v1/ on its own origin, proxied to the service. Secrets live only in HttpOnly cookies (sign-in
 // refresh and owner pairing) and non-extractable WebCrypto keys in IndexedDB; page script can use the
 // keys but never read them. Links carry tokens only in the fragment, which is cleared after reading.
 import {StrictMode} from 'react';

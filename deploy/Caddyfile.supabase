@@ -23,6 +23,14 @@
 }
 
 {$COLLABORATION_DOMAIN} {
+	# Verified Android invitations keep their API URL; browsers follow this to the web app.
+	# Legacy OAuth completion and its assets stay on their original origin for in-flight PKCE.
+	@companionPage {
+		method GET HEAD
+		path /app /app/*
+		not path /app/auth /app/assets/* /app/downloads/* /app/sw.js /app/manifest.webmanifest /app/favicon.svg /app/icon-192.png /app/icon-512.png /app/apple-touch-icon.png
+	}
+	redir @companionPage https://{$COMPANION_DOMAIN:app.multai.si}{uri} 302
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
@@ -44,8 +52,7 @@
 	}
 }
 
-# The short address for the browser companion. It forwards to the companion on the collaboration
-# domain, which owns sign-in, cookies and the API; an invitation code after # carries over.
+# The browser owns host-only sign-in/controller cookies here. Relative API calls remain same-origin.
 {$COMPANION_DOMAIN:app.multai.si} {
 	header {
 		Strict-Transport-Security "max-age=31536000"
@@ -53,7 +60,20 @@
 		Referrer-Policy no-referrer
 		-Server
 	}
-	redir https://{$COLLABORATION_DOMAIN}/app{uri} 308
+	@home path /
+	redir @home /app/ 302
+	request_body {
+		max_size 128KB
+	}
+	reverse_proxy backend:4310 {
+		header_up -Forwarded
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 20s
+		}
+	}
 }
 
 http://127.0.0.1:9080 {

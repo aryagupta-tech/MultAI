@@ -1,3 +1,4 @@
+import {browserOrigins, companionWebOrigin, requestTargetsOrigin} from './web-origin.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import Fastify, {LogController} from 'fastify';
@@ -44,7 +45,9 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
     options: {maxPayload: 1024, perMessageDeflate: false},
     errorHandler: (_error, socket) => socket.terminate(),
   });
-  const companionOrigins = new Set(config.companionOrigins ?? []);
+  const webOrigin = companionWebOrigin(config);
+  const webOrigins = new Set(browserOrigins(config));
+  const companionOrigins = new Set((config.companionOrigins ?? []).filter(origin => !webOrigins.has(origin)));
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
     reply.header('X-Content-Type-Options', 'nosniff');
@@ -56,7 +59,7 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
     // The packaged companion runs on its own origin and authenticates with explicit headers only, so it
     // may call the API cross-origin. Cookie routes (/v1/web/) and credentials are never allowed here.
     const origin = request.headers.origin;
-    if (origin && companionOrigins.has(origin) && request.url.startsWith('/v1/') && !request.url.startsWith('/v1/web/')) {
+    if (origin && (companionOrigins.has(origin) || (webOrigins.has(origin) && requestTargetsOrigin(request, origin))) && request.url.startsWith('/v1/') && !request.url.startsWith('/v1/web/')) {
       reply.header('Access-Control-Allow-Origin', origin);
       reply.header('Vary', 'Origin');
       if (request.method === 'OPTIONS') {
@@ -100,13 +103,13 @@ export async function buildApp({db, config, oidc, logger = false}: AppOptions) {
   const execution = new ExecutionService(db);
   await execution.startup();
   app.addHook('onClose',async()=>execution.close());
-  await registerAuthRoutes(app, auth, config.publicOrigin);
+  await registerAuthRoutes(app, auth, config.publicOrigin, webOrigin);
   await registerCollaborationRoutes(app, {service, authenticate: request => auth.authenticateRequest(request)});
   await registerExecutionRoutes(app,execution,request=>auth.authenticateRequest(request));
   await registerReplayRoutes(app, new ReplayService(db), request => auth.authenticateRequest(request));
   await registerAcceptanceRoutes(app,new AcceptanceService(db),request=>auth.authenticateRequest(request));
-  await registerBrowserReviewRoutes(app,new BrowserReviewService(db),request=>auth.authenticateRequest(request),config.publicOrigin,[...companionOrigins]);
-  await registerOwnerControlRoutes(app,new OwnerControlService(db,config.publicOrigin),request=>auth.authenticateRequest(request),config.publicOrigin);
+  await registerBrowserReviewRoutes(app,new BrowserReviewService(db),request=>auth.authenticateRequest(request),config.publicOrigin,[...companionOrigins],webOrigin);
+  await registerOwnerControlRoutes(app,new OwnerControlService(db,config.publicOrigin),request=>auth.authenticateRequest(request),config.publicOrigin,webOrigin);
   await registerCompanion(app,{directory:config.companionDirectory,androidCertificates:config.androidCertificates,androidPackage:ANDROID_PACKAGE});
 
   const connectionCounts = new Map<string, number>();

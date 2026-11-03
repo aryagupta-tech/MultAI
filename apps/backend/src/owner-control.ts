@@ -1,3 +1,4 @@
+import {requireBrowserOrigin} from './web-origin.js';
 // Paired owner controllers. The original host pairs a phone with a short-lived one-use code, sees the
 // phone's name and key fingerprint, and confirms it. The phone then signs each request with a key that
 // never leaves it; this service checks the binding to the session's current state, and the host verifies
@@ -544,15 +545,11 @@ export function cookieHeader(publicOrigin: string, name: string, value: string, 
  * browser says where a request came from (Origin, Sec-Fetch-Site) it must be this origin. Browsers omit
  * Origin on same-origin GETs, so its absence alone is not a refusal.
  */
-export function requireSameOriginClient(request: FastifyRequest, publicOrigin: string) {
-  const origin = request.headers.origin, site = request.headers['sec-fetch-site'];
-  if (request.headers['x-multai-client'] !== 'web' || (origin !== undefined && origin !== publicOrigin) || (site !== undefined && site !== 'same-origin')) {
-    throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
-  }
-  if (origin === undefined && request.method !== 'GET' && request.method !== 'HEAD') throw new ApiError(403, 'origin_denied', 'Open MultAI from its own address.');
+export function requireSameOriginClient(request: FastifyRequest, publicOrigin: string, webOrigin = publicOrigin): string {
+  return requireBrowserOrigin(request, [...new Set([webOrigin, publicOrigin])]);
 }
 
-export async function registerOwnerControlRoutes(app: FastifyInstance, service: OwnerControlService, authenticate: (request: FastifyRequest) => Promise<Actor>, publicOrigin: string) {
+export async function registerOwnerControlRoutes(app: FastifyInstance, service: OwnerControlService, authenticate: (request: FastifyRequest) => Promise<Actor>, publicOrigin: string, webOrigin = publicOrigin) {
   const params = (request: FastifyRequest) => z.object({id: uuid.optional(), sessionId: uuid.optional()}).parse(request.params);
   // Host (native desktop account on the original host device).
   app.post('/v1/controller-pairings', async (request, reply) => reply.code(201).send(await service.createPairing(await authenticate(request), request.body)));
@@ -576,17 +573,17 @@ export async function registerOwnerControlRoutes(app: FastifyInstance, service: 
     const header = /^Controller ([A-Za-z0-9_-]{43})$/u.exec(request.headers.authorization ?? '');
     if (header) return header[1]!;
     const cookie = readCookie(request, CONTROLLER_COOKIE);
-    if (cookie && /^[A-Za-z0-9_-]{43}$/u.test(cookie)) {requireSameOriginClient(request, publicOrigin); return cookie;}
+    if (cookie && /^[A-Za-z0-9_-]{43}$/u.test(cookie)) {requireSameOriginClient(request, publicOrigin, webOrigin); return cookie;}
     throw controllerDenied('controller_required', 'Pair this phone from the desktop first.');
   };
   app.post('/v1/controller/claim', {config: {rateLimit: {max: 10, timeWindow: '1 minute'}}}, async (request: FastifyRequest, reply: FastifyReply) => {
     const web = request.headers['x-multai-client'] === 'web';
-    if (web) requireSameOriginClient(request, publicOrigin);
+    const origin = web ? requireSameOriginClient(request, publicOrigin, webOrigin) : publicOrigin;
     const result = await service.claim(request.body);
     if (web) {
       const body = request.body as {credential: string};
       // The browser keeps the credential only as an HttpOnly cookie, out of reach of page scripts.
-      reply.header('set-cookie', cookieHeader(publicOrigin, CONTROLLER_COOKIE, body.credential, '/v1/controller', 30 * 86_400));
+      reply.header('set-cookie', cookieHeader(origin, CONTROLLER_COOKIE, body.credential, '/v1/controller', 30 * 86_400));
     }
     return result;
   });
@@ -598,14 +595,15 @@ export async function registerOwnerControlRoutes(app: FastifyInstance, service: 
   app.get('/v1/controller/requests', async request => service.recentRequests(credential(request), request.query));
   app.get('/v1/controller/requests/:id', async request => service.requestStatus(credential(request), params(request).id!));
   app.post('/v1/controller/unpair', async (request, reply) => {
+    const origin = request.headers['x-multai-client'] === 'web' ? requireSameOriginClient(request, publicOrigin, webOrigin) : publicOrigin;
     const result = await service.unpair(credential(request));
-    reply.header('set-cookie', cookieHeader(publicOrigin, CONTROLLER_COOKIE, '', '/v1/controller', 0));
+    reply.header('set-cookie', cookieHeader(origin, CONTROLLER_COOKIE, '', '/v1/controller', 0));
     return result;
   });
   app.post('/v1/controller/forget', async (request, reply) => {
     // Clears a dead browser credential (revoked, expired or declined) without needing it to be valid.
-    requireSameOriginClient(request, publicOrigin);
-    reply.header('set-cookie', cookieHeader(publicOrigin, CONTROLLER_COOKIE, '', '/v1/controller', 0));
+    const origin = requireSameOriginClient(request, publicOrigin, webOrigin);
+    reply.header('set-cookie', cookieHeader(origin, CONTROLLER_COOKIE, '', '/v1/controller', 0));
     return {forgotten: true};
   });
 }

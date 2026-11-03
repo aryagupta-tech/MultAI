@@ -31,6 +31,7 @@ services:
       HOST: 0.0.0.0
       PORT: "4310"
       PUBLIC_ORIGIN: https://${COLLABORATION_DOMAIN:?Set the collaboration domain}
+      COMPANION_WEB_ORIGIN: https://${COMPANION_DOMAIN:-app.multai.si}
       NODE_OPTIONS: --max-old-space-size=256
       # The proxy reaches the backend over either network; only it can set the client address.
       TRUST_PROXY: 172.30.0.0/24,172.31.0.0/24
@@ -58,6 +59,7 @@ services:
     cpus: 0.2
     environment:
       COLLABORATION_DOMAIN: ${COLLABORATION_DOMAIN:?Set the collaboration domain}
+      COMPANION_DOMAIN: ${COMPANION_DOMAIN:-app.multai.si}
     ports:
       - "80:8080"
       - "443:8443"

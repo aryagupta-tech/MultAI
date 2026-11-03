@@ -1,3 +1,4 @@
+import {requireBrowserOrigin} from './web-origin.js';
 import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import type {FastifyInstance, FastifyRequest} from 'fastify';
 import type {PoolClient} from 'pg';
@@ -242,7 +243,7 @@ export class BrowserReviewService extends CollaborationService {
 }
 
 const CSP="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-export async function registerBrowserReviewRoutes(app:FastifyInstance,service:BrowserReviewService,authenticate:(request:FastifyRequest)=>Promise<Actor>,publicOrigin:string,appOrigins:string[]=[]){
+export async function registerBrowserReviewRoutes(app:FastifyInstance,service:BrowserReviewService,authenticate:(request:FastifyRequest)=>Promise<Actor>,publicOrigin:string,appOrigins:string[]=[],webOrigin=publicOrigin){
   const params=(request:FastifyRequest)=>z.object({sessionId:uuid,id:uuid.optional()}).parse(request.params);
   app.get('/v1/sessions/:sessionId/reviewers',async request=>service.list(await authenticate(request),params(request).sessionId));
   app.post('/v1/sessions/:sessionId/reviewer-invitations',async(request,reply)=>reply.code(201).send(await service.createReviewInvitation(await authenticate(request),params(request).sessionId,request.body)));
@@ -254,7 +255,8 @@ export async function registerBrowserReviewRoutes(app:FastifyInstance,service:Br
   app.post('/v1/sessions/:sessionId/screenshot-comments',async(request,reply)=>reply.code(201).send(await service.participantComment(await authenticate(request),params(request).sessionId,request.body)));
   const checkOrigin=(request:FastifyRequest)=>{
     // The served page, the browser companion (same origin) or the packaged companion app.
-    if(request.headers.origin!==publicOrigin&&!appOrigins.includes(request.headers.origin??''))throw new ApiError(403,'review_origin_denied','Open the review invitation on this service.');
+    if([publicOrigin,webOrigin].includes(request.headers.origin??'')){requireBrowserOrigin(request,[webOrigin,publicOrigin],false);return;}
+    if(!appOrigins.includes(request.headers.origin??''))throw new ApiError(403,'review_origin_denied','Open the review invitation on this service.');
   };
   const credential=(request:FastifyRequest)=>{
     checkOrigin(request);

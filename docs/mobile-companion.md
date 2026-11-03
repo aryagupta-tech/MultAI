@@ -4,8 +4,8 @@ Follow a MultAI session from a phone, and, as its owner, control your own deskto
 
 | | Where | Status |
 |---|---|---|
-| Browser companion | `https://app.multai.si` (forwards to `https://api.multai.si/app/`; Android Chrome, iPhone Safari; add to home screen) | **Live.** Served by the existing collaboration backend on `api.multai.si`; no app download is required. |
-| Android app | `apps/mobile/release/multai-companion-<version>.apk` (id `si.multai.companion`) | **0.1.3, versionCode 4.** [Download APK](https://api.multai.si/app/android). Uses the original signing key, so it updates 0.1.1. See [the Android README](../apps/mobile/README.md) for verification and installation. |
+| Browser companion | [app.multai.si](https://app.multai.si/) (Android Chrome, iPhone Safari; add to home screen) | **Live on the app domain.** The page, browser API calls and host-only cookies stay on `app.multai.si`; no app download is required. |
+| Android app | `apps/mobile/release/multai-companion-<version>.apk` (id `si.multai.companion`) | **0.1.3, versionCode 4.** [Download APK](https://app.multai.si/app/android). Uses the original signing key, so it updates 0.1.1. See [the Android README](../apps/mobile/README.md) for verification and installation. |
 | iPhone | The browser companion in Safari | No native iOS app, TestFlight or Apple membership. |
 
 ## Three separate ways in
@@ -71,6 +71,16 @@ The phone never receives the desktop's sign-in, model keys, files, a terminal or
 | Guest review credential | Memory only | Memory only |
 
 Cookie calls need the page's custom `X-MultAI-Client` header; when the browser sends `Origin` or `Sec-Fetch-Site` it must be this origin (browsers omit `Origin` on same-origin GETs). Cookie routes never allow cross-origin calls. The Android app calls the API cross-origin from `https://localhost` with explicit headers only, never cookies. Tokens appear only in URL fragments, never in query strings or logs. The companion page has a strict CSP (`script-src 'self'`, no inline script or style, `connect-src 'self'`); the app's CSP allows only its one service.
+
+## Browser domain and existing links
+
+`app.multai.si` serves the browser companion and proxies its relative `/v1/` calls to the existing backend. `PUBLIC_ORIGIN` remains `https://api.multai.si` for the desktop and Android APIs; `COMPANION_WEB_ORIGIN` is explicitly `https://app.multai.si`. Host and Origin must agree exactly. Browser refresh and owner-controller cookies stay HttpOnly, SameSite=Strict, Secure and host-only; credentials are never shared between subdomains.
+
+Google still returns to the existing registered `https://api.multai.si/v1/auth/google/callback`. After verification, a new browser flow is handed off to `https://app.multai.si/app/auth`. No Google client, billing or callback registration changes are required. New browser sign-ins start only on the app host. Old in-flight API flows retain their original PKCE origin and finish on the legacy API callback; their exchange cannot be moved to the app origin.
+
+Desktop invitations and pairing QR codes deliberately keep `https://api.multai.si/app/#join=…` and `#pair=…`: Android verifies those paths and opens the installed APK before an HTTP request. Browsers without the APK follow a temporary redirect to the app host with the fragment retained. The legacy API callback, its static assets and APK metadata remain available for compatibility. An already-open old API tab handling only a new fragment needs a normal reload to follow the redirect.
+
+The new domain has its own browser storage. Existing browser users sign in and pair once on the app domain; non-extractable owner keys and HttpOnly cookies are not copied across origins. The installed Android app continues using its existing API origin and secure storage.
 
 ## Service changes
 

@@ -409,19 +409,19 @@ test('browser cookies are HttpOnly, SameSite=Strict and refused without the page
   const body = {code: created.json().pairing.code, requestId: randomUUID(), credential, deviceName: 'Safari on iPhone', platform: 'ios', signingKey: await core.exportPublic(keys.signing.publicKey), encryptionKey: await core.exportPublic(keys.encryption.publicKey)};
   const forged = await ctx.app.inject({method: 'POST', url: '/v1/controller/claim', headers: {'x-multai-client': 'web', origin: 'https://evil.example'}, payload: body});
   assert.equal(forged.statusCode, 403);
-  const claim = await ctx.app.inject({method: 'POST', url: '/v1/controller/claim', headers: {'x-multai-client': 'web', origin: ORIGIN}, payload: body});
+  const claim = await ctx.app.inject({method: 'POST', url: '/v1/controller/claim', headers: {'x-multai-client': 'web', host:new URL(ORIGIN).host,origin: ORIGIN}, payload: body});
   assert.equal(claim.statusCode, 200, claim.body);
   const cookie = String(claim.headers['set-cookie']);
   assert.match(cookie, /^multai_controller=[A-Za-z0-9_-]{43}; Path=\/v1\/controller; Max-Age=\d+; HttpOnly; SameSite=Strict$/u);
   assert.ok(!claim.body.includes(credential), 'the credential is never echoed back');
-  const jar = {cookie: `multai_controller=${credential}`};
+  const jar = {host:new URL(ORIGIN).host,cookie: `multai_controller=${credential}`};
   const noOrigin = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: jar});
   assert.equal(noOrigin.statusCode, 403, 'a cookie alone is not enough (CSRF)');
   const crossSite = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, origin: 'https://evil.example', 'x-multai-client': 'web'}});
   assert.equal(crossSite.statusCode, 403);
-  const noHeader = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, origin: ORIGIN}});
+  const noHeader = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, host:new URL(ORIGIN).host,origin: ORIGIN}});
   assert.equal(noHeader.statusCode, 403);
-  const ok = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, origin: ORIGIN, 'x-multai-client': 'web'}});
+  const ok = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, host:new URL(ORIGIN).host,origin: ORIGIN, 'x-multai-client': 'web'}});
   assert.equal(ok.statusCode, 200, ok.body);
   // Browsers omit Origin on same-origin GETs; the custom header and Sec-Fetch-Site decide.
   const sameOriginGet = await ctx.app.inject({method: 'GET', url: '/v1/controller/status', headers: {...jar, 'x-multai-client': 'web', 'sec-fetch-site': 'same-origin'}});
@@ -430,7 +430,7 @@ test('browser cookies are HttpOnly, SameSite=Strict and refused without the page
   assert.equal(crossSiteGet.statusCode, 403);
   const noOriginPost = await ctx.app.inject({method: 'POST', url: '/v1/controller/unpair', headers: {...jar, 'x-multai-client': 'web'}, payload: {}});
   assert.equal(noOriginPost.statusCode, 403, 'a cookie POST must name its origin');
-  const forget = await ctx.app.inject({method: 'POST', url: '/v1/controller/forget', headers: {origin: ORIGIN, 'x-multai-client': 'web'}, payload: {}});
+  const forget = await ctx.app.inject({method: 'POST', url: '/v1/controller/forget', headers: {host:new URL(ORIGIN).host,origin: ORIGIN, 'x-multai-client': 'web'}, payload: {}});
   assert.match(String(forget.headers['set-cookie']), /Max-Age=0/u);
 });
 
@@ -500,7 +500,7 @@ const oidc: OidcClient = {
 test('browser and Android sign-ins use the same Google redirect and hand off in a fragment', async t => {
   const config: Config = {...testConfig, googleClientId: 'synthetic-client', googleClientSecret: 'synthetic-secret', googleRedirectUri: `${ORIGIN}/v1/auth/google/callback`};
   const ctx = await createTestContext({config, oidc}); t.after(() => ctx.close());
-  const web = {origin: ORIGIN, 'x-multai-client': 'web'};
+  const web = {host:new URL(ORIGIN).host,origin: ORIGIN, 'x-multai-client': 'web'};
   const verifier = secret() + secret();
   assert.equal((await ctx.app.inject({method: 'POST', url: '/v1/web/auth/start', payload: {codeChallenge: pkceChallenge(verifier)}})).statusCode, 403);
   const start = await ctx.app.inject({method: 'POST', url: '/v1/web/auth/start', headers: web, payload: {codeChallenge: pkceChallenge(verifier)}});

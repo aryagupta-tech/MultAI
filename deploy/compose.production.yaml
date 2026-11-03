@@ -74,6 +74,7 @@ services:
       HOST: 0.0.0.0
       PORT: "4310"
       PUBLIC_ORIGIN: https://${COLLABORATION_DOMAIN:?Set the collaboration domain}
+      COMPANION_WEB_ORIGIN: https://${COMPANION_DOMAIN:-app.multai.si}
       NODE_OPTIONS: --max-old-space-size=256
       # Publishes the Android companion's signing certificate for App Links (public, not a secret).
       ANDROID_CERT_SHA256: "72:E3:60:27:AE:1C:6C:A8:F9:75:A3:F8:95:EA:11:A6:78:84:80:FF:0C:19:B9:C9:F1:3F:1C:E7:7F:F3:7B:7B"
@@ -102,6 +103,7 @@ services:
     cpus: 0.2
     environment:
       COLLABORATION_DOMAIN: ${COLLABORATION_DOMAIN:?Set the collaboration domain}
+      COMPANION_DOMAIN: ${COMPANION_DOMAIN:-app.multai.si}
       ACME_EMAIL: ${ACME_EMAIL:?Set the certificate contact}
     ports:
       - "80:8080"

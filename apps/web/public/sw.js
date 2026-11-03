@@ -10,6 +10,9 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin || !url.pathname.startsWith('/app/')) return;
+  // Downloads are never app shells. Following an APK redirect here could replace the offline page
+  // with the attachment, and falling back to HTML would hide a failed download.
+  if (url.pathname === '/app/android' || url.pathname.startsWith('/app/downloads/')) return;
   if (url.pathname.startsWith('/app/assets/')) {
     // Hashed file names never change: cache first.
     event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request).then(response => {

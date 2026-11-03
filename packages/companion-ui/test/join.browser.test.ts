@@ -4,7 +4,7 @@ import {build} from 'esbuild';
 import {chromium,type Browser,type Page} from 'playwright';
 import {afterAll,afterEach,beforeAll,beforeEach,describe,expect,it} from 'vitest';
 
-const ORIGIN='https://api.multai.test',TOKEN='A'.repeat(43),FLOW='11111111-1111-4111-8111-111111111111';
+const ORIGIN='https://app.multai.test',TOKEN='A'.repeat(43),FLOW='11111111-1111-4111-8111-111111111111';
 const ID='22222222-2222-4222-8222-222222222222';
 const session={accessToken:'B'.repeat(43),expiresIn:3600,deviceId:ID};
 

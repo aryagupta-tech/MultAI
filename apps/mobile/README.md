@@ -1,6 +1,6 @@
 # MultAI Companion for Android
 
-[Download signed APK 0.1.3](https://api.multai.si/app/android) · [Use the browser companion](https://api.multai.si/app/)
+[Download signed APK 0.1.3](https://app.multai.si/app/android) · [Use the browser companion](https://app.multai.si/)
 
 The Android app is a Capacitor 8 shell around the shared companion screens (`packages/companion-ui`). What it does and how pairing works: [docs/mobile-companion.md](../../docs/mobile-companion.md).
 
