@@ -31,5 +31,10 @@ export default defineConfig({
   plugins: [react(), contentSecurityPolicy()],
   build: { outDir: 'dist/renderer', emptyOutDir: true, sourcemap: false },
   server: { port: 5199, strictPort: true },
-  test: { include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'electron/**/*.test.ts'] },
+  test: {
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'electron/**/*.test.ts'],
+    // Integration cases create real Git worktrees/process trees; Windows runners take longer to
+    // release handles and start subprocesses. Keep a bounded budget without skipping those cases.
+    ...(process.platform === 'win32' ? {testTimeout: 30_000, hookTimeout: 30_000} : {}),
+  },
 });

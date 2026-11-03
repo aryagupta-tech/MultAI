@@ -194,12 +194,17 @@ export class OwnerControlService extends CollaborationService {
   }
   async confirmPairing(actor: Actor, id: string, input: unknown) {
     const body = z.object({keyThumbprint: hex64, sessionIds: z.array(uuid).min(1).max(20)}).strict().parse(input);
+    const sessions = [...new Set(body.sessionIds)].sort();
     return transaction(this.db, async client => {
       const row = await this.ownPairing(client, actor, id);
-      if (row.status === 'active' && row.key_thumbprint === body.keyThumbprint) return {pairing: this.pairingView(row)};
+      if (row.status === 'active' && row.key_thumbprint === body.keyThumbprint) {
+        if (sessions.length !== row.session_ids.length || sessions.some(sessionId => !row.session_ids.includes(sessionId))) {
+          throw new ApiError(409, 'pairing_scope', 'This phone was already confirmed for different sessions. Remove it and pair again to change its access.');
+        }
+        return {pairing: this.pairingView(row)};
+      }
       if (row.status !== 'awaiting_confirmation' || row.code_expires_at.getTime() + 600_000 <= Date.now()) throw new ApiError(409, 'pairing_unavailable', 'This pairing is no longer waiting. Start pairing again.');
       if (!row.key_thumbprint || !equal(row.key_thumbprint, body.keyThumbprint)) throw new ApiError(409, 'pairing_key_changed', 'The phone’s key changed. Start pairing again.');
-      const sessions = [...new Set(body.sessionIds)].sort();
       if (sessions.some(sessionId => !row.session_ids.includes(sessionId))) throw new ApiError(409, 'pairing_scope', 'A phone can only be confirmed for the sessions offered when pairing started.');
       for (const sessionId of sessions) await this.hostSession(client, actor, sessionId);
       const updated = await client.query<PairingRow>(`UPDATE controller_pairings SET status='active',session_ids=$2,confirmed_at=now(),expires_at=now()+grant_seconds*interval '1 second'

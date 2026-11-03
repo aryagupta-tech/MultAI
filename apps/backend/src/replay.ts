@@ -33,8 +33,9 @@ export function replayEvent(event: {sequence: number; type: string; actor_id: st
     case 'activity.completed': case 'activity.failed': {
       if (p.tool === 'update_plan') {
         const steps = Array.isArray((p.plan as {steps?: unknown})?.steps) ? ((p.plan as {steps: unknown[]}).steps).slice(0, 12).flatMap(step => {
+          if (!step || typeof step !== 'object' || Array.isArray(step)) return [];
           const s = step as {text?: unknown; state?: unknown};
-          return typeof s.text === 'string' && ['todo', 'active', 'done'].includes(String(s.state)) ? [{text: s.text.slice(0, 200), state: s.state}] : [];
+          return typeof s.text === 'string' && typeof s.state === 'string' && ['todo', 'active', 'done'].includes(s.state) ? [{text: s.text.slice(0, 200), state: s.state}] : [];
         }) : [];
         return steps.length ? {...base, type: 'plan', who: 'Agent', data: {steps}} : null;
       }

@@ -2,10 +2,21 @@ import assert from 'node:assert/strict';
 import {randomBytes, randomUUID} from 'node:crypto';
 import {test} from 'node:test';
 import {CollaborationService} from '../src/collaboration.js';
-import {ReplayService} from '../src/replay.js';
+import {ReplayService, replayEvent} from '../src/replay.js';
 import {createTestContext, seedActor} from './helpers.js';
 
 const headers = (identity: {token: string}) => ({authorization: `Bearer ${identity.token}`});
+
+test('replay plan projection tolerates malformed activity JSON without exposing extra fields', () => {
+  const event = {
+    sequence: 1, type: 'activity.completed', actor_id: null, created_at: new Date(0),
+    payload: {tool: 'update_plan', plan: {steps: [null, false, 'step', [], {text: 'Invalid state', state: ['done']}, {text: 'Valid step', state: 'active', command: 'private command'}]}},
+  };
+  const projected = replayEvent(event, () => null);
+  assert.deepEqual(projected?.data, {steps: [{text: 'Valid step', state: 'active'}]});
+  assert.equal(projected?.type, 'plan');
+  assert.equal(replayEvent({...event, payload: {tool: 'update_plan', plan: {steps: [null, {text: 'Bad', state: {}}]}}}, () => null), null);
+});
 
 test('replay management revalidates a previously authenticated actor', async t => {
   const ctx = await createTestContext(); t.after(() => ctx.close());

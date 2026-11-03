@@ -67,7 +67,12 @@ function gitEnvironment(extra:Record<string,string>={}):NodeJS.ProcessEnv {
 interface GitResult {stdout:string;stderr:string;code:number}
 export function git(cwd:string,args:string[],options:{input?:string;allowFail?:boolean;timeout?:number;command?:string;env?:Record<string,string>}={}):Promise<GitResult>{
   return new Promise((resolve,reject)=>{
-    const child=execFile(options.command??'git',args,{cwd,env:gitEnvironment(options.env),maxBuffer:32*1024*1024,timeout:options.timeout??60_000,windowsHide:true},(error,stdout,stderr)=>{
+    const command=options.command??'git';
+    // Account-scoped worktrees, lane folders and temporary snapshot indexes can
+    // exceed Windows' legacy path limit. Enable Git's long paths for this process
+    // only; never change the host's repository/global config or pass Git flags to gh.
+    const commandArgs=command==='git'?['-c','core.longpaths=true',...args]:args;
+    const child=execFile(command,commandArgs,{cwd,env:gitEnvironment(options.env),maxBuffer:32*1024*1024,timeout:options.timeout??60_000,windowsHide:true},(error,stdout,stderr)=>{
       const code=error?(typeof (error as {code?:unknown}).code==='number'?(error as {code:number}).code:1):0;
       if(error&&(error as {code?:unknown}).code==='ENOENT')return reject(new ProjectError('GIT_MISSING',options.command==='gh'?'The GitHub CLI (gh) isn’t installed.':'Git isn’t installed on this computer. Install it and try again.'));
       if(code&&!options.allowFail)return reject(new ProjectError('GIT_FAILED',plainGitError(stderr||String(error?.message??''))));

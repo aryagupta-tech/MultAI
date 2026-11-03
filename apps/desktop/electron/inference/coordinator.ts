@@ -703,7 +703,6 @@ export class HostCoordinator {
           // Switching models mid-chat: the new model gets what the last one did, not only its replies.
           const previousModel=await this.previousModel(directory,body.sessionId);
           const handoff=previousModel&&previousModel!==body.model?await this.handoffNote(body.sessionId,root,Boolean(work),previousModel,body.model).catch(()=>null):null;
-          await this.rememberModel(directory,body.sessionId,body.model).catch(()=>undefined);
           if(handoff){await shared();await this.publish(running,'activity.completed',{summary:`Handed over from ${previousModel} to ${body.model}: the conversation, ${handoff.steps} earlier step${handoff.steps===1?'':'s'}${handoff.files?` and ${handoff.files} changed file${handoff.files===1?'':'s'}`:''}.`});}
           const instruction:ContextMessage&{images?:string[]}={role:'user',content:`Instruction from participant ${claimed.selectedInstruction.authorId}:\n${asked.text}${attached}${handoff?.text??''}`,...(claimed.selectedInstruction.image?{images:[claimed.selectedInstruction.image]}:{})};
           const skillIndex=skills.length?`\n\nSkills you can use (call use_skill with the name to load one when a request matches it):\n${skills.map(skill=>`- ${skill.name}: ${skill.description.slice(0,200)}`).join('\n')}\n`:'';
@@ -726,7 +725,8 @@ export class HostCoordinator {
             if(!work||!checkpoint)throw new RuntimeError('SPLIT_NEEDS_PROJECT','Parallel agents work in copies of a project. Start the chat in a project folder to use /split.');
             if(claimed.run.mode!=='build')throw new RuntimeError('SPLIT_NEEDS_BUILD','Parallel agents make changes. Switch to Build mode, then send /split again.');
             if(!split)throw new RuntimeError('SPLIT_NEEDS_TASK','Say what to build after /split, for example “/split add a cart page and its API”.');
-            const report=await this.runSplit({running,root,base:checkpoint.commit,task:split,credentials,model:body.model,effort:body.effort??'medium',system,history,authorId:claimed.selectedInstruction.authorId,skills,claimDirections,direction});
+            const report=await this.runSplit({running,root,base:checkpoint.commit,task:`${split}${handoff?.text??''}`,credentials,model:body.model,effort:body.effort??'medium',system,history,authorId:claimed.selectedInstruction.authorId,skills,claimDirections,direction});
+            await this.rememberModel(directory,body.sessionId,body.model).catch(()=>undefined);
             const text=textChunks(redactText(report,running.secrets),13500)[0]??'';
             await this.publish(running,'agent.completed',{messageId,text,model:body.model,truncated:false});
             await this.request(running,'/finish',{status:'completed'});if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:'completed'});
@@ -756,6 +756,9 @@ export class HostCoordinator {
               if(event.type==='limits')this.saveLimits(body.connectionId,event.windows);
               if(event.type==='web.search'){await shared();await this.publish(running,'activity.completed',{summary:event.query?`Searched the web: ${event.query}`:'Searched the web'});}
             }});
+          // A rejected provider request has not taken over the chat. Keep the previous
+          // model until a run returns, so retrying a failed switch still gets its handoff.
+          await this.rememberModel(directory,body.sessionId,body.model).catch(()=>undefined);
           await shared(true);const final=textChunks(redactText(result.text,running.secrets),13500);const truncated=final.length>1;
           if(credentials.kind==='chatgpt')void this.loadLimits().then(limits=>{if(limits.get(body.connectionId)?.windows.some(window=>window.label==='Plan limit'))this.saveLimits(body.connectionId,[]);});
           await this.publish(running,'agent.completed',{messageId,text:`${final[0]??''}${truncated?'\n[Final context text truncated by the sharing limit.]':''}`,model:body.model,truncated});
@@ -1068,7 +1071,10 @@ export class HostCoordinator {
     const safe=redacted(result,run.secrets);
     z.object({actionId:z.literal(descriptor.requestId),status:z.literal('completed')}).parse(await this.request(run,`/actions/${descriptor.requestId}`,{fingerprint:prepared.fingerprint,decision:'complete'}));
     const activityResult=safe&&typeof safe==='object'&&!Array.isArray(safe)&&typeof safe.output==='string'?{...safe,output:textChunks(safe.output,13000)[0]??'',outputTruncated:Boolean(safe.truncated)||textChunks(safe.output,13000).length>1}:safe;
-    await this.publish(run,'activity.completed',{tool:call.name,summary:write?`Updated ${write.path}`:external?`Used ${external.server}.${external.tool}`:'Host-approved command completed',result:activityResult});
+    const commandResult=operation.kind==='shell'?result as {exitCode:number|null;signal:string|null}:null;
+    const commandFailed=commandResult!==null&&(commandResult.exitCode!==0||commandResult.signal!==null);
+    const commandSummary=commandFailed?`Host-approved command ${commandResult!.signal?`ended with ${commandResult!.signal}`:`exited ${commandResult!.exitCode??'without an exit code'}`}`:'Host-approved command completed';
+    await this.publish(run,commandFailed?'activity.failed':'activity.completed',{tool:call.name,summary:write?`Updated ${write.path}`:external?`Used ${external.server}.${external.tool}`:commandSummary,result:activityResult});
     // Completion plus this effect event were durable before the acknowledgement.
     run.journal.acknowledge(`effect:${descriptor.requestId}`);
     return safe;

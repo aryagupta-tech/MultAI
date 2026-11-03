@@ -279,6 +279,7 @@ describe('parallel agents', () => {
     const repo = join(x.directory, 'shop');
     await mkdir(join(repo, 'src'), {recursive: true});
     git(repo, 'init', '-q', '-b', 'main');
+    git(repo, 'config', 'core.autocrlf', 'false');
     await writeFile(join(repo, 'src', 'cart.js'), 'export const total = items => items.length;\n');
     git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'init');
     const registered = await x.projects.register(repo);
@@ -288,6 +289,35 @@ describe('parallel agents', () => {
   const userText = (options: RunAgentOptions) => String(options.messages.at(-1)?.content ?? '');
   const write = (path: string, content: string, expectedHash: string | null = null): ToolCall => ({id: randomUUID(), name: 'write_file', arguments: {path, content, expectedHash}});
   const events = (x: Awaited<ReturnType<typeof fixture>>) => x.requests.filter(request => request.route.endsWith('/events')).map(request => request.body as {type: string; payload: Record<string, unknown>});
+
+  test('a model handoff reaches both the split planner and its workers', async () => {
+    const x = await fixture();
+    const {root} = await project(x);
+    x.connections.models.mockResolvedValue([{id: 'model-a', name: 'A'}, {id: 'model-b', name: 'B'}]);
+    await x.host.run({...x.input, model: 'model-a'}); await x.terminal();
+    x.account.request.mockImplementation(async (method, route, body) => {
+      if (route.endsWith('/brief-context')) return {title: 'Cart', mode: 'build', throughSequence: 4, events: [
+        {sequence: 4, type: 'activity.failed', author: 'Ada', text: 'Cart test failed'},
+      ]};
+      return x.respond(method, route, body);
+    });
+    x.state.instruction = '/split Fix the cart';
+    const contexts: string[] = [];
+    runtime.run.mockImplementation(async (options: RunAgentOptions) => {
+      contexts.push(userText(options));
+      if (options.system === PLAN_SYSTEM) return {text: JSON.stringify({parts: [{title: 'Fix', task: 'Write src/fix.js', files: ['src/fix.js']}]}), iterations: 1};
+      await options.executeTool!(write('src/fix.js', '// fixed\n'), options.signal);
+      return {text: 'Fixed.', iterations: 2};
+    });
+    await x.host.run({...x.input, model: 'model-b', instructionId: randomUUID()}); await x.terminal();
+    expect(x.changes.at(-1)?.status).toBe('completed');
+    expect(contexts).toHaveLength(2);
+    for (const context of contexts) {
+      expect(context).toContain('Handoff: earlier in this chat the work was done by model-a');
+      expect(context).toContain('- Failed: Cart test failed');
+    }
+    expect(await readFile(join(root, 'src/fix.js'), 'utf8')).toBe('// fixed\n');
+  });
 
   test('plans with the run\'s model, builds the parts at the same time, takes turns on approvals and merges into the chat', async () => {
     const x = await fixture();
@@ -725,8 +755,8 @@ describe('team verification uses actual host checks and a separate read-only rev
     runtime.run.mockImplementation(async (options: RunAgentOptions) => {contents.push(options.messages.at(-1)!.content); return {text: 'ok', iterations: 1};});
     x.connections.models.mockResolvedValue([{id: 'model-a', name: 'A'}, {id: 'model-b', name: 'B'}]);
     await x.host.run({...x.input, model: 'model-a'}); await x.terminal();
-    await x.host.run({...x.input, model: 'model-a', instructionId: randomUUID()}); await vi.waitFor(() => expect(contents).toHaveLength(2));
-    await x.host.run({...x.input, model: 'model-b', instructionId: randomUUID()}); await vi.waitFor(() => expect(contents).toHaveLength(3));
+    await x.host.run({...x.input, model: 'model-a', instructionId: randomUUID()}); await x.terminal();
+    await x.host.run({...x.input, model: 'model-b', instructionId: randomUUID()}); await x.terminal();
     // Same model: nothing added. New model: the earlier steps, failures marked.
     expect(contents[0]).not.toContain('Handoff');
     expect(contents[1]).not.toContain('Handoff');
@@ -734,5 +764,43 @@ describe('team verification uses actual host checks and a separate read-only rev
     expect(contents[2]).toContain('- Updated cart.js\n- Failed: npm test exited 1');
     expect(contents[2]).not.toContain('Fix the total');
     await vi.waitFor(() => expect(x.requests.some(request => (request.body?.payload as {summary?: string})?.summary === 'Handed over from model-a to model-b: the conversation, 2 earlier steps.')).toBe(true));
+  });
+
+  test('retrying a failed model switch preserves the last working model and its handoff', async () => {
+    const x = await fixture();
+    x.connections.models.mockResolvedValue([{id: 'model-a', name: 'A'}, {id: 'model-b', name: 'B'}]);
+    x.account.request.mockImplementation(async (method, route, body) => {
+      if (route.endsWith('/brief-context')) return {title: 'Cart', mode: 'build', throughSequence: 4, events: [
+        {sequence: 4, type: 'activity.completed', author: 'Ada', text: 'Updated cart.js'},
+      ]};
+      return x.respond(method, route, body);
+    });
+    await x.host.run({...x.input, model: 'model-a'}); await x.terminal();
+    runtime.run.mockRejectedValueOnce(new Error('Synthetic provider refusal'));
+    await x.host.run({...x.input, model: 'model-b', instructionId: randomUUID()}); await x.terminal();
+    expect(x.changes.at(-1)?.status).toBe('failed');
+    const modelFile = join(await x.scopeDirectory(), 'workspaces', `${x.input.sessionId}.model.json`);
+    expect(JSON.parse(await readFile(modelFile, 'utf8')).model).toBe('model-a');
+    await x.host.run({...x.input, model: 'model-b', instructionId: randomUUID()}); await x.terminal();
+    expect((runtime.run.mock.calls.at(-1)![0] as RunAgentOptions).messages.at(-1)!.content).toContain('Handoff: earlier in this chat the work was done by model-a');
+    expect(JSON.parse(await readFile(modelFile, 'utf8')).model).toBe('model-b');
+  });
+
+  test('a failed command is a failed shared step while its completed effect remains acknowledged', async () => {
+    const x = await fixture();
+    runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
+      const result = await options.executeTool!({id: 'failed-command', name: 'run_command', arguments: {command: 'exit 7'}}, options.signal);
+      expect(result).toMatchObject({exitCode: 7});
+      return {text: 'The check failed with exit code 7.', iterations: 2};
+    });
+    await x.host.run(x.input); await x.terminal();
+    expect(x.changes.at(-1)?.status).toBe('completed');
+    const activity = x.requests.filter(request => request.route.endsWith('/events') && (request.body?.payload as {tool?: string})?.tool === 'run_command');
+    expect(activity).toHaveLength(1);
+    expect(activity[0]!.body).toMatchObject({type: 'activity.failed', payload: {summary: 'Host-approved command exited 7', result: {exitCode: 7}}});
+    expect(x.requests.filter(request => request.route.includes('/actions/')).map(request => request.body?.decision)).toEqual(['approve', 'consume', 'complete']);
+    await x.host.invalidate();
+    const journal = new ExecutionJournal(join(await x.scopeDirectory(), 'effects.sqlite'), {serviceOrigin: x.account.origin, accountId: x.state.userId, deviceId: x.state.deviceId});
+    try {expect(journal.pending()).toHaveLength(0);} finally {journal.close();}
   });
 });

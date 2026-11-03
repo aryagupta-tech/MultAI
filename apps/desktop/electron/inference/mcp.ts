@@ -4,6 +4,7 @@
 // is an `external` action the host approves like any other effect.
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
+import path from 'node:path';
 import os from 'node:os';
 import {hostPath} from './projects';
 
@@ -34,13 +35,15 @@ export class McpClient {
   private buffer='';
   private stderr='';
   private exited:string|null=null;
+  private closed:Promise<void>=Promise.resolve();
   constructor(private readonly server:McpServer,private readonly cwd:string){}
 
   async start(timeoutMs=20_000):Promise<void>{
     // The host's own PATH (so npx, uvx and friends resolve) and only the variables configured for this server.
     const env={PATH:hostPath(),HOME:os.homedir(),LANG:'C.UTF-8',...(process.env.TMPDIR?{TMPDIR:process.env.TMPDIR}:{}),...this.server.env};
-    const child=spawn(this.server.command,this.server.args,{cwd:this.cwd,env,stdio:['pipe','pipe','pipe'],windowsHide:true});
+    const child=spawn(this.server.command,this.server.args,{cwd:this.cwd,env,stdio:['pipe','pipe','pipe'],windowsHide:true,detached:process.platform!=='win32'});
     this.child=child;
+    this.closed=new Promise(resolve=>child.once('close',()=>resolve()));
     child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
     // Writing to a server that already exited is reported through 'exit', not as a crash of the app.
     child.stdin.on('error',()=>undefined);
@@ -78,10 +81,24 @@ export class McpClient {
     const text=parts.length?parts.join('\n'):result.structuredContent!==undefined?JSON.stringify(result.structuredContent):'';
     return {text:text.slice(0,16_000),isError:result.isError===true};
   }
-  close():void {
+  close():Promise<void> {
     const child=this.child;this.child=null;
     this.fail('The server was stopped.');
-    if(child&&child.exitCode===null){child.kill('SIGTERM');setTimeout(()=>{if(child.exitCode===null)child.kill('SIGKILL');},2000).unref();}
+    let force:NodeJS.Timeout|undefined;
+    if(child?.pid){
+      const terminate=(signal:NodeJS.Signals)=>{
+        if(process.platform==='win32'){
+          if(child.exitCode!==null||child.signalCode!==null)return;
+          const killer=spawn(path.win32.join(process.env.SystemRoot??'C:\\Windows','System32','taskkill.exe'),['/pid',String(child.pid),'/T','/F'],{stdio:'ignore',windowsHide:true});
+          killer.on('error',()=>{child.kill(signal);});
+        }else{try{process.kill(-child.pid!,signal);}catch{/* Already closed. */}}
+      };
+      terminate('SIGTERM');
+      force=setTimeout(()=>terminate('SIGKILL'),2000);force.unref();
+    }
+    // 'close' also waits for stdio handles: on Windows, the child can retain its working directory
+    // after 'exit'. Callers removing that directory must be able to wait for complete teardown.
+    return this.closed.finally(()=>{if(force)clearTimeout(force);});
   }
   get alive():boolean {return Boolean(this.child)&&this.exited===null;}
 
@@ -98,7 +115,7 @@ export class McpClient {
   private notify(method:string):void {this.child?.stdin.write(`${JSON.stringify({jsonrpc:'2.0',method})}\n`);}
   private receive(chunk:string):void {
     this.buffer+=chunk;
-    if(this.buffer.length>MAX_LINE){this.fail('The server sent a message that is too large.');this.child?.kill('SIGKILL');return;}
+    if(this.buffer.length>MAX_LINE){this.fail('The server sent a message that is too large.');void this.close();return;}
     let newline:number;
     while((newline=this.buffer.indexOf('\n'))>=0){
       const line=this.buffer.slice(0,newline).trim();this.buffer=this.buffer.slice(newline+1);
@@ -122,48 +139,60 @@ export class McpClient {
 
 /** Running servers per folder, started on first use and stopped on sign-out and quit. */
 export class McpHost {
-  private clients=new Map<string,Promise<McpClient>>();
+  private clients=new Map<string,{client:McpClient;ready:Promise<McpClient>}>();
   private toolCache=new Map<string,McpTool[]>();
+  private generation=0;
   constructor(private readonly servers:()=>Promise<McpServer[]>){}
   private client(server:McpServer,cwd:string):Promise<McpClient>{
     const key=`${server.id}\u0000${cwd}`;
     const existing=this.clients.get(key);
-    if(existing)return existing.then(client=>client.alive?client:this.restart(key,server,cwd));
+    if(existing?.client.alive)return existing.ready;
     return this.restart(key,server,cwd);
   }
   private restart(key:string,server:McpServer,cwd:string):Promise<McpClient>{
-    const starting=(async()=>{const client=new McpClient(server,cwd);try{await client.start();}catch(error){client.close();throw error;}return client;})();
-    this.clients.set(key,starting);
-    starting.catch(()=>{if(this.clients.get(key)===starting)this.clients.delete(key);});
+    const generation=this.generation,client=new McpClient(server,cwd);
+    const starting=(async()=>{try{await client.start();this.current(generation);}catch(error){await client.close();throw error;}return client;})();
+    this.clients.set(key,{client,ready:starting});
+    starting.catch(()=>{if(this.clients.get(key)?.ready===starting)this.clients.delete(key);});
     return starting;
   }
   /** Tools from every enabled server in this folder. A server that fails is skipped, not fatal. */
   async tools(cwd:string):Promise<McpTool[]>{
-    const all:McpTool[]=[];
-    for(const server of (await this.servers()).filter(item=>item.enabled)){
+    const all:McpTool[]=[],generation=this.generation;
+    const servers=await this.servers();if(generation!==this.generation)return [];
+    for(const server of servers.filter(item=>item.enabled)){
       try{
+        this.current(generation);
         const key=`${server.id}\u0000${cwd}`;
-        if(!this.toolCache.has(key))this.toolCache.set(key,await (await this.client(server,cwd)).tools());
+        if(!this.toolCache.has(key)){
+          const tools=await (await this.client(server,cwd)).tools();this.current(generation);this.toolCache.set(key,tools);
+        }
         all.push(...this.toolCache.get(key)!);
       }catch{/* Shown when the host tests the server in Settings. */}
     }
     return all;
   }
   async call(serverId:string,tool:string,args:unknown,cwd:string):Promise<{text:string;isError:boolean}>{
+    const generation=this.generation;
     const server=(await this.servers()).find(item=>item.id===serverId&&item.enabled);
+    this.current(generation);
     if(!server)throw new McpError('MCP_UNAVAILABLE','That MCP server was turned off or removed.');
-    return (await this.client(server,cwd)).call(tool,args);
+    const client=await this.client(server,cwd);this.current(generation);
+    return client.call(tool,args);
   }
   /** Starts the server in a scratch folder, lists its tools and stops it. */
   async test(server:McpServer,cwd:string):Promise<string[]>{
     const client=new McpClient(server,cwd);
     try{await client.start();return (await client.tools()).map(tool=>tool.name);}
-    finally{client.close();}
+    finally{await client.close();}
   }
-  stopAll():void {
-    for(const starting of this.clients.values())void starting.then(client=>client.close(),()=>undefined);
+  stopAll():Promise<void> {
+    this.generation++;
+    const closed=[...this.clients.values()].map(({client})=>client.close());
     this.clients.clear();this.toolCache.clear();
+    return Promise.all(closed).then(()=>undefined);
   }
+  private current(generation:number):void {if(generation!==this.generation)throw new McpError('MCP_STOPPED','The server was stopped.');}
 }
 
 export const newServerId=()=>randomUUID();

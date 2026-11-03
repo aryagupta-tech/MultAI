@@ -26,6 +26,14 @@ it.skipIf(process.platform==='win32')('uses the portable shell when SHELL is mis
   }
 });
 
+it.skipIf(process.platform!=='win32')('passes a leading quoted executable to cmd without Node rewriting its arguments',()=>{
+  const terminal=new TerminalHost(()=>undefined);
+  const command='"C:\\Program Files\\nodejs\\node.exe" -e "console.log(1)"';
+  terminal.run('quoted','C:\\workspace',command);
+  expect(spawn).toHaveBeenCalledWith(expect.any(String),['/d','/s','/c','"',command,'"'],expect.objectContaining({windowsVerbatimArguments:true}));
+  child.emit('close',0);
+});
+
 it('preserves UTF-8 characters split across stdout and stderr chunks',()=>{
   const events:TerminalEvent[]=[];const terminal=new TerminalHost(event=>events.push(event));
   const {id}=terminal.run('session','/workspace','echo hello');

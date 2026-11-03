@@ -153,7 +153,12 @@ function nativeHarness() {
           }
           assert(joinShown,'cold_invitation_not_delivered');
           step = 'preload_and_ipc';
-          step='preload_and_ipc';
+          const available = safeStorage.isEncryptionAvailable();
+          const backend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : process.platform === 'darwin' ? 'macOS-keychain' : process.platform === 'win32' ? 'Windows-DPAPI' : 'unknown';
+          // Match CredentialStore's allowlist. Without an approved keyring, account requests
+          // fail closed before they can read credentials or discover that the profile is empty.
+          const approvedBackend = available && (process.platform !== 'linux' || ['gnome_libsecret', 'kwallet', 'kwallet5', 'kwallet6'].includes(backend));
+          const expectedDenial = approvedBackend ? 'signed_out' : 'secure_storage_unavailable';
           const observed = await contents.executeJavaScript(`(async () => {
             const build = await window.multai.getBuildInfo();
             const health = await window.multai.service.health();
@@ -167,9 +172,11 @@ function nativeHarness() {
               build, health, authStatus: auth.status,
               inferenceDenied: connections.ok === false,
               inferenceError: connections.ok === false ? connections.error.code : null,
-              reviewDenied:review.ok===false&&review.error.code==='signed_out',
-              verificationDenied:verification.ok===false&&verification.error.code==='signed_out',
-              conflictDenied:conflict.ok===false&&conflict.error.code==='signed_out',
+              denialCodes: {
+                review: review.ok === false ? review.error.code : null,
+                verification: verification.ok === false ? verification.error.code : null,
+                conflict: conflict.ok === false ? conflict.error.code : null,
+              },
               nodeUnavailable: typeof process === 'undefined' && typeof require === 'undefined',
               bridgeFrozen: Object.isFrozen(window.multai),
               rendererMounted: Boolean(document.querySelector('#root')?.childElementCount),
@@ -179,7 +186,10 @@ function nativeHarness() {
           assert(observed.nodeUnavailable && observed.bridgeFrozen && observed.rendererMounted && observed.titlePresent, 'renderer_bridge_contract');
           assert(observed.authStatus === 'signed-out', 'fresh_profile_must_be_signed_out');
           assert(observed.inferenceDenied && observed.inferenceError === 'signed_out', 'signed_out_inference_boundary');
-          assert(observed.reviewDenied&&observed.verificationDenied&&observed.conflictDenied,'signed_out_review_boundaries');
+          if (!Object.values(observed.denialCodes).every(code => code === expectedDenial)) {
+            finish(false, {reason: 'signed_out_review_boundaries', expectedDenial, denialCodes: observed.denialCodes});
+            return;
+          }
           step='native_clipboard';
           assert(typeof clipboard?.readText==='function','clipboard_read_unavailable');
           assert(typeof clipboard?.writeText==='function','clipboard_write_unavailable');
@@ -206,9 +216,6 @@ function nativeHarness() {
           untrusted.destroy();
           assert(untrustedRejected === true, 'untrusted_window_bridge_was_accepted');
           step = 'os_crypto_capability';
-          const available = safeStorage.isEncryptionAvailable();
-          const backend = process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : process.platform === 'darwin' ? 'macOS-keychain' : process.platform === 'win32' ? 'Windows-DPAPI' : 'unknown';
-          const approvedBackend = available && backend !== 'basic_text';
           let roundTrip = process.env.MULTAI_NATIVE_SMOKE_KEYRING === '1' ? 'unavailable' : 'not_requested';
           if (process.env.MULTAI_NATIVE_SMOKE_KEYRING === '1' && approvedBackend) {
             const synthetic = crypto.randomBytes(32).toString('hex');
@@ -225,7 +232,8 @@ function nativeHarness() {
             versions: {electron: process.versions.electron, node: process.versions.node, chromium: process.versions.chrome},
             build: observed.build,
             artifacts: {mainSha256: sha256(path.join(appRoot, 'dist', 'electron', 'main.cjs')), preloadSha256: sha256(path.join(appRoot, 'dist', 'electron', 'preload.cjs')), rendererIndexSha256: sha256(path.join(appRoot, 'dist', 'renderer', 'index.html'))},
-            checks: {compiledRendererMounted: true, preloadAndRealIpc: true, isolatedTemporaryProfile: true, sandboxAndContextIsolation: true, rendererNodeUnavailable: true, untrustedWindowIpcRejected: true, signedOutInferenceDenied: true, nativeClipboardRoundTrip:true, coldInvitationDelivered:true, realBackendDatabaseReady: true},
+            checks: {compiledRendererMounted: true, preloadAndRealIpc: true, isolatedTemporaryProfile: true, sandboxAndContextIsolation: true, rendererNodeUnavailable: true, untrustedWindowIpcRejected: true, signedOutInferenceDenied: true, signedOutReviewVerificationConflictDenied: true, nativeClipboardRoundTrip:true, coldInvitationDelivered:true, realBackendDatabaseReady: true},
+            denialCodes: observed.denialCodes,
             identityReadiness: observed.health.identity,
             protocol: {intentRecorded: protocolName, osRegistrationPerformed: false},
             osCrypto: {available, backend, approvedBackend, roundTrip},

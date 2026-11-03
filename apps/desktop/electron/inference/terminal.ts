@@ -27,8 +27,10 @@ export class TerminalHost {
     if(!text||text.length>8000)throw new ProjectError('TERMINAL_EMPTY','Type a command to run.');
     const id=randomUUID();
     const shell=windows?(process.env.ComSpec??'cmd.exe'):(process.env.SHELL&&path.isAbsolute(process.env.SHELL)?process.env.SHELL:'/bin/sh');
-    const child=spawn(shell,windows?['/d','/s','/c',text]:['-lc',text],{
-      cwd,detached:!windows,windowsHide:true,stdio:['ignore','pipe','pipe'],
+    // cmd /s strips this outer pair of quotes; the exact command keeps its own
+    // quotes, including a leading quoted executable path containing spaces.
+    const child=spawn(shell,windows?['/d','/s','/c','"',text,'"']:['-lc',text],{
+      cwd,detached:!windows,windowsHide:true,windowsVerbatimArguments:windows,stdio:['ignore','pipe','pipe'],
       env:{...process.env,PATH:hostPath(),HOME:os.homedir(),TERM:'dumb',NO_COLOR:'1',FORCE_COLOR:'0',CI:process.env.CI??''},
     });
     const entry={id,child,stopped:false};

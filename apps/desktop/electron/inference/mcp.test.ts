@@ -49,7 +49,7 @@ describe('MCP over stdio',()=>{
       expect((await client.call('cwd',{})).text).toContain('multai-mcp-');
       expect(await client.call('fail',{})).toEqual({text:'bad input',isError:true});
       await expect(client.call('hang',{},300)).rejects.toMatchObject({code:'MCP_TIMEOUT'});
-    }finally{client.close();}
+    }finally{await client.close();}
     await expect(client.call('echo',{text:'x'})).rejects.toMatchObject({code:'MCP_STOPPED'});
   });
   it('explains a missing command, and the host skips a broken server',async()=>{
@@ -61,7 +61,30 @@ describe('MCP over stdio',()=>{
       expect((await host.tools(directory)).map(tool=>`${tool.server}.${tool.name}`)).toEqual(['fake.echo','fake.cwd','fake.fail','fake.hang']);
       expect(await host.call('s1','echo',{text:'again'},directory)).toMatchObject({text:'echo: again from-env'});
       await expect(host.call('s2','echo',{},directory)).rejects.toThrow();
-    }finally{host.stopAll();}
+    }finally{await host.stopAll();}
+  });
+  it('sign-out during settings lookup cannot start a server or dispatch a tool',async()=>{
+    const {directory,server}=await fixture();
+    let release!:(servers:McpServer[])=>void;
+    const host=new McpHost(()=>new Promise(resolve=>{release=resolve;}));
+    const listing=host.tools(directory);await host.stopAll();release([server]);
+    expect(await listing).toEqual([]);
+    const calling=host.call(server.id,'echo',{text:'stale'},directory);
+    const refused=expect(calling).rejects.toMatchObject({code:'MCP_STOPPED'});
+    await host.stopAll();release([server]);await refused;
+  });
+  it('stops an initializing server and waits until its working directory is released',async()=>{
+    const {directory,server}=await fixture();
+    const script=join(directory,'initializing.mjs'),marker=join(directory,'started');
+    // Like npx, the server starts a child inheriting stdio. Stopping only the launcher leaves the
+    // worker alive and its working directory locked, so the real process tree must be terminated.
+    await writeFile(script,"import{writeFileSync}from'node:fs';import{spawn}from'node:child_process';spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'inherit',env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}});writeFileSync(process.argv[2],'ready');process.stdin.resume();");
+    const host=new McpHost(async()=>[{...server,args:[script,marker]}]);
+    const listing=host.tools(directory);
+    const {access}=await import('node:fs/promises');
+    await expect.poll(async()=>{try{await access(marker);return true;}catch{return false;}}).toBe(true);
+    await host.stopAll();expect(await listing).toEqual([]);
+    await rm(directory,{recursive:true,force:true});
   });
   it('validates server settings',()=>{
     const base={id:'x',name:'GitHub',command:'npx',args:['-y','pkg'],env:{TOKEN:'t'},enabled:true};

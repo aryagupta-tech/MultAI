@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,readFile,readdir,realpath,rm,writeFile} from 'node:fs/prom
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach,describe,expect,it} from 'vitest';
-import {ProjectRegistry,applyWork,checkpointChanges,compareUrl,createWork,diffWork,discardWork,githubRepo,keepWork,listWorkFiles,parseDiff,pushWork,readWork,restoreCheckpoint,revertFile,safeRelative,snapshotWork} from './projects';
+import {ProjectRegistry,applyWork,checkpointChanges,compareUrl,createWork,diffWork,discardWork,git as projectGit,githubRepo,keepWork,listWorkFiles,parseDiff,pushWork,readWork,restoreCheckpoint,revertFile,safeRelative,snapshotWork} from './projects';
 import {isDeniedPath} from '@multai/runtime';
 import {TerminalHost,type TerminalEvent} from './terminal';
 
@@ -16,6 +16,7 @@ async function fixture(){
   const base=await realpath(await mkdtemp(join(tmpdir(),'multai-projects-')));cleanup.push(base);
   const repo=join(base,'shop');await mkdir(join(repo,'src'),{recursive:true});
   sh(repo,'init','-q','-b','main');sh(repo,'config','user.name','Host');sh(repo,'config','user.email','host@example.com');
+  sh(repo,'config','core.autocrlf','false');
   await writeFile(join(repo,'src','cart.js'),'export const total = items => items.reduce((a, b) => a + b, 0);\n');
   await writeFile(join(repo,'README.md'),'# Shop\n');
   await writeFile(join(repo,'old.txt'),'remove me\n');
@@ -135,6 +136,35 @@ describe('project worktrees',()=>{
 });
 
 describe('checkpoints and file lists',()=>{
+  it('undo respects the host repository line-ending configuration',async()=>{
+    const x=await fixture();const sessionId=randomUUID();const root=join(x.workspaces,sessionId);
+    sh(x.repo,'config','core.autocrlf','true');
+    await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'configured line endings'});
+    const before=await readFile(join(root,'old.txt'));
+    expect(before.toString('utf8')).toBe('remove me\r\n');
+    await snapshotWork(root,'Remove a file');
+    await rm(join(root,'old.txt'));
+    await restoreCheckpoint(root);
+    expect(await readFile(join(root,'old.txt'))).toEqual(before);
+    expect(sh(x.repo,'config','--local','--get','core.autocrlf').trim()).toBe('true');
+  });
+
+  it('snapshots deep worktree paths without changing repository Git configuration',async()=>{
+    const x=await fixture();const sessionId=randomUUID();
+    sh(x.repo,'config','core.longpaths','false');
+    const configBefore=await readFile(join(x.repo,'.git','config'),'utf8');
+    const root=join(x.workspaces,'scope-'.repeat(16),'session-'.repeat(13),sessionId);
+    expect(root.length).toBeGreaterThan(260);
+    await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'deep workspace'});
+    await writeFile(join(root,'README.md'),'# Earlier work\n');
+    const statusBefore=(await projectGit(root,['status','--porcelain=v1'])).stdout;
+    expect((await projectGit(root,['config','--get','core.longpaths'])).stdout.trim()).toBe('true');
+    expect(await snapshotWork(root,'Take a checkpoint')).not.toBeNull();
+    expect((await projectGit(root,['status','--porcelain=v1'])).stdout).toBe(statusBefore);
+    expect(await readFile(join(x.repo,'.git','config'),'utf8')).toBe(configBefore);
+    expect((await readdir(join(root,'..'))).some(file=>file.includes('.snapshot-'))).toBe(false);
+  });
+
   it('lists the worktree\'s files without ignored or private ones',async()=>{
     const x=await fixture();const sessionId=randomUUID();const root=join(x.workspaces,sessionId);
     const info=await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'files'});
@@ -199,13 +229,14 @@ describe('host terminal',()=>{
     const folder=await realpath(await mkdtemp(join(tmpdir(),'multai-terminal-')));cleanup.push(folder);
     const events:TerminalEvent[]=[];
     const terminal=new TerminalHost(event=>events.push(event));
-    terminal.run('s1',folder,'pwd; echo hi');
+    const node=(script:string)=>`"${process.execPath}" -e "${script}"`;
+    terminal.run('s1',folder,node("console.log(process.cwd()); console.log('hi')"));
     await expect.poll(()=>events.some(event=>event.kind==='exit'),{timeout:10_000}).toBe(true);
     expect(events.filter(event=>event.kind==='output').map(event=>event.kind==='output'?event.text:'').join('')).toBe(`${folder}\nhi\n`);
     expect(events.at(-1)).toMatchObject({kind:'exit',code:0,stopped:false});
     events.length=0;
-    terminal.run('s1',folder,'sleep 30');
-    expect(()=>terminal.run('s1',folder,'ls')).toThrow(/still running/);
+    terminal.run('s1',folder,node('setTimeout(()=>{},30000)'));
+    expect(()=>terminal.run('s1',folder,node('console.log(1)'))).toThrow(/still running/);
     terminal.stop('s1');
     await expect.poll(()=>events.find(event=>event.kind==='exit'),{timeout:10_000}).toMatchObject({stopped:true});
   });

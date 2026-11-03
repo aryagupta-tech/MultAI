@@ -18,7 +18,7 @@ if (!v1 || !v2) throw new Error('Pass the version 1 and version 2 test APKs.');
 const sdk = process.env.ANDROID_HOME!;
 const adb = (...args: string[]) => execFileSync(path.join(sdk, 'platform-tools/adb'), args, {encoding: 'utf8'}).trim();
 const APP = 'si.multai.companion.test';
-const shots = path.join(repo, 'apps/mobile/test/screenshots');
+const shots = process.env.E2E_SHOTS ?? path.join(repo, 'apps/mobile/test/screenshots');
 mkdirSync(shots, {recursive: true});
 const results: {name: string; ok: boolean; detail?: string}[] = [];
 async function step(name: string, work: () => Promise<void>) {

@@ -1,0 +1,48 @@
+name: Browser companion acceptance
+on:
+  push:
+    branches: [main, backend]
+  pull_request:
+    branches: [main, backend]
+permissions:
+  contents: read
+concurrency:
+  group: companion-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+        env:
+          POSTGRES_PASSWORD: multai-disposable-ci
+          POSTGRES_DB: multai_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d multai_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:multai-disposable-ci@127.0.0.1:5432/multai_test
+      E2E_SHOTS: /tmp/multai-browser-acceptance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run build --workspace @multai/runtime
+      - run: npm run build --workspace @multai/web
+      - name: Browser lifecycle and owner control on Chromium and WebKit
+        run: npm run test:browser --workspace @multai/web
+      - name: Separate-origin sign-in, redirects, downloads and offline PWA
+        run: npm run test:origins --workspace @multai/web
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-acceptance
+          path: /tmp/multai-browser-acceptance
+          if-no-files-found: ignore

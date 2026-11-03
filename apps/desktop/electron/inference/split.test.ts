@@ -16,6 +16,7 @@ async function chat(){
   const base=await realpath(await mkdtemp(join(tmpdir(),'multai-split-')));cleanup.push(base);
   const repo=join(base,'shop');await mkdir(join(repo,'src'),{recursive:true});
   sh(repo,'init','-q','-b','main');sh(repo,'config','user.name','Host');sh(repo,'config','user.email','host@example.com');
+  sh(repo,'config','core.autocrlf','false');
   await writeFile(join(repo,'src','cart.js'),'export const total = items => items.reduce((a, b) => a + b, 0);\n');
   await writeFile(join(repo,'src','shared.js'),'line one\nline two\nline three\n');
   await writeFile(join(repo,'old.txt'),'remove me\n');

@@ -144,6 +144,26 @@ test('pairing is desktop-initiated, one-use, short-lived and confirmed for an ex
   assert.equal(stored.rows[0].token_hash, null, 'declining forgets the credential');
 });
 
+test('confirmation retries cannot silently accept a different paired-session scope', async t => {
+  const ctx = await createTestContext(); t.after(() => ctx.close());
+  const owner = await seedActor(ctx.db);
+  const first = await buildSession(ctx, owner);
+  const second = await buildSession(ctx, owner);
+  const third = await buildSession(ctx, owner);
+  const phone = await pair(ctx, owner, [first.id, second.id]);
+  const keyThumbprint = await core.keyThumbprint(await core.exportPublic(phone.keys.signing.publicKey), await core.exportPublic(phone.keys.encryption.publicKey));
+  const confirm = (sessionIds: string[]) => ctx.app.inject({method: 'POST', url: `/v1/controller-pairings/${phone.pairingId}/confirm`, headers: bearer(owner), payload: {keyThumbprint, sessionIds}});
+  // An exact retry may reorder or duplicate the same session set.
+  assert.equal((await confirm([second.id, first.id, first.id])).statusCode, 200);
+  for (const changed of [[first.id], [first.id, second.id, third.id]]) {
+    const reply = await confirm(changed);
+    assert.equal(reply.statusCode, 409, reply.body);
+    assert.equal(reply.json().error.code, 'pairing_scope');
+  }
+  const actual = await ctx.app.inject({url: `/v1/controller-pairings/${phone.pairingId}`, headers: bearer(owner)});
+  assert.deepEqual(actual.json().pairing.sessionIds, [first.id, second.id].sort());
+});
+
 test('collaborators, guests, other devices and plain sign-ins never get owner control', async t => {
   const ctx = await createTestContext(); t.after(() => ctx.close());
   const owner = await seedActor(ctx.db, 'Synthetic owner');
