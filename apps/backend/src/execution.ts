@@ -333,7 +333,8 @@ export class ExecutionService extends CollaborationService {
   async briefContext(actor:Actor,sessionId:string){
     return transaction(this.db,async client=>{
       const session=await this.host(client,actor,sessionId);
-      const events=await client.query<{sequence:number;type:string;payload:{text?:string;summary?:string;tool?:string;reviewerName?:string};name:string|null}>(`SELECT e.sequence,e.type,e.payload,u.display_name AS name FROM shared_events e LEFT JOIN users u ON u.id=e.actor_id
+      const events=await client.query<{sequence:number;type:string;payload:{text?:string;summary?:string;tool?:string;reviewerName?:string};name:string|null}>(`SELECT e.sequence,e.type,e.payload,COALESCE(sp.display_name,u.display_name) AS name FROM shared_events e LEFT JOIN users u ON u.id=e.actor_id
+        LEFT JOIN session_participants sp ON sp.session_id=e.session_id AND sp.user_id=e.actor_id
         WHERE e.session_id=$1 AND e.type IN ('message.discussion','reviewer.comment','message.instruction','agent.completed','activity.completed','activity.failed','decision.saved','participant.admitted','brief.created')
           AND NOT EXISTS (SELECT 1 FROM instruction_queue q WHERE q.event_id=e.id AND q.status='removed')
         ORDER BY e.sequence DESC LIMIT 200`,[session.id]);

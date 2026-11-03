@@ -482,6 +482,11 @@ test('only the original host writes catch-up briefs, from a bounded transcript, 
   assert.ok(body.throughSequence > 0);
   assert.ok(body.events.some((event: {author: string; text: string}) => event.author === 'Synthetic host' && event.text.includes('Safari')));
   assert.ok(body.events.some((event: {type: string}) => event.type === 'participant.admitted'));
+  // The name someone chose when joining wins over their account name.
+  await ctx.db.query('UPDATE session_participants SET display_name=$1 WHERE session_id=$2 AND user_id=$3', ['Alex', target.id, teammate.actor.userId]);
+  await ctx.app.inject({method: 'POST', url: `/v1/sessions/${target.id}/messages`, headers: headers(teammate), payload: {requestId: randomUUID(), kind: 'discussion', text: 'Use integer cents.'}});
+  const named = (await ctx.app.inject({method: 'GET', url: `/v1/sessions/${target.id}/brief-context`, headers: headers(owner)})).json();
+  assert.ok(named.events.some((event: {author: string; text: string}) => event.author === 'Alex' && event.text === 'Use integer cents.'));
 
   const denied = await ctx.app.inject({method: 'GET', url: `/v1/sessions/${target.id}/brief-context`, headers: headers(teammate)});
   assert.equal(denied.statusCode, 403);
