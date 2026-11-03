@@ -104,10 +104,10 @@ export const outlineScript = (boxes:Box[]) => `(() => {
   layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647';
   for (const [index, box] of ${JSON.stringify(boxes)}.entries()) {
     const mark = document.createElement('div');
-    mark.style.cssText = 'position:absolute;box-sizing:border-box;border:3px solid #e34b51;background:rgba(227,75,81,.12);border-radius:4px;left:' + box.x1 + 'px;top:' + box.y1 + 'px;width:' + (box.x2 - box.x1 + 1) + 'px;height:' + (box.y2 - box.y1 + 1) + 'px';
+    mark.style.cssText = 'position:absolute;box-sizing:border-box;border:5px solid #e34b51;background:rgba(227,75,81,.14);border-radius:4px;left:' + box.x1 + 'px;top:' + box.y1 + 'px;width:' + (box.x2 - box.x1 + 1) + 'px;height:' + (box.y2 - box.y1 + 1) + 'px';
     const label = document.createElement('span');
     label.textContent = String(index + 1);
-    label.style.cssText = 'position:absolute;left:-3px;top:-22px;background:#e34b51;color:#fff;font:600 12px/18px system-ui;padding:0 6px;border-radius:4px';
+    label.style.cssText = 'position:absolute;left:-5px;top:-27px;background:#e34b51;color:#fff;font:700 15px/22px system-ui;padding:0 8px;border-radius:4px';
     mark.appendChild(label); layer.appendChild(mark);
   }
   document.documentElement.appendChild(layer);

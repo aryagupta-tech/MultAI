@@ -652,7 +652,7 @@ describe('team verification uses actual host checks and a separate read-only rev
     const seen: {result: unknown; images: string[] | undefined}[] = [];
     runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
       expect(options.tools?.some(tool => tool.name === 'look_at_app')).toBe(true);
-      for (const [id, args] of [['call_look', {page: 'index.html', find: 'checkout button'}], ['call_plain', {page: 'index.html', find: null}]] as const) {
+      for (const [id, args] of [['call_look', {page: 'index.html', find: 'checkout button'}], ['call_plain', {page: 'index.html', find: null}], ['call_word', {page: 'index.html', find: 'null'}]] as const) {
         const result = await options.executeTool!({id, name: 'look_at_app', arguments: args} as ToolCall, options.signal);
         seen.push({result, images: options.takeToolImages?.(id)});
       }
@@ -664,10 +664,12 @@ describe('team verification uses actual host checks and a separate read-only rev
     expect(looks[0]).toMatchObject({page: 'index.html', find: 'checkout button', root: await x.workspace()});
     expect(sam).toHaveBeenCalledWith(x.credentials, 'data:image/png;base64,AAAA', 'checkout button', publicProviderFetch, expect.any(AbortSignal));
     expect(looks[1]!.find).toBeUndefined();
+    expect(looks[2]!.find).toBeUndefined(); // the word "null" means nothing to find
     expect(seen[0]!.images).toEqual([image]);
     expect(seen[0]!.result).toMatchObject({title: 'Shop', found: {query: 'checkout button', matches: [{number: 1, x: 10, y: 20, width: 100, height: 40}]}});
     const events = x.requests.filter(request => request.route.endsWith('/events') && (request.body?.payload as {tool?: string})?.tool === 'look_at_app').map(request => request.body as {type: string; payload: Record<string, unknown>});
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
+    expect(events[2]!.payload.summary).toBe('Looked at /index.html');
     expect(events[0]!.payload).toMatchObject({summary: 'Looked at /index.html · SAM 3.1 found 1 “checkout button”', image: thumbnail, matches: 1});
     expect(events[0]!.payload.detail).toMatch(/Console error: Uncaught TypeError/u);
     // The full screenshot never leaves this computer except to the model.

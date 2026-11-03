@@ -1029,7 +1029,8 @@ export class HostCoordinator {
   /** Screenshots a page for the model, and shares a small copy with everyone in the session. */
   private async look(run:Running,workspace:ControlledWorkspace,call:ToolCall,signal:AbortSignal):Promise<JsonValue>{
     const {page,find}=z.object({page:z.string().trim().min(1).max(2000),find:z.string().trim().max(100).nullable().optional()}).strict().parse(call.arguments);
-    const query=find?.replace(/\s+/gu,' ').trim()||undefined;
+    // Models sometimes send the word "null" for "nothing to find".
+    const query=find?.replace(/\s+/gu,' ').trim().replace(/^(?:null|none|undefined)$/iu,'')||undefined;
     // SAM 3.1 needs the host's Meta connection; without one the agent still gets the screenshot.
     const meta=query&&this.options.connections.list?metaConnection(await this.options.connections.list(),run.connectionId):null;
     const locate=meta?async(png:string,text:string,lookSignal:AbortSignal)=>segmentConcept(await this.options.connections.resolve(meta.id),png,text,publicProviderFetch,lookSignal):undefined;
