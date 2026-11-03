@@ -114,9 +114,9 @@ textarea { resize: vertical; }
 .c-plan { margin: 6px 0 0; padding-left: 4px; list-style: none; display: grid; gap: 2px; font-size: 14px; }
 .c-plan .is-done { color: var(--text-2); text-decoration: line-through; } .c-plan .is-active { font-weight: 600; }
 
-.c-composer { position: sticky; bottom: 0; z-index: 3; display: grid; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--bg); }
+.c-composer { position: sticky; bottom: 0; z-index: 3; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--bg); }
 .c-composer-row { display: flex; gap: 8px; align-items: flex-end; }
-.c-composer textarea { min-height: var(--tap); max-height: 40dvh; }
+.c-composer textarea { flex: 1; min-width: 0; min-height: var(--tap); max-height: 40dvh; }
 .c-seg { display: flex; gap: 4px; padding: 3px; border-radius: 999px; border: 1px solid var(--border-strong); width: fit-content; max-width: 100%; overflow-x: auto; }
 .c-seg-item { border: 0; background: none; padding: 6px 12px; border-radius: 999px; color: var(--text-2); font-size: 14px; white-space: nowrap; min-height: 36px; cursor: pointer; }
 .c-seg-item.is-active { background: var(--accent); color: var(--accent-ink); font-weight: 600; }

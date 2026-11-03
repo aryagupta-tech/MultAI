@@ -5,7 +5,7 @@ Follow a MultAI session from a phone, and, as its owner, control your own deskto
 | | Where | Status |
 |---|---|---|
 | Browser companion | [app.multai.si](https://app.multai.si/) (Android Chrome, iPhone Safari; add to home screen) | **Live on the app domain.** The page, browser API calls and host-only cookies stay on `app.multai.si`; no app download is required. |
-| Android app | `apps/mobile/release/multai-companion-<version>.apk` (id `si.multai.companion`) | **0.1.4, versionCode 5.** [Download APK](https://app.multai.si/app/android). Uses the original signing key, so it updates 0.1.1. See [the Android README](../apps/mobile/README.md) for verification and installation. |
+| Android app | `apps/mobile/release/multai-companion-<version>.apk` (id `si.multai.companion`) | **0.1.5, versionCode 6.** [Download APK](https://app.multai.si/app/android). Uses the original signing key, so it updates 0.1.1. See [the Android README](../apps/mobile/README.md) for verification and installation. |
 | iPhone | The browser companion in Safari | No native iOS app, TestFlight or Apple membership. |
 
 ## Three separate ways in

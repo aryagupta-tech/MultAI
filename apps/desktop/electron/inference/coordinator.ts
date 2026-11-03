@@ -703,6 +703,10 @@ export class HostCoordinator {
           // Switching models mid-chat: the new model gets what the last one did, not only its replies.
           const previousModel=await this.previousModel(directory,body.sessionId);
           const handoff=previousModel&&previousModel!==body.model?await this.handoffNote(body.sessionId,root,Boolean(work),previousModel,body.model).catch(()=>null):null;
+          // A model owns its partial work even if a later turn fails or is stopped.
+          // Do not advance this marker for a preflight/provider refusal with no response.
+          let rememberedModel:Promise<void>|undefined;
+          const rememberWorkingModel=()=>rememberedModel??=this.rememberModel(directory,body.sessionId,body.model).catch(()=>undefined);
           if(handoff){await shared();await this.publish(running,'activity.completed',{summary:`Handed over from ${previousModel} to ${body.model}: the conversation, ${handoff.steps} earlier step${handoff.steps===1?'':'s'}${handoff.files?` and ${handoff.files} changed file${handoff.files===1?'':'s'}`:''}.`});}
           const instruction:ContextMessage&{images?:string[]}={role:'user',content:`Instruction from participant ${claimed.selectedInstruction.authorId}:\n${asked.text}${attached}${handoff?.text??''}`,...(claimed.selectedInstruction.image?{images:[claimed.selectedInstruction.image]}:{})};
           const skillIndex=skills.length?`\n\nSkills you can use (call use_skill with the name to load one when a request matches it):\n${skills.map(skill=>`- ${skill.name}: ${skill.description.slice(0,200)}`).join('\n')}\n`:'';
@@ -725,8 +729,7 @@ export class HostCoordinator {
             if(!work||!checkpoint)throw new RuntimeError('SPLIT_NEEDS_PROJECT','Parallel agents work in copies of a project. Start the chat in a project folder to use /split.');
             if(claimed.run.mode!=='build')throw new RuntimeError('SPLIT_NEEDS_BUILD','Parallel agents make changes. Switch to Build mode, then send /split again.');
             if(!split)throw new RuntimeError('SPLIT_NEEDS_TASK','Say what to build after /split, for example “/split add a cart page and its API”.');
-            const report=await this.runSplit({running,root,base:checkpoint.commit,task:`${split}${handoff?.text??''}`,credentials,model:body.model,effort:body.effort??'medium',system,history,authorId:claimed.selectedInstruction.authorId,skills,claimDirections,direction});
-            await this.rememberModel(directory,body.sessionId,body.model).catch(()=>undefined);
+            const report=await this.runSplit({running,root,base:checkpoint.commit,task:`${split}${handoff?.text??''}`,credentials,model:body.model,effort:body.effort??'medium',system,history,authorId:claimed.selectedInstruction.authorId,skills,claimDirections,direction,rememberModel:rememberWorkingModel});
             const text=textChunks(redactText(report,running.secrets),13500)[0]??'';
             await this.publish(running,'agent.completed',{messageId,text,model:body.model,truncated:false});
             await this.request(running,'/finish',{status:'completed'});if(this.options.account.accountGeneration===running.snapshot.generation)this.emit({sessionId:body.sessionId,status:'completed'});
@@ -749,16 +752,15 @@ export class HostCoordinator {
             takeToolImages:id=>{const images=running.images.get(id);running.images.delete(id);return images;},beforeRequest:()=>this.assertLive(running,true),fetch:providerFetch(credentials),
             limits:(({runMs:_runMs,...limits})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...limits}))(effortLimits(body.effort??'medium',credentials)),
             ...(nativeEffort(body.effort??'medium',credentials)?{reasoningEffort:nativeEffort(body.effort??'medium',credentials)!}:{}),
-            executeTool:async(call,signal)=>{await shared();return this.tool(running,workspace,call,signal);},
+            executeTool:async(call,signal)=>{await rememberWorkingModel();await shared();return this.tool(running,workspace,call,signal);},
             onEvent:async event=>{
+              if((event.type==='text.delta'&&event.text)||event.type==='tool.call'||event.type==='usage'||event.type==='web.search')await rememberWorkingModel();
               if(event.type==='text.delta'){pending+=event.text;share();}
               if(event.type==='usage'){await sharing;await this.publish(running,'usage.reported',{usage:event.usage as unknown as JsonValue});}
               if(event.type==='limits')this.saveLimits(body.connectionId,event.windows);
               if(event.type==='web.search'){await shared();await this.publish(running,'activity.completed',{summary:event.query?`Searched the web: ${event.query}`:'Searched the web'});}
             }});
-          // A rejected provider request has not taken over the chat. Keep the previous
-          // model until a run returns, so retrying a failed switch still gets its handoff.
-          await this.rememberModel(directory,body.sessionId,body.model).catch(()=>undefined);
+          await rememberWorkingModel();
           await shared(true);const final=textChunks(redactText(result.text,running.secrets),13500);const truncated=final.length>1;
           if(credentials.kind==='chatgpt')void this.loadLimits().then(limits=>{if(limits.get(body.connectionId)?.windows.some(window=>window.label==='Plan limit'))this.saveLimits(body.connectionId,[]);});
           await this.publish(running,'agent.completed',{messageId,text:`${final[0]??''}${truncated?'\n[Final context text truncated by the sharing limit.]':''}`,model:body.model,truncated});
@@ -859,15 +861,17 @@ export class HostCoordinator {
    * its own worktree at the same time, with approvals one at a time; their work is merged into the chat's
    * worktree, and a part that conflicts is applied by one more agent pass on top of the merged result.
    */
-  private async runSplit(input:{running:Running;root:string;base:string;task:string;credentials:Awaited<ReturnType<ConnectionManager['resolve']>>;model:string;effort:'low'|'medium'|'high'|'xhigh'|'max';system:string;history:ContextMessage[];authorId:string;skills:Skill[];claimDirections:()=>Promise<{authorId:string;text:string}[]>;direction:(item:{authorId:string;text:string})=>Promise<string>}):Promise<string>{
+  private async runSplit(input:{running:Running;root:string;base:string;task:string;credentials:Awaited<ReturnType<ConnectionManager['resolve']>>;model:string;effort:'low'|'medium'|'high'|'xhigh'|'max';system:string;history:ContextMessage[];authorId:string;skills:Skill[];claimDirections:()=>Promise<{authorId:string;text:string}[]>;direction:(item:{authorId:string;text:string})=>Promise<string>;rememberModel:()=>Promise<void>}):Promise<string>{
     const {running,root,base,task,credentials,model}=input;const signal=running.controller.signal;
     const limits=(({runMs:_runMs,...rest})=>({maxTextBytes:12000,maxInputBytes:MAX_INPUT_BYTES,idleMs:30000,...rest}))(effortLimits(input.effort,credentials));
     const reasoning=nativeEffort(input.effort,credentials);
     // 1. Plan with the same model, from the task and the repository's file list.
     const {files}=await listWorkFiles(root,400);
     const planned=await runAgent({credentials,model,signal,fetch:providerFetch(credentials),system:PLAN_SYSTEM,beforeRequest:()=>this.assertLive(running,true),
+      onEvent:async event=>{if((event.type==='text.delta'&&event.text)||event.type==='usage')await input.rememberModel();},
       messages:[{role:'user',content:`Task:\n${task}\n\nFiles in the repository${files.length>=400?' (first 400)':''}:\n${files.join('\n')}`}],
       ...(reasoning?{reasoningEffort:reasoning}:{}),limits:{...limits,maxIterations:1,maxToolCalls:1}});
+    await input.rememberModel();
     const parts=parsePlan(redactText(planned.text,running.secrets));
     await this.publish(running,'activity.completed',{tool:'split',summary:parts.length===1?'This task doesn’t split cleanly, so one agent builds it':`Split into ${parts.length} agents working at the same time`,
       lanes:parts.map((part,index)=>({index:index+1,title:part.title,files:part.files.slice(0,20)}))});

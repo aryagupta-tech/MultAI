@@ -28,7 +28,10 @@ async function screenshotData(): Promise<string> {
 
 async function noHorizontalOverflow(page: Page, label: string) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  assert.ok(overflow <= 1, `${label}: page scrolls sideways by ${overflow}px`);
+  const outside=overflow>1?await page.evaluate(()=>[...document.querySelectorAll<HTMLElement>('body *')].flatMap(element=>{
+    const bounds=element.getBoundingClientRect();return bounds.right>innerWidth+1&&bounds.width?`${element.tagName.toLowerCase()}.${element.className}: right ${Math.round(bounds.right)}, width ${Math.round(bounds.width)}`:[];
+  }).slice(-8)):[];
+  assert.ok(overflow <= 1, `${label}: page scrolls sideways by ${overflow}px${outside.length?` (${outside.join('; ')})`:''}`);
 }
 // WebKit screenshots make Playwright inject a stylesheet, which the page's CSP (rightly) refuses. That
 // console line is the harness's own; console output is not counted while a screenshot is taken.
@@ -71,6 +74,8 @@ async function scenario(engine: 'chromium' | 'webkit') {
     assert.equal(response?.status(), 200);
     assert.match(response!.headers()['content-security-policy'] ?? '', /script-src 'self'/u);
     await phone.getByRole('heading', {name: 'Companion'}).waitFor();
+    const viewport=await phone.evaluate(()=>({content:document.querySelector<HTMLMetaElement>('meta[name="viewport"]')?.content,keyboard:'virtualKeyboard' in navigator}));
+    assert.equal(viewport.content?.includes('interactive-widget=resizes-content'),viewport.keyboard,'keyboard resizing stays enabled only on supporting browsers');
     await noHorizontalOverflow(phone, 'home');
     await snap(phone, `${engine}-home`);
   });
@@ -137,6 +142,19 @@ async function scenario(engine: 'chromium' | 'webkit') {
     await picked.waitFor({timeout: 15_000});
     await phone.waitForFunction(() => [...document.querySelectorAll<HTMLInputElement>('input[name="direction"]')].some(input => input.checked && input.closest('label')?.textContent?.includes('regression test')), undefined, {timeout: 15_000});
     await noHorizontalOverflow(phone, 'owner prompt');
+    // A wider fallback font and 125% control text must fit this nested owner card, including Send.
+    const composer=phone.locator('form.c-composer');
+    await composer.evaluate((form:HTMLFormElement)=>{
+      form.style.fontFamily='monospace';
+      for(const control of form.querySelectorAll<HTMLElement>('button,textarea'))control.style.fontSize=`${parseFloat(getComputedStyle(control).fontSize)*1.25}px`;
+    });
+    await noHorizontalOverflow(phone,'owner prompt with 125% fallback-font text');
+    const sendBounds=await phone.getByRole('button',{name:'Send',exact:true}).boundingBox();
+    assert.ok(sendBounds&&sendBounds.x>=0&&sendBounds.x+sendBounds.width<=(phone.viewportSize()?.width??0)+1,'Send remains inside the viewport with larger text');
+    await composer.evaluate((form:HTMLFormElement)=>{
+      form.style.removeProperty('font-family');
+      for(const control of form.querySelectorAll<HTMLElement>('button,textarea'))control.style.removeProperty('font-size');
+    });
     await snap(phone, `${engine}-owner-prompt`);
     await phone.getByRole('button', {name: 'Start selected'}).click();
     await phone.getByRole('alertdialog').getByRole('button', {name: 'Confirm'}).click();

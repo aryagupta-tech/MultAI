@@ -154,9 +154,10 @@ describe('checkpoints and file lists',()=>{
     sh(x.repo,'config','core.longpaths','false');
     const configBefore=await readFile(join(x.repo,'.git','config'),'utf8');
     // The original Windows failure was the snapshot's index.lock, not the
-    // worktree root. Git still limits repository discovery paths separately.
-    const root=join(x.workspaces,'s'.repeat(235-x.workspaces.length-sessionId.length-2),sessionId);
-    expect(root.length).toBeLessThan(260);
+    // worktree root. Git's explicit-dir discovery reserves another 40 characters
+    // below PATH_MAX, before resolving the worktree's .git pointer.
+    const root=join(x.workspaces,'s'.repeat(210-x.workspaces.length-sessionId.length-2),sessionId);
+    expect(join(root,'.git').length).toBeLessThanOrEqual(260-40);
     expect(`${root}.snapshot-${randomUUID()}.index.lock`.length).toBeGreaterThan(260);
     await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'deep workspace'});
     await writeFile(join(root,'README.md'),'# Earlier work\n');

@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash, randomUUID} from 'node:crypto';
 import type {ActionDescriptor, RunAgentOptions, ProviderCredentials, ToolCall} from '@multai/runtime';
-import {ExecutionJournal} from '@multai/runtime';
+import {ExecutionJournal, ProviderError} from '@multai/runtime';
 import {HostCoordinator} from './coordinator';
 import {PLAN_SYSTEM} from './split';
 import {execFileSync} from 'node:child_process';
@@ -289,6 +289,20 @@ describe('parallel agents', () => {
   const userText = (options: RunAgentOptions) => String(options.messages.at(-1)?.content ?? '');
   const write = (path: string, content: string, expectedHash: string | null = null): ToolCall => ({id: randomUUID(), name: 'write_file', arguments: {path, content, expectedHash}});
   const events = (x: Awaited<ReturnType<typeof fixture>>) => x.requests.filter(request => request.route.endsWith('/events')).map(request => request.body as {type: string; payload: Record<string, unknown>});
+
+  test('a split planner that responds before failing remains the previous model', async () => {
+    const x = await fixture();await project(x);
+    x.state.instruction = '/split Fix the cart';
+    runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
+      expect(options.system).toBe(PLAN_SYSTEM);
+      await options.onEvent?.({type: 'text.delta', text: 'Planning the cart repair'});
+      throw new ProviderError('output_limit', 'Synthetic interrupted plan');
+    });
+    await x.host.run(x.input);await x.terminal();
+    expect(x.changes.at(-1)?.status).toBe('failed');
+    const modelFile=join(await x.scopeDirectory(),'workspaces',`${x.input.sessionId}.model.json`);
+    expect(JSON.parse(await readFile(modelFile,'utf8')).model).toBe(x.input.model);
+  });
 
   test('a model handoff reaches both the split planner and its workers', async () => {
     const x = await fixture();
@@ -776,7 +790,10 @@ describe('team verification uses actual host checks and a separate read-only rev
       return x.respond(method, route, body);
     });
     await x.host.run({...x.input, model: 'model-a'}); await x.terminal();
-    runtime.run.mockRejectedValueOnce(new Error('Synthetic provider refusal'));
+    runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
+      await options.beforeRequest?.(options.signal);
+      throw new ProviderError('provider_request_failed','Synthetic provider refusal');
+    });
     await x.host.run({...x.input, model: 'model-b', instructionId: randomUUID()}); await x.terminal();
     expect(x.changes.at(-1)?.status).toBe('failed');
     const modelFile = join(await x.scopeDirectory(), 'workspaces', `${x.input.sessionId}.model.json`);
@@ -784,6 +801,38 @@ describe('team verification uses actual host checks and a separate read-only rev
     await x.host.run({...x.input, model: 'model-b', instructionId: randomUUID()}); await x.terminal();
     expect((runtime.run.mock.calls.at(-1)![0] as RunAgentOptions).messages.at(-1)!.content).toContain('Handoff: earlier in this chat the work was done by model-a');
     expect(JSON.parse(await readFile(modelFile, 'utf8')).model).toBe('model-b');
+  });
+
+  test.each(['iteration_limit','stop'] as const)('hands off real file changes after the previous model ends with %s', async ending => {
+    const x=await fixture();
+    x.connections.models.mockResolvedValue([{id:'model-a',name:'A'},{id:'model-b',name:'B'}]);
+    x.account.request.mockImplementation(async(method,route,body)=>{
+      if(route.endsWith('/brief-context'))return {title:'Partial work',mode:'build',throughSequence:10,events:x.requests
+        .filter(request=>request.route.endsWith('/events')&&String(request.body?.type).startsWith('activity.'))
+        .map((request,index)=>({sequence:index+1,type:request.body!.type,author:'Host',text:(request.body!.payload as {summary:string}).summary}))};
+      return x.respond(method,route,body);
+    });
+    const wrote=deferred<void>();
+    runtime.run.mockImplementationOnce(async(options:RunAgentOptions)=>{
+      await options.beforeRequest?.(options.signal);
+      await options.executeTool!({id:'partial-write',name:'write_file',arguments:{path:'partial.ts',content:'export const kept = true;\n',expectedHash:null}},options.signal);
+      wrote.resolve();
+      if(ending==='stop'){
+        await new Promise<void>(resolve=>options.signal.aborted?resolve():options.signal.addEventListener('abort',()=>resolve(),{once:true}));
+        options.signal.throwIfAborted();
+      }
+      throw new ProviderError('iteration_limit','Synthetic turn limit after real work');
+    });
+    await x.host.run({...x.input,model:'model-a'});await wrote.promise;
+    if(ending==='stop')await x.host.stop(x.input.sessionId);
+    await x.terminal();
+    expect(x.changes.at(-1)?.status).toBe(ending==='stop'?'stopped':'failed');
+    expect(await readFile(join(await x.workspace(),'partial.ts'),'utf8')).toBe('export const kept = true;\n');
+    expect(JSON.parse(await readFile(join(await x.scopeDirectory(),'workspaces',`${x.input.sessionId}.model.json`),'utf8')).model).toBe('model-a');
+    await x.host.run({...x.input,model:'model-b',instructionId:randomUUID()});await x.terminal();
+    const context=(runtime.run.mock.calls.at(-1)![0] as RunAgentOptions).messages.at(-1)!.content;
+    expect(context).toContain('Handoff: earlier in this chat the work was done by model-a');
+    expect(context).toContain('- Updated partial.ts');
   });
 
   test('a failed command is a failed shared step while its completed effect remains acknowledged', async () => {

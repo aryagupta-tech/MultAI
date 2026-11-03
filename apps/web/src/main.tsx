@@ -9,6 +9,13 @@ import '@multai/companion-ui/styles.css';
 
 declare const __COMPANION_VERSION__: string;
 
+// Chromium's keyboard can resize the layout; WebKit does not understand this viewport option.
+// Add it only with the corresponding API so unsupported browsers keep a valid viewport declaration.
+if ('virtualKeyboard' in navigator) {
+  const viewport=document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+  if(viewport)viewport.content+=', interactive-widget=resizes-content';
+}
+
 function deviceName(): string {
   const ua = navigator.userAgent;
   const browser = /CriOS|Chrome\//u.test(ua) && !/Edg\//u.test(ua) ? 'Chrome' : /Edg\//u.test(ua) ? 'Edge' : /Firefox|FxiOS/u.test(ua) ? 'Firefox' : /Safari\//u.test(ua) ? 'Safari' : 'Browser';
