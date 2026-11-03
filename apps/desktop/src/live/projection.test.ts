@@ -168,10 +168,9 @@ describe('execution event projection',()=>{
     const d=project([ev(1,'brief.created',me.id,{requestId:'r',text:'**Goal** Fix login',model:'muse-wonder-1.0',throughSequence:0}),ev(2,'brief.created',me.id,{model:'muse-wonder-1.0'})]);
     expect(d.timeline.filter(item=>item.type==='brief')).toEqual([expect.objectContaining({type:'brief',text:'**Goal** Fix login',model:'muse-wonder-1.0'})]);
   });
-  test('uses only reported usage and bounded shared activity summaries',()=>{
+  test('keeps token usage out of the conversation and bounds shared activity summaries',()=>{
     const d=project([ev(1,'usage.reported',me.id,{}),ev(2,'usage.reported',me.id,{usage:{inputTokens:12}}),ev(3,'activity.completed',me.id,{tool:'read_file',summary:'Read a selected file',output:'x'.repeat(40000),exitCode:0})]);
-    expect(d.timeline[0]).toMatchObject({type:'system',text:'Provider-reported usage: 12 input tokens.'});
-    expect(JSON.stringify(d.timeline)).not.toContain('0 output tokens');
+    expect(JSON.stringify(d.timeline)).not.toContain('tokens');
     const tools=d.timeline.find(item=>item.type==='tools');
     expect(tools?.type==='tools'&&tools.calls[0]?.detail?.length).toBe(32000);
   });

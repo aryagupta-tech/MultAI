@@ -141,13 +141,8 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
       const failed=e.type==='activity.failed'||(typeof exitCode==='number'&&exitCode!==0)||(typeof result.signal==='string'&&Boolean(result.signal));
       return {...base,type:'tools',calls:[{id:typeof p.callId === 'string' ? p.callId.slice(0,512) : e.id,tool,summary,status:failed?'failed':'completed',...(detail ? {detail} : {}),...(Number.isSafeInteger(exitCode) ? {exitCode:exitCode as number} : {}),...(typeof p.durationMs === 'number' && Number.isFinite(p.durationMs) && p.durationMs >= 0 ? {durationMs:p.durationMs} : {})}]};
     }
-    case 'usage.reported': {
-      const usage = p.usage && typeof p.usage === 'object' ? p.usage as Record<string,unknown> : p;
-      const input = usage.inputTokens ?? usage.input_tokens;
-      const output = usage.outputTokens ?? usage.output_tokens;
-      const known = [(Number.isSafeInteger(input) && (input as number) >= 0) ? `${input} input tokens` : null,(Number.isSafeInteger(output) && (output as number) >= 0) ? `${output} output tokens` : null].filter(Boolean);
-      return known.length ? {...base,type:'system',tone:'info',text:`Provider-reported usage: ${known.join(', ')}.`} : null;
-    }
+    // Token counts aren't conversation; context and plan usage show as circles in the sidebar.
+    case 'usage.reported': return null;
     default:
       // Unknown event types are skipped rather than guessed at.
       return null;

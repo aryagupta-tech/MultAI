@@ -159,3 +159,10 @@ textarea { resize: vertical; }
   .c-sheet-backdrop { align-items: center; }
   .c-sheet { border-radius: 18px; }
 }
+
+/* Routine status lines fold into one quiet line. */
+.c-item-updates { list-style: none; min-width: 0; max-width: 100%; }
+.c-updates { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 8px; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; min-height: var(--tap); padding: 6px 0; border: 0; background: none; color: var(--text-2); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.c-updates-count { flex: none; font-weight: 600; color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-strong); }
+.c-updates-last { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-updates-list { margin: 0 0 8px; padding-left: 16px; color: var(--text-2); font-size: 14px; display: grid; gap: 4px; }

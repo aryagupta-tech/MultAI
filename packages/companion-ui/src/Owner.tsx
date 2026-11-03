@@ -195,7 +195,7 @@ export function OwnerSession({controller, api, account, me, sessionId, back, res
                 ) : (
                   <pre className="c-pre" aria-label="Exact command">{pendingAction.command}</pre>
                 )}
-                <p className="c-muted">Expires {pendingAction.expiresAt > now ? `in ${Math.round((pendingAction.expiresAt - now) / 1000)} s` : 'now'} · run generation {pendingAction.runGeneration}</p>
+                <p className="c-muted">Expires {pendingAction.expiresAt > now ? `in ${Math.round((pendingAction.expiresAt - now) / 1000)} s` : 'now'}</p>
                 {!exact && <p className="c-warn">The desktop hasn’t confirmed this action yet. Approval waits for it to match.</p>}
                 <div className="c-row">
                   <Button variant="primary" busy={busy === 'approve'} disabled={!exact || hostAway || Boolean(waitingFor('approve') || waitingFor('reject'))}
@@ -213,9 +213,9 @@ export function OwnerSession({controller, api, account, me, sessionId, back, res
               </section>
             )}
 
-            <section className="c-card" aria-labelledby="queue-title">
+            {pending.length > 0 && <section className="c-card" aria-labelledby="queue-title">
               <h2 className="c-h2" id="queue-title">Pending directions</h2>
-              {pending.length === 0 ? <p className="c-muted">Nothing is queued.</p> : (
+              {(
                 <fieldset className="c-choices">
                   <legend className="c-sr">Choose a direction</legend>
                   {detail.queue.previousDirection && <p className="c-muted">The interrupted run followed {detail.queue.previousDirection.author}: “{detail.queue.previousDirection.text.slice(0, 300)}”</p>}
@@ -245,7 +245,7 @@ export function OwnerSession({controller, api, account, me, sessionId, back, res
                 </div>
               )}
               {!chosen && pending.length > 0 && <p className="c-muted">Select a direction to act on it.</p>}
-            </section>
+            </section>}
 
             <section className="c-card" aria-labelledby="prompt-title">
               <h2 className="c-h2" id="prompt-title">New prompt</h2>
@@ -258,16 +258,16 @@ export function OwnerSession({controller, api, account, me, sessionId, back, res
               </>}
             </section>
 
-            <section className="c-card" aria-labelledby="requests-title" aria-live="polite">
+            {mine.length > 0 && <section className="c-card" aria-labelledby="requests-title" aria-live="polite">
               <h2 className="c-h2" id="requests-title">Your requests</h2>
-              {mine.length === 0 ? <p className="c-muted">Requests you send from this phone show here until the desktop answers.</p> : (
+              {(
                 <ul className="c-requests">
                   {mine.map(entry => {const status = requestStatusText(entry, now); return (
                     <li key={entry.requestId} className={`c-tone-${status.tone}`}><b>{KIND_LABEL[entry.kind]}</b> <span className="c-muted">{relative(new Date(entry.createdAt).toISOString(), now)}</span><br />{status.text}</li>
                   );})}
                 </ul>
               )}
-            </section>
+            </section>}
             <p className="c-muted c-pad">Model on the desktop: {detail.host?.state.model ?? 'unknown'} · approvals: {detail.host ? {ask: 'ask for everything', auto: 'approve-for-me', full: 'full access'}[detail.host.state.access] : 'unknown'}</p>
           </>
         )}

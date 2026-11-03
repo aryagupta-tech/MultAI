@@ -709,4 +709,30 @@ describe('team verification uses actual host checks and a separate read-only rev
     await x.host.run({...x.input, instructionId: randomUUID()}); await vi.waitFor(() => expect(x.changes.filter(change => change.status === 'completed')).toHaveLength(1));
     await vi.waitFor(async () => expect((await x.host.usageLimits(x.input.connectionId))?.windows).toEqual([]));
   });
+
+  test('switching models in a chat hands the new model what the previous one did', async () => {
+    const x = await fixture();
+    x.account.request.mockImplementation(async (method: string, route: string, body?: unknown) => {
+      if (method === 'GET' && route.endsWith('/brief-context')) return {title: 'Cart', mode: 'build', throughSequence: 9, events: [
+        {sequence: 3, type: 'message.instruction', author: 'Ada', text: 'Fix the total'},
+        {sequence: 4, type: 'activity.completed', author: 'Ada', text: 'Updated cart.js'},
+        {sequence: 5, type: 'activity.failed', author: 'Ada', text: 'npm test exited 1'},
+        {sequence: 6, type: 'agent.completed', author: 'Ada', text: 'Fixed the total.'},
+      ]};
+      return x.respond(method, route, body);
+    });
+    const contents: string[] = [];
+    runtime.run.mockImplementation(async (options: RunAgentOptions) => {contents.push(options.messages.at(-1)!.content); return {text: 'ok', iterations: 1};});
+    x.connections.models.mockResolvedValue([{id: 'model-a', name: 'A'}, {id: 'model-b', name: 'B'}]);
+    await x.host.run({...x.input, model: 'model-a'}); await x.terminal();
+    await x.host.run({...x.input, model: 'model-a', instructionId: randomUUID()}); await vi.waitFor(() => expect(contents).toHaveLength(2));
+    await x.host.run({...x.input, model: 'model-b', instructionId: randomUUID()}); await vi.waitFor(() => expect(contents).toHaveLength(3));
+    // Same model: nothing added. New model: the earlier steps, failures marked.
+    expect(contents[0]).not.toContain('Handoff');
+    expect(contents[1]).not.toContain('Handoff');
+    expect(contents[2]).toContain('Handoff: earlier in this chat the work was done by model-a; you (model-b) now continue it.');
+    expect(contents[2]).toContain('- Updated cart.js\n- Failed: npm test exited 1');
+    expect(contents[2]).not.toContain('Fix the total');
+    await vi.waitFor(() => expect(x.requests.some(request => (request.body?.payload as {summary?: string})?.summary === 'Handed over from model-a to model-b: the conversation, 2 earlier steps.')).toBe(true));
+  });
 });
