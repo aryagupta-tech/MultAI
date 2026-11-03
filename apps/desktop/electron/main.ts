@@ -110,7 +110,7 @@ async function openIn(folder:string,editor:Editor):Promise<void>{
 }
 const account = new Account(origin, (state) => {
   if(state.status!=='signed-in'){
-    terminal.stopAll();
+    terminal.stopAll();void mcp.stopAll();
     connections?.invalidate();
     approvals?.reset();void coordinator?.invalidate().catch(()=>undefined);
     void remote?.stop().catch(()=>undefined);
