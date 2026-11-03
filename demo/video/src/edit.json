@@ -218,14 +218,43 @@
     },
     {
       "id": "05-join",
-      "length": 14,
+      "length": 14.5,
       "shots": [
+        {
+          "id": "join-invite",
+          "src": "G.mp4",
+          "in": 2.6,
+          "out": 9.8,
+          "speed": 1.4,
+          "kind": "mac",
+          "label": "Invite with a link · works until you revoke it",
+          "zoom": [
+            [
+              0,
+              [
+                0.3,
+                0.04,
+                0.4,
+                0.62
+              ]
+            ],
+            [
+              1,
+              [
+                0.32,
+                0.06,
+                0.36,
+                0.5
+              ]
+            ]
+          ]
+        },
         {
           "id": "join-browser",
           "src": "B1.mp4",
           "in": 0.3,
           "out": 7.2,
-          "speed": 1,
+          "speed": 1.6,
           "kind": "browser",
           "label": "Alex joins from a browser · no install",
           "zoom": [
@@ -254,7 +283,7 @@
           "src": "B2.mp4",
           "in": 1,
           "out": 5.2,
-          "speed": 1,
+          "speed": 1.5,
           "kind": "mac",
           "label": "The host admits Alex",
           "zoom": [

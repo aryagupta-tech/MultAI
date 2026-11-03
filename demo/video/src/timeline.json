@@ -1,6 +1,6 @@
 {
  "fps": 30,
- "total": 132.66634,
+ "total": 133.599673,
  "beats": [
   {
    "id": "01-hook",
@@ -908,7 +908,7 @@
    "id": "05-join",
    "scene": "shots",
    "start": 51.433333,
-   "length": 14.100000000000001,
+   "length": 15.033332999999999,
    "voice": {
     "file": "voice/05-join.wav",
     "at": 0.45,
@@ -1113,11 +1113,42 @@
    },
    "shots": [
     {
+     "id": "join-invite",
+     "src": "G.mp4",
+     "in": 2.6,
+     "out": 9.8,
+     "speed": 1.4,
+     "kind": "mac",
+     "label": "Invite with a link · works until you revoke it",
+     "zoom": [
+      [
+       0,
+       [
+        0.3,
+        0.04,
+        0.4,
+        0.62
+       ]
+      ],
+      [
+       1,
+       [
+        0.32,
+        0.06,
+        0.36,
+        0.5
+       ]
+      ]
+     ],
+     "start": 0,
+     "duration": 4.933333
+    },
+    {
      "id": "join-browser",
      "src": "B1.mp4",
      "in": 0.3,
      "out": 7.2,
-     "speed": 1,
+     "speed": 1.6,
      "kind": "browser",
      "label": "Alex joins from a browser · no install",
      "zoom": [
@@ -1140,15 +1171,15 @@
        ]
       ]
      ],
-     "start": 0,
-     "duration": 6.9
+     "start": 4.933333,
+     "duration": 4.3
     },
     {
      "id": "join-admit",
      "src": "B2.mp4",
      "in": 1,
      "out": 5.2,
-     "speed": 1,
+     "speed": 1.5,
      "kind": "mac",
      "label": "The host admits Alex",
      "zoom": [
@@ -1171,8 +1202,8 @@
        ]
       ]
      ],
-     "start": 6.9,
-     "duration": 4.2
+     "start": 9.233333,
+     "duration": 2.8
     },
     {
      "id": "join-brief",
@@ -1202,7 +1233,7 @@
        ]
       ]
      ],
-     "start": 11.100000000000001,
+     "start": 12.033332999999999,
      "duration": 3
     }
    ]
@@ -1210,7 +1241,7 @@
   {
    "id": "06-steer",
    "scene": "shots",
-   "start": 65.533333,
+   "start": 66.466666,
    "length": 13.3,
    "voice": {
     "file": "voice/06-steer.wav",
@@ -1453,7 +1484,7 @@
   {
    "id": "07-split",
    "scene": "shots",
-   "start": 78.833333,
+   "start": 79.766666,
    "length": 13,
    "voice": {
     "file": "voice/07-split.wav",
@@ -1731,7 +1762,7 @@
   {
    "id": "08-phone",
    "scene": "shots",
-   "start": 91.833333,
+   "start": 92.766666,
    "length": 17.699674,
    "voice": {
     "file": "voice/08-phone.wav",
@@ -2050,7 +2081,7 @@
   {
    "id": "09-ship",
    "scene": "shots",
-   "start": 109.533007,
+   "start": 110.46634,
    "length": 11.133333,
    "voice": {
     "file": "voice/09-ship.wav",
@@ -2262,7 +2293,7 @@
   {
    "id": "10-close",
    "scene": "close",
-   "start": 120.66633999999999,
+   "start": 121.599673,
    "length": 12,
    "voice": {
     "file": "voice/10-close.wav",
