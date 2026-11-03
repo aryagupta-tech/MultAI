@@ -4,6 +4,7 @@
 // all-or-nothing. Paths stay in the main process; the renderer sees ids and display hints.
 import {execFile,spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
+import {accessSync,constants,statSync} from 'node:fs';
 import {copyFile,lstat,mkdir,readFile,readdir,realpath,rename,rm,unlink,writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -49,12 +50,18 @@ export function hostPath():string {
   return loginPath;
 }
 /** Directories of the developer tools the agent's approved commands may need (node, npm, python…). */
-export function toolPath():string {
+export function toolPath(searchPath=hostPath()):string {
   const wanted=['node','npm','npx','pnpm','yarn','bun','python3','pip3','go','cargo','rustc','java','ruby','deno','make','git'];
-  const directories=new Set<string>(['/usr/bin','/bin','/usr/sbin','/sbin']);
-  for(const directory of hostPath().split(path.delimiter)){
+  const windows=process.platform==='win32';
+  const extensions=windows?['.exe','.cmd','.bat','.com']:[''];
+  const directories=new Set<string>(windows?[]:['/usr/bin','/bin','/usr/sbin','/sbin']);
+  for(const directory of new Set(searchPath.split(path.delimiter))){
     if(!directory||!path.isAbsolute(directory))continue;
-    for(const tool of wanted){try{if(spawnSync('test',['-x',path.join(directory,tool)]).status===0){directories.add(directory);break;}}catch{/* skip */}}
+    // File checks avoid hundreds of process launches on a long PATH. Windows
+    // tools have executable extensions and need no POSIX `test` binary installed.
+    if(wanted.some(tool=>extensions.some(extension=>{
+      try{const file=path.join(directory,`${tool}${extension}`);accessSync(file,windows?constants.F_OK:constants.X_OK);return statSync(file).isFile();}catch{return false;}
+    })))directories.add(directory);
   }
   return [...directories].join(path.delimiter);
 }

@@ -690,7 +690,7 @@ describe('team verification uses actual host checks and a separate read-only rev
     });
     runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {
       await options.onEvent?.({type: 'text.delta', text: 'Running the tests.'});
-      const result = await options.executeTool!({id: 'call_1', name: 'run_command', arguments: {command: 'true'}} as ToolCall, options.signal);
+      const result = await options.executeTool!({id: 'call_1', name: 'run_command', arguments: {command: 'exit 0'}} as ToolCall, options.signal);
       expect(result).toMatchObject({exitCode: 0});
       return {text: 'Done.', iterations: 2};
     });

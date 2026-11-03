@@ -2,9 +2,9 @@ import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {mkdtemp,mkdir,readFile,readdir,realpath,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {delimiter,join} from 'node:path';
 import {afterEach,describe,expect,it} from 'vitest';
-import {ProjectRegistry,applyWork,checkpointChanges,compareUrl,createWork,diffWork,discardWork,git as projectGit,githubRepo,keepWork,listWorkFiles,parseDiff,pushWork,readWork,restoreCheckpoint,revertFile,safeRelative,snapshotWork} from './projects';
+import {ProjectRegistry,applyWork,checkpointChanges,compareUrl,createWork,diffWork,discardWork,git as projectGit,githubRepo,keepWork,listWorkFiles,parseDiff,pushWork,readWork,restoreCheckpoint,revertFile,safeRelative,snapshotWork,toolPath} from './projects';
 import {isDeniedPath} from '@multai/runtime';
 import {TerminalHost,type TerminalEvent} from './terminal';
 
@@ -149,12 +149,15 @@ describe('checkpoints and file lists',()=>{
     expect(sh(x.repo,'config','--local','--get','core.autocrlf').trim()).toBe('true');
   });
 
-  it('snapshots deep worktree paths without changing repository Git configuration',async()=>{
+  it('snapshots long index paths without changing repository Git configuration',async()=>{
     const x=await fixture();const sessionId=randomUUID();
     sh(x.repo,'config','core.longpaths','false');
     const configBefore=await readFile(join(x.repo,'.git','config'),'utf8');
-    const root=join(x.workspaces,'scope-'.repeat(16),'session-'.repeat(13),sessionId);
-    expect(root.length).toBeGreaterThan(260);
+    // The original Windows failure was the snapshot's index.lock, not the
+    // worktree root. Git still limits repository discovery paths separately.
+    const root=join(x.workspaces,'s'.repeat(235-x.workspaces.length-sessionId.length-2),sessionId);
+    expect(root.length).toBeLessThan(260);
+    expect(`${root}.snapshot-${randomUUID()}.index.lock`.length).toBeGreaterThan(260);
     await createWork({root,sessionId,projectId:x.project.projectId,project:await x.registry.get(x.project.projectId),carry:false,title:'deep workspace'});
     await writeFile(join(root,'README.md'),'# Earlier work\n');
     const statusBefore=(await projectGit(root,['status','--porcelain=v1'])).stdout;
@@ -207,6 +210,20 @@ describe('checkpoints and file lists',()=>{
 });
 
 describe('project helpers',()=>{
+  it('discovers installed tools without shell probes, including Windows executable extensions',async()=>{
+    const base=await realpath(await mkdtemp(join(tmpdir(),'multai-tool-path-')));cleanup.push(base);
+    const node=join(base,'node bin'),packageManager=join(base,'package bin'),empty=join(base,'empty');
+    for(const directory of [node,packageManager,empty])await mkdir(directory);
+    await writeFile(join(node,process.platform==='win32'?'node.exe':'node'),'synthetic',{mode:0o755});
+    await writeFile(join(packageManager,process.platform==='win32'?'npm.cmd':'npm'),'synthetic',{mode:0o755});
+    await mkdir(join(empty,process.platform==='win32'?'git.exe':'git'));
+    const found=toolPath([empty,node,'relative-folder',packageManager,node].join(delimiter)).split(delimiter);
+    expect(found.filter(directory=>directory===node)).toEqual([node]);
+    expect(found).toContain(packageManager);
+    expect(found).not.toContain(empty);
+    expect(found).not.toContain('relative-folder');
+  });
+
   it('reads GitHub remotes and builds compare links',()=>{
     for(const remote of ['git@github.com:acme/shop.git','https://github.com/acme/shop.git','https://github.com/acme/shop','ssh://git@github.com/acme/shop.git'])expect(githubRepo(remote),remote).toBe('acme/shop');
     expect(githubRepo('git@gitlab.com:acme/shop.git')).toBeNull();
