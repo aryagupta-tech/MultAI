@@ -1,0 +1,2377 @@
+{
+ "fps": 30,
+ "total": 132.66634,
+ "beats": [
+  {
+   "id": "01-hook",
+   "scene": "hook",
+   "start": 0,
+   "length": 11,
+   "voice": {
+    "file": "voice/01-hook.wav",
+    "at": 0.45,
+    "duration": 9.4243537414966,
+    "words": [
+     {
+      "word": "Every",
+      "start": 0.299,
+      "end": 0.512
+     },
+     {
+      "word": "AI",
+      "start": 0.683,
+      "end": 1.024
+     },
+     {
+      "word": "coding",
+      "start": 1.067,
+      "end": 1.3227
+     },
+     {
+      "word": "agent",
+      "start": 1.408,
+      "end": 1.664
+     },
+     {
+      "word": "today",
+      "start": 1.792,
+      "end": 1.877
+     },
+     {
+      "word": "is",
+      "start": 2.048,
+      "end": 2.261
+     },
+     {
+      "word": "single-player.",
+      "start": 2.304,
+      "end": 3.157
+     },
+     {
+      "word": "When",
+      "start": 3.499,
+      "end": 3.6267
+     },
+     {
+      "word": "you",
+      "start": 3.669,
+      "end": 3.7547
+     },
+     {
+      "word": "get",
+      "start": 3.797,
+      "end": 3.8827
+     },
+     {
+      "word": "stuck,",
+      "start": 3.968,
+      "end": 4.395
+     },
+     {
+      "word": "bringing",
+      "start": 4.608,
+      "end": 4.821
+     },
+     {
+      "word": "in",
+      "start": 4.992,
+      "end": 5.077
+     },
+     {
+      "word": "a",
+      "start": 5.12,
+      "end": 5.205
+     },
+     {
+      "word": "teammate",
+      "start": 5.248,
+      "end": 5.589
+     },
+     {
+      "word": "means",
+      "start": 5.717,
+      "end": 5.888
+     },
+     {
+      "word": "screenshots,",
+      "start": 6.059,
+      "end": 6.763
+     },
+     {
+      "word": "copy-paste,",
+      "start": 6.955,
+      "end": 7.637
+     },
+     {
+      "word": "and",
+      "start": 7.765,
+      "end": 8.021
+     },
+     {
+      "word": "explaining",
+      "start": 8.107,
+      "end": 8.405
+     },
+     {
+      "word": "everything",
+      "start": 8.533,
+      "end": 8.8747
+     },
+     {
+      "word": "again.",
+      "start": 8.96,
+      "end": 9.224
+     }
+    ]
+   },
+   "shots": []
+  },
+  {
+   "id": "02-reveal",
+   "scene": "reveal",
+   "start": 11,
+   "length": 8.5,
+   "voice": {
+    "file": "voice/02-reveal.wav",
+    "at": 0.45,
+    "duration": 6.986258503401361,
+    "words": [
+     {
+      "word": "This",
+      "start": 0.299,
+      "end": 0.469
+     },
+     {
+      "word": "is",
+      "start": 0.512,
+      "end": 0.64
+     },
+     {
+      "word": "MultAI:",
+      "start": 0.683,
+      "end": 1.387
+     },
+     {
+      "word": "one",
+      "start": 1.536,
+      "end": 1.749
+     },
+     {
+      "word": "AI",
+      "start": 1.877,
+      "end": 2.133
+     },
+     {
+      "word": "coding",
+      "start": 2.176,
+      "end": 2.432
+     },
+     {
+      "word": "agent,",
+      "start": 2.517,
+      "end": 2.901
+     },
+     {
+      "word": "shared",
+      "start": 3.029,
+      "end": 3.285
+     },
+     {
+      "word": "by",
+      "start": 3.328,
+      "end": 3.456
+     },
+     {
+      "word": "your",
+      "start": 3.499,
+      "end": 3.584
+     },
+     {
+      "word": "whole",
+      "start": 3.627,
+      "end": 3.797
+     },
+     {
+      "word": "team,",
+      "start": 3.925,
+      "end": 4.224
+     },
+     {
+      "word": "in",
+      "start": 4.352,
+      "end": 4.48
+     },
+     {
+      "word": "real",
+      "start": 4.523,
+      "end": 4.6507
+     },
+     {
+      "word": "time.",
+      "start": 4.736,
+      "end": 5.163
+     },
+     {
+      "word": "Built",
+      "start": 5.419,
+      "end": 5.632
+     },
+     {
+      "word": "on",
+      "start": 5.717,
+      "end": 5.8027
+     },
+     {
+      "word": "Meta's",
+      "start": 5.845,
+      "end": 6.144
+     },
+     {
+      "word": "Muse",
+      "start": 6.187,
+      "end": 6.357
+     },
+     {
+      "word": "models.",
+      "start": 6.485,
+      "end": 6.786
+     }
+    ]
+   },
+   "shots": []
+  },
+  {
+   "id": "03-host",
+   "scene": "shots",
+   "start": 19.5,
+   "length": 19.933332999999998,
+   "voice": {
+    "file": "voice/03-host.wav",
+    "at": 0.45,
+    "duration": 16.186462585034015,
+    "words": [
+     {
+      "word": "I",
+      "start": 0.299,
+      "end": 0.4267
+     },
+     {
+      "word": "open",
+      "start": 0.469,
+      "end": 0.597
+     },
+     {
+      "word": "my",
+      "start": 0.768,
+      "end": 0.896
+     },
+     {
+      "word": "real",
+      "start": 0.939,
+      "end": 1.0667
+     },
+     {
+      "word": "project,",
+      "start": 1.152,
+      "end": 1.557
+     },
+     {
+      "word": "and",
+      "start": 1.749,
+      "end": 2.005
+     },
+     {
+      "word": "the",
+      "start": 2.048,
+      "end": 2.0907
+     },
+     {
+      "word": "chat",
+      "start": 2.133,
+      "end": 2.3467
+     },
+     {
+      "word": "gets",
+      "start": 2.432,
+      "end": 2.56
+     },
+     {
+      "word": "its",
+      "start": 2.688,
+      "end": 2.7307
+     },
+     {
+      "word": "own",
+      "start": 2.816,
+      "end": 2.944
+     },
+     {
+      "word": "git",
+      "start": 3.029,
+      "end": 3.2
+     },
+     {
+      "word": "branch,",
+      "start": 3.285,
+      "end": 3.712
+     },
+     {
+      "word": "so",
+      "start": 3.968,
+      "end": 4.096
+     },
+     {
+      "word": "my",
+      "start": 4.139,
+      "end": 4.224
+     },
+     {
+      "word": "folder",
+      "start": 4.267,
+      "end": 4.565
+     },
+     {
+      "word": "is",
+      "start": 4.651,
+      "end": 4.693
+     },
+     {
+      "word": "never",
+      "start": 4.736,
+      "end": 4.864
+     },
+     {
+      "word": "touched.",
+      "start": 4.992,
+      "end": 5.547
+     },
+     {
+      "word": "I",
+      "start": 5.888,
+      "end": 5.973
+     },
+     {
+      "word": "paste",
+      "start": 6.016,
+      "end": 6.229
+     },
+     {
+      "word": "a",
+      "start": 6.315,
+      "end": 6.4
+     },
+     {
+      "word": "screenshot",
+      "start": 6.443,
+      "end": 6.912
+     },
+     {
+      "word": "and",
+      "start": 7.04,
+      "end": 7.168
+     },
+     {
+      "word": "point",
+      "start": 7.211,
+      "end": 7.381
+     },
+     {
+      "word": "at",
+      "start": 7.509,
+      "end": 7.595
+     },
+     {
+      "word": "the",
+      "start": 7.637,
+      "end": 7.68
+     },
+     {
+      "word": "broken",
+      "start": 7.723,
+      "end": 7.893
+     },
+     {
+      "word": "button.",
+      "start": 8.064,
+      "end": 8.382
+     },
+     {
+      "word": "SAM",
+      "start": 8.571,
+      "end": 8.827
+     },
+     {
+      "word": "3.1",
+      "start": 8.955,
+      "end": 9.595
+     },
+     {
+      "word": "finds",
+      "start": 9.681,
+      "end": 9.937
+     },
+     {
+      "word": "its",
+      "start": 10.022,
+      "end": 10.0645
+     },
+     {
+      "word": "exact",
+      "start": 10.193,
+      "end": 10.5339
+     },
+     {
+      "word": "edges,",
+      "start": 10.662,
+      "end": 11.131
+     },
+     {
+      "word": "so",
+      "start": 11.345,
+      "end": 11.515
+     },
+     {
+      "word": "Muse",
+      "start": 11.558,
+      "end": 11.7285
+     },
+     {
+      "word": "Spark",
+      "start": 11.814,
+      "end": 12.0699
+     },
+     {
+      "word": "sees",
+      "start": 12.155,
+      "end": 12.3259
+     },
+     {
+      "word": "exactly",
+      "start": 12.411,
+      "end": 12.795
+     },
+     {
+      "word": "what",
+      "start": 12.966,
+      "end": 13.094
+     },
+     {
+      "word": "I",
+      "start": 13.136,
+      "end": 13.179
+     },
+     {
+      "word": "mean,",
+      "start": 13.222,
+      "end": 13.542
+     },
+     {
+      "word": "plans",
+      "start": 13.691,
+      "end": 13.9045
+     },
+     {
+      "word": "the",
+      "start": 14.033,
+      "end": 14.1179
+     },
+     {
+      "word": "fix,",
+      "start": 14.161,
+      "end": 14.481
+     },
+     {
+      "word": "and",
+      "start": 14.63,
+      "end": 14.843
+     },
+     {
+      "word": "waits",
+      "start": 14.886,
+      "end": 15.0139
+     },
+     {
+      "word": "for",
+      "start": 15.099,
+      "end": 15.184
+     },
+     {
+      "word": "my",
+      "start": 15.227,
+      "end": 15.355
+     },
+     {
+      "word": "approval.",
+      "start": 15.398,
+      "end": 15.986
+     }
+    ]
+   },
+   "shots": [
+    {
+     "id": "host-branch",
+     "src": "A.mp4",
+     "in": 21,
+     "out": 26.6,
+     "speed": 1,
+     "kind": "mac",
+     "label": "Your real project · its own git branch",
+     "zoom": [
+      [
+       0,
+       [
+        0,
+        0,
+        1,
+        1
+       ]
+      ],
+      [
+       0.35,
+       [
+        0,
+        0,
+        1,
+        1
+       ]
+      ],
+      [
+       1,
+       [
+        0.71,
+        0.07,
+        0.29,
+        0.14
+       ]
+      ]
+     ],
+     "start": 0,
+     "duration": 5.6
+    },
+    {
+     "id": "host-point",
+     "src": "A.mp4",
+     "in": 4.6,
+     "out": 12.2,
+     "speed": 1.3,
+     "kind": "mac",
+     "label": "SAM 3.1 · point at the problem",
+     "zoom": [
+      [
+       0,
+       [
+        0.22,
+        0.19,
+        0.56,
+        0.64
+       ]
+      ],
+      [
+       1,
+       [
+        0.3,
+        0.42,
+        0.46,
+        0.36
+       ]
+      ]
+     ],
+     "start": 5.6,
+     "duration": 5.833333
+    },
+    {
+     "id": "host-plan",
+     "src": "A.mp4",
+     "in": 41.5,
+     "out": 49.5,
+     "speed": 2,
+     "kind": "mac",
+     "label": "Muse Spark 1.3 · plans the fix",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.18,
+        0.52,
+        0.66
+       ]
+      ],
+      [
+       1,
+       [
+        0.22,
+        0.3,
+        0.48,
+        0.5
+       ]
+      ]
+     ],
+     "start": 11.433333,
+     "duration": 4
+    },
+    {
+     "id": "host-approve",
+     "src": "A.mp4",
+     "in": 131.5,
+     "out": 136,
+     "speed": 1,
+     "kind": "mac",
+     "label": "Every change waits for the host",
+     "zoom": [
+      [
+       0,
+       [
+        0.21,
+        0.4,
+        0.54,
+        0.42
+       ]
+      ],
+      [
+       1,
+       [
+        0.22,
+        0.5,
+        0.42,
+        0.3
+       ]
+      ]
+     ],
+     "start": 15.433333,
+     "duration": 4.5
+    }
+   ]
+  },
+  {
+   "id": "04-look",
+   "scene": "shots",
+   "start": 39.433333,
+   "length": 12,
+   "voice": {
+    "file": "voice/04-look.wav",
+    "at": 0.45,
+    "duration": 10.527301587301586,
+    "words": [
+     {
+      "word": "Then",
+      "start": 0.299,
+      "end": 0.469
+     },
+     {
+      "word": "it",
+      "start": 0.512,
+      "end": 0.597
+     },
+     {
+      "word": "checks",
+      "start": 0.64,
+      "end": 0.8107
+     },
+     {
+      "word": "its",
+      "start": 0.853,
+      "end": 0.9387
+     },
+     {
+      "word": "own",
+      "start": 1.024,
+      "end": 1.109
+     },
+     {
+      "word": "work.",
+      "start": 1.195,
+      "end": 1.557
+     },
+     {
+      "word": "It",
+      "start": 1.749,
+      "end": 1.92
+     },
+     {
+      "word": "opens",
+      "start": 1.963,
+      "end": 2.176
+     },
+     {
+      "word": "the",
+      "start": 2.261,
+      "end": 2.347
+     },
+     {
+      "word": "app",
+      "start": 2.389,
+      "end": 2.517
+     },
+     {
+      "word": "in",
+      "start": 2.603,
+      "end": 2.645
+     },
+     {
+      "word": "a",
+      "start": 2.688,
+      "end": 2.7307
+     },
+     {
+      "word": "hidden",
+      "start": 2.773,
+      "end": 2.9867
+     },
+     {
+      "word": "browser,",
+      "start": 3.029,
+      "end": 3.477
+     },
+     {
+      "word": "and",
+      "start": 3.627,
+      "end": 3.8827
+     },
+     {
+      "word": "SAM",
+      "start": 3.925,
+      "end": 4.2667
+     },
+     {
+      "word": "3.1",
+      "start": 4.395,
+      "end": 5.0347
+     },
+     {
+      "word": "marks",
+      "start": 5.12,
+      "end": 5.333
+     },
+     {
+      "word": "the",
+      "start": 5.419,
+      "end": 5.504
+     },
+     {
+      "word": "Pay",
+      "start": 5.547,
+      "end": 5.6747
+     },
+     {
+      "word": "button",
+      "start": 5.717,
+      "end": 5.888
+     },
+     {
+      "word": "with",
+      "start": 6.101,
+      "end": 6.1867
+     },
+     {
+      "word": "exact",
+      "start": 6.315,
+      "end": 6.656
+     },
+     {
+      "word": "pixel",
+      "start": 6.784,
+      "end": 7.0827
+     },
+     {
+      "word": "boxes.",
+      "start": 7.125,
+      "end": 7.701
+     },
+     {
+      "word": "It",
+      "start": 7.936,
+      "end": 8.064
+     },
+     {
+      "word": "doesn't",
+      "start": 8.107,
+      "end": 8.32
+     },
+     {
+      "word": "guess",
+      "start": 8.363,
+      "end": 8.4907
+     },
+     {
+      "word": "the",
+      "start": 8.576,
+      "end": 8.704
+     },
+     {
+      "word": "layout",
+      "start": 8.747,
+      "end": 8.917
+     },
+     {
+      "word": "is",
+      "start": 9.003,
+      "end": 9.088
+     },
+     {
+      "word": "fixed.",
+      "start": 9.131,
+      "end": 9.515
+     },
+     {
+      "word": "It",
+      "start": 9.685,
+      "end": 9.7707
+     },
+     {
+      "word": "sees",
+      "start": 9.813,
+      "end": 10.069
+     },
+     {
+      "word": "it.",
+      "start": 10.155,
+      "end": 10.327
+     }
+    ]
+   },
+   "shots": [
+    {
+     "id": "look-hero",
+     "src": "A.mp4",
+     "in": 143,
+     "out": 151,
+     "speed": 1,
+     "kind": "mac",
+     "label": "look_at_app · SAM 3.1 checks the fix",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.14,
+        0.4,
+        0.66
+       ]
+      ],
+      [
+       0.45,
+       [
+        0.23,
+        0.5,
+        0.3,
+        0.3
+       ]
+      ],
+      [
+       1,
+       [
+        0.23,
+        0.5,
+        0.3,
+        0.3
+       ]
+      ]
+     ],
+     "start": 0,
+     "duration": 8
+    },
+    {
+     "id": "look-test",
+     "src": "A.mp4",
+     "in": 160,
+     "out": 163,
+     "speed": 1,
+     "kind": "mac",
+     "label": "npm test · the totals are still wrong",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.06,
+        0.52,
+        0.86
+       ]
+      ],
+      [
+       1,
+       [
+        0.22,
+        0.1,
+        0.46,
+        0.6
+       ]
+      ]
+     ],
+     "start": 8,
+     "duration": 3
+    }
+   ]
+  },
+  {
+   "id": "05-join",
+   "scene": "shots",
+   "start": 51.433333,
+   "length": 14.100000000000001,
+   "voice": {
+    "file": "voice/05-join.wav",
+    "at": 0.45,
+    "duration": 11.850839002267573,
+    "words": [
+     {
+      "word": "The",
+      "start": 0.341,
+      "end": 0.469
+     },
+     {
+      "word": "totals",
+      "start": 0.512,
+      "end": 0.768
+     },
+     {
+      "word": "are",
+      "start": 0.811,
+      "end": 0.896
+     },
+     {
+      "word": "wrong",
+      "start": 0.939,
+      "end": 1.0667
+     },
+     {
+      "word": "too,",
+      "start": 1.195,
+      "end": 1.451
+     },
+     {
+      "word": "so",
+      "start": 1.579,
+      "end": 1.707
+     },
+     {
+      "word": "I",
+      "start": 1.749,
+      "end": 1.792
+     },
+     {
+      "word": "bring",
+      "start": 1.835,
+      "end": 1.9627
+     },
+     {
+      "word": "in",
+      "start": 2.048,
+      "end": 2.0907
+     },
+     {
+      "word": "Alex",
+      "start": 2.133,
+      "end": 2.389
+     },
+     {
+      "word": "with",
+      "start": 2.517,
+      "end": 2.6027
+     },
+     {
+      "word": "a",
+      "start": 2.645,
+      "end": 2.7307
+     },
+     {
+      "word": "link.",
+      "start": 2.773,
+      "end": 3.115
+     },
+     {
+      "word": "Alex",
+      "start": 3.371,
+      "end": 3.584
+     },
+     {
+      "word": "joins",
+      "start": 3.712,
+      "end": 3.8827
+     },
+     {
+      "word": "from",
+      "start": 4.011,
+      "end": 4.096
+     },
+     {
+      "word": "the",
+      "start": 4.139,
+      "end": 4.224
+     },
+     {
+      "word": "browser:",
+      "start": 4.267,
+      "end": 4.715
+     },
+     {
+      "word": "no",
+      "start": 4.907,
+      "end": 5.077
+     },
+     {
+      "word": "install,",
+      "start": 5.12,
+      "end": 5.632
+     },
+     {
+      "word": "no",
+      "start": 5.803,
+      "end": 5.973
+     },
+     {
+      "word": "API",
+      "start": 6.016,
+      "end": 6.357
+     },
+     {
+      "word": "key.",
+      "start": 6.443,
+      "end": 6.827
+     },
+     {
+      "word": "Muse",
+      "start": 7.04,
+      "end": 7.3387
+     },
+     {
+      "word": "Wonder",
+      "start": 7.381,
+      "end": 7.637
+     },
+     {
+      "word": "writes",
+      "start": 7.723,
+      "end": 7.893
+     },
+     {
+      "word": "a",
+      "start": 7.979,
+      "end": 8.021
+     },
+     {
+      "word": "catch-up",
+      "start": 8.064,
+      "end": 8.3627
+     },
+     {
+      "word": "brief:",
+      "start": 8.448,
+      "end": 8.768
+     },
+     {
+      "word": "the",
+      "start": 8.917,
+      "end": 9.045
+     },
+     {
+      "word": "goal,",
+      "start": 9.088,
+      "end": 9.408
+     },
+     {
+      "word": "what",
+      "start": 9.6,
+      "end": 9.7707
+     },
+     {
+      "word": "was",
+      "start": 9.813,
+      "end": 9.8987
+     },
+     {
+      "word": "tried,",
+      "start": 9.984,
+      "end": 10.325
+     },
+     {
+      "word": "and",
+      "start": 10.453,
+      "end": 10.6667
+     },
+     {
+      "word": "who's",
+      "start": 10.709,
+      "end": 10.9227
+     },
+     {
+      "word": "waiting",
+      "start": 10.965,
+      "end": 11.093
+     },
+     {
+      "word": "on",
+      "start": 11.221,
+      "end": 11.349
+     },
+     {
+      "word": "what.",
+      "start": 11.392,
+      "end": 11.650839002267574
+     }
+    ]
+   },
+   "shots": [
+    {
+     "id": "join-browser",
+     "src": "B1.mp4",
+     "in": 0.3,
+     "out": 7.2,
+     "speed": 1,
+     "kind": "browser",
+     "label": "Alex joins from a browser · no install",
+     "zoom": [
+      [
+       0,
+       [
+        0.05,
+        0.02,
+        0.9,
+        0.8
+       ]
+      ],
+      [
+       1,
+       [
+        0.1,
+        0.04,
+        0.8,
+        0.62
+       ]
+      ]
+     ],
+     "start": 0,
+     "duration": 6.9
+    },
+    {
+     "id": "join-admit",
+     "src": "B2.mp4",
+     "in": 1,
+     "out": 5.2,
+     "speed": 1,
+     "kind": "mac",
+     "label": "The host admits Alex",
+     "zoom": [
+      [
+       0,
+       [
+        0.55,
+        0,
+        0.45,
+        0.5
+       ]
+      ],
+      [
+       1,
+       [
+        0.6,
+        0,
+        0.4,
+        0.4
+       ]
+      ]
+     ],
+     "start": 6.9,
+     "duration": 4.2
+    },
+    {
+     "id": "join-brief",
+     "src": "B2.mp4",
+     "in": 21.5,
+     "out": 24.5,
+     "speed": 1,
+     "kind": "mac",
+     "label": "Muse Wonder 1.0 · catch-up brief",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.3,
+        0.52,
+        0.6
+       ]
+      ],
+      [
+       1,
+       [
+        0.22,
+        0.38,
+        0.46,
+        0.46
+       ]
+      ]
+     ],
+     "start": 11.100000000000001,
+     "duration": 3
+    }
+   ]
+  },
+  {
+   "id": "06-steer",
+   "scene": "shots",
+   "start": 65.533333,
+   "length": 13.3,
+   "voice": {
+    "file": "voice/06-steer.wav",
+    "at": 0.45,
+    "duration": 8.994784580498866,
+    "words": [
+     {
+      "word": "Alex",
+      "start": 0.256,
+      "end": 0.5547
+     },
+     {
+      "word": "tells",
+      "start": 0.64,
+      "end": 0.8107
+     },
+     {
+      "word": "the",
+      "start": 0.853,
+      "end": 0.981
+     },
+     {
+      "word": "agent:",
+      "start": 1.024,
+      "end": 1.515
+     },
+     {
+      "word": "use",
+      "start": 1.749,
+      "end": 1.9627
+     },
+     {
+      "word": "cents,",
+      "start": 2.048,
+      "end": 2.475
+     },
+     {
+      "word": "not",
+      "start": 2.645,
+      "end": 2.816
+     },
+     {
+      "word": "floats.",
+      "start": 2.901,
+      "end": 3.392
+     },
+     {
+      "word": "It",
+      "start": 3.627,
+      "end": 3.7547
+     },
+     {
+      "word": "isn't",
+      "start": 3.797,
+      "end": 3.968
+     },
+     {
+      "word": "my",
+      "start": 4.011,
+      "end": 4.1387
+     },
+     {
+      "word": "instruction,",
+      "start": 4.181,
+      "end": 4.672
+     },
+     {
+      "word": "so",
+      "start": 4.907,
+      "end": 5.035
+     },
+     {
+      "word": "it",
+      "start": 5.077,
+      "end": 5.12
+     },
+     {
+      "word": "waits",
+      "start": 5.163,
+      "end": 5.2907
+     },
+     {
+      "word": "for",
+      "start": 5.376,
+      "end": 5.461
+     },
+     {
+      "word": "my",
+      "start": 5.504,
+      "end": 5.632
+     },
+     {
+      "word": "approval.",
+      "start": 5.717,
+      "end": 6.144
+     },
+     {
+      "word": "Every",
+      "start": 6.357,
+      "end": 6.528
+     },
+     {
+      "word": "file",
+      "start": 6.656,
+      "end": 6.869
+     },
+     {
+      "word": "change",
+      "start": 7.04,
+      "end": 7.253
+     },
+     {
+      "word": "and",
+      "start": 7.424,
+      "end": 7.509
+     },
+     {
+      "word": "command",
+      "start": 7.552,
+      "end": 7.7227
+     },
+     {
+      "word": "waits",
+      "start": 8.021,
+      "end": 8.192
+     },
+     {
+      "word": "for",
+      "start": 8.277,
+      "end": 8.405
+     },
+     {
+      "word": "me,",
+      "start": 8.448,
+      "end": 8.619
+     },
+     {
+      "word": "too.",
+      "start": 8.661,
+      "end": 8.794784580498867
+     }
+    ]
+   },
+   "shots": [
+    {
+     "id": "steer-alex",
+     "src": "B3.mp4",
+     "in": 6.5,
+     "out": 17.5,
+     "speed": 2,
+     "kind": "browser",
+     "label": "Alex sends the agent a direction",
+     "zoom": [
+      [
+       0,
+       [
+        0.15,
+        0.1,
+        0.7,
+        0.85
+       ]
+      ],
+      [
+       1,
+       [
+        0.2,
+        0.4,
+        0.6,
+        0.55
+       ]
+      ]
+     ],
+     "start": 0,
+     "duration": 5.5
+    },
+    {
+     "id": "steer-run",
+     "src": "B4.mp4",
+     "in": 0.4,
+     "out": 5.2,
+     "speed": 1,
+     "kind": "mac",
+     "label": "Not the host's instruction · waits to be run",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.5,
+        0.54,
+        0.4
+       ]
+      ],
+      [
+       1,
+       [
+        0.23,
+        0.68,
+        0.44,
+        0.2
+       ]
+      ]
+     ],
+     "start": 5.5,
+     "duration": 4.8
+    },
+    {
+     "id": "steer-done",
+     "src": "B4.mp4",
+     "in": 156,
+     "out": 160.5,
+     "speed": 1.5,
+     "kind": "mac",
+     "label": "Integer cents · $22.75 · tests pass",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.3,
+        0.52,
+        0.6
+       ]
+      ],
+      [
+       1,
+       [
+        0.22,
+        0.38,
+        0.48,
+        0.5
+       ]
+      ]
+     ],
+     "start": 10.3,
+     "duration": 3
+    }
+   ]
+  },
+  {
+   "id": "07-split",
+   "scene": "shots",
+   "start": 78.833333,
+   "length": 13,
+   "voice": {
+    "file": "voice/07-split.wav",
+    "at": 0.45,
+    "duration": 10.782721088435375,
+    "words": [
+     {
+      "word": "Bigger",
+      "start": 0.256,
+      "end": 0.512
+     },
+     {
+      "word": "task?",
+      "start": 0.597,
+      "end": 1.067
+     },
+     {
+      "word": "Slash",
+      "start": 1.365,
+      "end": 1.664
+     },
+     {
+      "word": "split",
+      "start": 1.792,
+      "end": 2.005
+     },
+     {
+      "word": "puts",
+      "start": 2.091,
+      "end": 2.261
+     },
+     {
+      "word": "up",
+      "start": 2.304,
+      "end": 2.389
+     },
+     {
+      "word": "to",
+      "start": 2.475,
+      "end": 2.56
+     },
+     {
+      "word": "four",
+      "start": 2.603,
+      "end": 2.8587
+     },
+     {
+      "word": "agents",
+      "start": 2.901,
+      "end": 3.2
+     },
+     {
+      "word": "on",
+      "start": 3.285,
+      "end": 3.3707
+     },
+     {
+      "word": "it",
+      "start": 3.413,
+      "end": 3.4987
+     },
+     {
+      "word": "at",
+      "start": 3.541,
+      "end": 3.6267
+     },
+     {
+      "word": "once,",
+      "start": 3.669,
+      "end": 3.947
+     },
+     {
+      "word": "each",
+      "start": 4.096,
+      "end": 4.352
+     },
+     {
+      "word": "in",
+      "start": 4.437,
+      "end": 4.48
+     },
+     {
+      "word": "its",
+      "start": 4.523,
+      "end": 4.608
+     },
+     {
+      "word": "own",
+      "start": 4.693,
+      "end": 4.821
+     },
+     {
+      "word": "worktree,",
+      "start": 4.907,
+      "end": 5.44
+     },
+     {
+      "word": "merged",
+      "start": 5.589,
+      "end": 5.845
+     },
+     {
+      "word": "with",
+      "start": 5.973,
+      "end": 6.0587
+     },
+     {
+      "word": "git.",
+      "start": 6.144,
+      "end": 6.549
+     },
+     {
+      "word": "Switch",
+      "start": 6.827,
+      "end": 7.04
+     },
+     {
+      "word": "models",
+      "start": 7.168,
+      "end": 7.424
+     },
+     {
+      "word": "mid-chat,",
+      "start": 7.509,
+      "end": 8.043
+     },
+     {
+      "word": "and",
+      "start": 8.149,
+      "end": 8.4907
+     },
+     {
+      "word": "the",
+      "start": 8.576,
+      "end": 8.6187
+     },
+     {
+      "word": "new",
+      "start": 8.661,
+      "end": 8.789
+     },
+     {
+      "word": "one",
+      "start": 8.832,
+      "end": 8.96
+     },
+     {
+      "word": "inherits",
+      "start": 9.003,
+      "end": 9.3867
+     },
+     {
+      "word": "everything",
+      "start": 9.472,
+      "end": 9.856
+     },
+     {
+      "word": "the",
+      "start": 9.899,
+      "end": 9.984
+     },
+     {
+      "word": "last",
+      "start": 10.027,
+      "end": 10.1547
+     },
+     {
+      "word": "one",
+      "start": 10.24,
+      "end": 10.368
+     },
+     {
+      "word": "did.",
+      "start": 10.411,
+      "end": 10.582721088435374
+     }
+    ]
+   },
+   "shots": [
+    {
+     "id": "split-type",
+     "src": "C1.mp4",
+     "in": 3.6,
+     "out": 11,
+     "speed": 1.6,
+     "kind": "mac",
+     "label": "/split · parallel agents",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.6,
+        0.52,
+        0.36
+       ]
+      ],
+      [
+       1,
+       [
+        0.22,
+        0.7,
+        0.46,
+        0.25
+       ]
+      ]
+     ],
+     "start": 0,
+     "duration": 4.633333
+    },
+    {
+     "id": "split-run",
+     "src": "C1.mp4",
+     "in": 34,
+     "out": 62,
+     "speed": 7,
+     "kind": "mac",
+     "label": "Two agents · two worktrees · merged with git",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.25,
+        0.52,
+        0.6
+       ]
+      ],
+      [
+       1,
+       [
+        0.22,
+        0.4,
+        0.48,
+        0.48
+       ]
+      ]
+     ],
+     "start": 4.633333,
+     "duration": 4
+    },
+    {
+     "id": "split-handoff",
+     "src": "C2.mp4",
+     "in": 21,
+     "out": 24.2,
+     "speed": 1,
+     "kind": "mac",
+     "label": "Switch models · context hands over",
+     "zoom": [
+      [
+       0,
+       [
+        0.21,
+        0.46,
+        0.5,
+        0.36
+       ]
+      ],
+      [
+       1,
+       [
+        0.23,
+        0.5,
+        0.46,
+        0.3
+       ]
+      ]
+     ],
+     "start": 8.633333,
+     "duration": 3.2
+    }
+   ]
+  },
+  {
+   "id": "08-phone",
+   "scene": "shots",
+   "start": 91.833333,
+   "length": 17.699674,
+   "voice": {
+    "file": "voice/08-phone.wav",
+    "at": 0.45,
+    "duration": 14.143106575963719,
+    "words": [
+     {
+      "word": "And",
+      "start": 0.256,
+      "end": 0.384
+     },
+     {
+      "word": "I",
+      "start": 0.427,
+      "end": 0.512
+     },
+     {
+      "word": "don't",
+      "start": 0.555,
+      "end": 0.6827
+     },
+     {
+      "word": "need",
+      "start": 0.725,
+      "end": 0.811
+     },
+     {
+      "word": "to",
+      "start": 0.853,
+      "end": 0.9387
+     },
+     {
+      "word": "be",
+      "start": 0.981,
+      "end": 1.067
+     },
+     {
+      "word": "at",
+      "start": 1.109,
+      "end": 1.152
+     },
+     {
+      "word": "my",
+      "start": 1.195,
+      "end": 1.3227
+     },
+     {
+      "word": "desk.",
+      "start": 1.365,
+      "end": 1.771
+     },
+     {
+      "word": "I",
+      "start": 1.92,
+      "end": 2.0907
+     },
+     {
+      "word": "install",
+      "start": 2.133,
+      "end": 2.432
+     },
+     {
+      "word": "the",
+      "start": 2.517,
+      "end": 2.6027
+     },
+     {
+      "word": "Android",
+      "start": 2.645,
+      "end": 2.9867
+     },
+     {
+      "word": "app,",
+      "start": 3.029,
+      "end": 3.285
+     },
+     {
+      "word": "pair",
+      "start": 3.413,
+      "end": 3.669
+     },
+     {
+      "word": "it",
+      "start": 3.712,
+      "end": 3.797
+     },
+     {
+      "word": "with",
+      "start": 3.84,
+      "end": 3.925
+     },
+     {
+      "word": "a",
+      "start": 3.968,
+      "end": 4.053
+     },
+     {
+      "word": "one-time",
+      "start": 4.096,
+      "end": 4.437
+     },
+     {
+      "word": "code",
+      "start": 4.565,
+      "end": 4.736
+     },
+     {
+      "word": "and",
+      "start": 4.907,
+      "end": 5.0347
+     },
+     {
+      "word": "six",
+      "start": 5.077,
+      "end": 5.248
+     },
+     {
+      "word": "matching",
+      "start": 5.376,
+      "end": 5.589
+     },
+     {
+      "word": "digits,",
+      "start": 5.675,
+      "end": 6.08
+     },
+     {
+      "word": "and",
+      "start": 6.187,
+      "end": 6.485
+     },
+     {
+      "word": "from",
+      "start": 6.528,
+      "end": 6.656
+     },
+     {
+      "word": "my",
+      "start": 6.699,
+      "end": 6.8267
+     },
+     {
+      "word": "phone",
+      "start": 6.869,
+      "end": 7.04
+     },
+     {
+      "word": "I",
+      "start": 7.168,
+      "end": 7.253
+     },
+     {
+      "word": "send",
+      "start": 7.296,
+      "end": 7.424
+     },
+     {
+      "word": "a",
+      "start": 7.509,
+      "end": 7.552
+     },
+     {
+      "word": "brand-new",
+      "start": 7.595,
+      "end": 8.021
+     },
+     {
+      "word": "prompt,",
+      "start": 8.107,
+      "end": 8.555
+     },
+     {
+      "word": "start",
+      "start": 8.704,
+      "end": 8.96
+     },
+     {
+      "word": "it,",
+      "start": 9.045,
+      "end": 9.259
+     },
+     {
+      "word": "and",
+      "start": 9.344,
+      "end": 9.5147
+     },
+     {
+      "word": "approve",
+      "start": 9.557,
+      "end": 9.7707
+     },
+     {
+      "word": "each",
+      "start": 9.856,
+      "end": 9.941
+     },
+     {
+      "word": "step.",
+      "start": 10.069,
+      "end": 10.447
+     },
+     {
+      "word": "Every",
+      "start": 10.653,
+      "end": 10.824
+     },
+     {
+      "word": "request",
+      "start": 10.995,
+      "end": 11.208
+     },
+     {
+      "word": "is",
+      "start": 11.379,
+      "end": 11.421
+     },
+     {
+      "word": "signed",
+      "start": 11.464,
+      "end": 11.7628
+     },
+     {
+      "word": "by",
+      "start": 11.806,
+      "end": 11.891
+     },
+     {
+      "word": "the",
+      "start": 11.934,
+      "end": 12.0188
+     },
+     {
+      "word": "phone",
+      "start": 12.062,
+      "end": 12.232
+     },
+     {
+      "word": "and",
+      "start": 12.36,
+      "end": 12.5308
+     },
+     {
+      "word": "checked",
+      "start": 12.573,
+      "end": 12.7868
+     },
+     {
+      "word": "again",
+      "start": 12.829,
+      "end": 13.0428
+     },
+     {
+      "word": "by",
+      "start": 13.128,
+      "end": 13.213
+     },
+     {
+      "word": "my",
+      "start": 13.256,
+      "end": 13.384
+     },
+     {
+      "word": "Mac.",
+      "start": 13.384,
+      "end": 13.943
+     }
+    ]
+   },
+   "shots": [
+    {
+     "id": "phone-install",
+     "src": "phone1/multai-1.mp4",
+     "in": 17,
+     "out": 50,
+     "speed": 8,
+     "kind": "phone",
+     "label": "Android app · from app.multai.si",
+     "start": 0,
+     "duration": 4.5
+    },
+    {
+     "id": "phone-pair",
+     "src": "phone2/multai-4.mp4",
+     "in": 70,
+     "out": 100,
+     "speed": 7,
+     "kind": "phone",
+     "label": "Pair with a one-time code · six matching digits",
+     "start": 4.5,
+     "duration": 4.933333
+    },
+    {
+     "id": "phone-prompt",
+     "src": "phone2/multai-4.mp4",
+     "in": 118,
+     "out": 178,
+     "speed": 14,
+     "kind": "phone",
+     "label": "A new prompt from the phone",
+     "start": 9.433333000000001,
+     "duration": 4.333008
+    },
+    {
+     "id": "phone-approve",
+     "src": "phone2/multai-5.mp4",
+     "in": 38,
+     "out": 56,
+     "speed": 5,
+     "kind": "phone",
+     "label": "Approve the exact change · signed by the phone",
+     "start": 13.766341,
+     "duration": 3.933333
+    }
+   ]
+  },
+  {
+   "id": "09-ship",
+   "scene": "shots",
+   "start": 109.533007,
+   "length": 11.133333,
+   "voice": {
+    "file": "voice/09-ship.wav",
+    "at": 0.45,
+    "duration": 8.867074829931973,
+    "words": [
+     {
+      "word": "When",
+      "start": 0.299,
+      "end": 0.469
+     },
+     {
+      "word": "it's",
+      "start": 0.512,
+      "end": 0.64
+     },
+     {
+      "word": "done,",
+      "start": 0.683,
+      "end": 0.981
+     },
+     {
+      "word": "I",
+      "start": 1.109,
+      "end": 1.28
+     },
+     {
+      "word": "review",
+      "start": 1.323,
+      "end": 1.4507
+     },
+     {
+      "word": "the",
+      "start": 1.621,
+      "end": 1.7067
+     },
+     {
+      "word": "diff,",
+      "start": 1.749,
+      "end": 2.069
+     },
+     {
+      "word": "and",
+      "start": 2.261,
+      "end": 2.389
+     },
+     {
+      "word": "Muse",
+      "start": 2.432,
+      "end": 2.645
+     },
+     {
+      "word": "Wonder",
+      "start": 2.731,
+      "end": 2.9867
+     },
+     {
+      "word": "drafts",
+      "start": 3.072,
+      "end": 3.413
+     },
+     {
+      "word": "the",
+      "start": 3.456,
+      "end": 3.541
+     },
+     {
+      "word": "pull",
+      "start": 3.584,
+      "end": 3.712
+     },
+     {
+      "word": "request,",
+      "start": 3.797,
+      "end": 4.245
+     },
+     {
+      "word": "crediting",
+      "start": 4.48,
+      "end": 4.736
+     },
+     {
+      "word": "who",
+      "start": 4.907,
+      "end": 5.077
+     },
+     {
+      "word": "directed",
+      "start": 5.12,
+      "end": 5.333
+     },
+     {
+      "word": "the",
+      "start": 5.504,
+      "end": 5.589
+     },
+     {
+      "word": "agent.",
+      "start": 5.632,
+      "end": 6.165
+     },
+     {
+      "word": "A",
+      "start": 6.485,
+      "end": 6.528
+     },
+     {
+      "word": "watch",
+      "start": 6.571,
+      "end": 6.784
+     },
+     {
+      "word": "link",
+      "start": 6.912,
+      "end": 7.0827
+     },
+     {
+      "word": "lets",
+      "start": 7.211,
+      "end": 7.3387
+     },
+     {
+      "word": "anyone",
+      "start": 7.424,
+      "end": 7.68
+     },
+     {
+      "word": "replay",
+      "start": 7.851,
+      "end": 8.149
+     },
+     {
+      "word": "the",
+      "start": 8.192,
+      "end": 8.277
+     },
+     {
+      "word": "session.",
+      "start": 8.32,
+      "end": 8.667
+     }
+    ]
+   },
+   "shots": [
+    {
+     "id": "ship-pr",
+     "src": "D1.mp4",
+     "in": 9.5,
+     "out": 34,
+     "speed": 4,
+     "kind": "mac",
+     "label": "Muse Wonder 1.0 · drafts the pull request",
+     "zoom": [
+      [
+       0,
+       [
+        0.2,
+        0.12,
+        0.6,
+        0.76
+       ]
+      ],
+      [
+       1,
+       [
+        0.24,
+        0.3,
+        0.52,
+        0.55
+       ]
+      ]
+     ],
+     "start": 0,
+     "duration": 6.133333
+    },
+    {
+     "id": "ship-replay",
+     "src": "E2.mp4",
+     "in": 1.5,
+     "out": 13,
+     "speed": 2.3,
+     "kind": "browser",
+     "label": "Watch link · replay the whole session",
+     "zoom": [
+      [
+       0,
+       [
+        0.15,
+        0.06,
+        0.7,
+        0.9
+       ]
+      ],
+      [
+       1,
+       [
+        0.2,
+        0.1,
+        0.6,
+        0.7
+       ]
+      ]
+     ],
+     "start": 6.133333,
+     "duration": 5
+    }
+   ]
+  },
+  {
+   "id": "10-close",
+   "scene": "close",
+   "start": 120.66633999999999,
+   "length": 12,
+   "voice": {
+    "file": "voice/10-close.wav",
+    "at": 0.45,
+    "duration": 8.73936507936508,
+    "words": [
+     {
+      "word": "Your",
+      "start": 0.299,
+      "end": 0.469
+     },
+     {
+      "word": "code,",
+      "start": 0.512,
+      "end": 0.917
+     },
+     {
+      "word": "keys",
+      "start": 1.067,
+      "end": 1.28
+     },
+     {
+      "word": "and",
+      "start": 1.536,
+      "end": 1.7067
+     },
+     {
+      "word": "terminal",
+      "start": 1.749,
+      "end": 2.176
+     },
+     {
+      "word": "never",
+      "start": 2.261,
+      "end": 2.56
+     },
+     {
+      "word": "leave",
+      "start": 2.688,
+      "end": 2.816
+     },
+     {
+      "word": "your",
+      "start": 2.901,
+      "end": 2.9867
+     },
+     {
+      "word": "machine.",
+      "start": 3.029,
+      "end": 3.477
+     },
+     {
+      "word": "For",
+      "start": 3.84,
+      "end": 3.968
+     },
+     {
+      "word": "teams,",
+      "start": 4.011,
+      "end": 4.437
+     },
+     {
+      "word": "classrooms",
+      "start": 4.651,
+      "end": 5.1627
+     },
+     {
+      "word": "and",
+      "start": 5.291,
+      "end": 5.4187
+     },
+     {
+      "word": "open",
+      "start": 5.461,
+      "end": 5.632
+     },
+     {
+      "word": "source:",
+      "start": 5.76,
+      "end": 6.165
+     },
+     {
+      "word": "MultAI.",
+      "start": 6.357,
+      "end": 6.997
+     },
+     {
+      "word": "Build",
+      "start": 7.125,
+      "end": 7.381
+     },
+     {
+      "word": "with",
+      "start": 7.467,
+      "end": 7.552
+     },
+     {
+      "word": "AI,",
+      "start": 7.595,
+      "end": 8
+     },
+     {
+      "word": "together.",
+      "start": 8.149,
+      "end": 8.539
+     }
+    ]
+   },
+   "shots": []
+  }
+ ]
+}

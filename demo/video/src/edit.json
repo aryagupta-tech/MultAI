@@ -1,0 +1,610 @@
+{
+  "fps": 30,
+  "takes": "~/Movies/MultAI-demo/takes",
+  "beats": [
+    {
+      "id": "01-hook",
+      "length": 11,
+      "scene": "hook"
+    },
+    {
+      "id": "02-reveal",
+      "length": 8.5,
+      "scene": "reveal"
+    },
+    {
+      "id": "03-host",
+      "length": 19,
+      "shots": [
+        {
+          "id": "host-branch",
+          "src": "A.mp4",
+          "in": 21,
+          "out": 26.6,
+          "speed": 1,
+          "kind": "mac",
+          "label": "Your real project · its own git branch",
+          "zoom": [
+            [
+              0,
+              [
+                0,
+                0,
+                1,
+                1
+              ]
+            ],
+            [
+              0.35,
+              [
+                0,
+                0,
+                1,
+                1
+              ]
+            ],
+            [
+              1,
+              [
+                0.71,
+                0.07,
+                0.29,
+                0.14
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "host-point",
+          "src": "A.mp4",
+          "in": 4.6,
+          "out": 12.2,
+          "speed": 1.3,
+          "kind": "mac",
+          "label": "SAM 3.1 · point at the problem",
+          "zoom": [
+            [
+              0,
+              [
+                0.22,
+                0.19,
+                0.56,
+                0.64
+              ]
+            ],
+            [
+              1,
+              [
+                0.3,
+                0.42,
+                0.46,
+                0.36
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "host-plan",
+          "src": "A.mp4",
+          "in": 41.5,
+          "out": 49.5,
+          "speed": 2,
+          "kind": "mac",
+          "label": "Muse Spark 1.3 · plans the fix",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.18,
+                0.52,
+                0.66
+              ]
+            ],
+            [
+              1,
+              [
+                0.22,
+                0.3,
+                0.48,
+                0.5
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "host-approve",
+          "src": "A.mp4",
+          "in": 131.5,
+          "out": 136,
+          "speed": 1,
+          "kind": "mac",
+          "label": "Every change waits for the host",
+          "zoom": [
+            [
+              0,
+              [
+                0.21,
+                0.4,
+                0.54,
+                0.42
+              ]
+            ],
+            [
+              1,
+              [
+                0.22,
+                0.5,
+                0.42,
+                0.3
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "04-look",
+      "length": 12,
+      "shots": [
+        {
+          "id": "look-hero",
+          "src": "A.mp4",
+          "in": 143,
+          "out": 151,
+          "speed": 1,
+          "kind": "mac",
+          "label": "look_at_app · SAM 3.1 checks the fix",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.14,
+                0.4,
+                0.66
+              ]
+            ],
+            [
+              0.45,
+              [
+                0.23,
+                0.5,
+                0.3,
+                0.3
+              ]
+            ],
+            [
+              1,
+              [
+                0.23,
+                0.5,
+                0.3,
+                0.3
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "look-test",
+          "src": "A.mp4",
+          "in": 160,
+          "out": 163,
+          "speed": 1,
+          "kind": "mac",
+          "label": "npm test · the totals are still wrong",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.06,
+                0.52,
+                0.86
+              ]
+            ],
+            [
+              1,
+              [
+                0.22,
+                0.1,
+                0.46,
+                0.6
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "05-join",
+      "length": 14,
+      "shots": [
+        {
+          "id": "join-browser",
+          "src": "B1.mp4",
+          "in": 0.3,
+          "out": 7.2,
+          "speed": 1,
+          "kind": "browser",
+          "label": "Alex joins from a browser · no install",
+          "zoom": [
+            [
+              0,
+              [
+                0.05,
+                0.02,
+                0.9,
+                0.8
+              ]
+            ],
+            [
+              1,
+              [
+                0.1,
+                0.04,
+                0.8,
+                0.62
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "join-admit",
+          "src": "B2.mp4",
+          "in": 1,
+          "out": 5.2,
+          "speed": 1,
+          "kind": "mac",
+          "label": "The host admits Alex",
+          "zoom": [
+            [
+              0,
+              [
+                0.55,
+                0,
+                0.45,
+                0.5
+              ]
+            ],
+            [
+              1,
+              [
+                0.6,
+                0,
+                0.4,
+                0.4
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "join-brief",
+          "src": "B2.mp4",
+          "in": 21.5,
+          "out": 24.5,
+          "speed": 1,
+          "kind": "mac",
+          "label": "Muse Wonder 1.0 · catch-up brief",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.3,
+                0.52,
+                0.6
+              ]
+            ],
+            [
+              1,
+              [
+                0.22,
+                0.38,
+                0.46,
+                0.46
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "06-steer",
+      "length": 12,
+      "shots": [
+        {
+          "id": "steer-alex",
+          "src": "B3.mp4",
+          "in": 6.5,
+          "out": 17.5,
+          "speed": 2,
+          "kind": "browser",
+          "label": "Alex sends the agent a direction",
+          "zoom": [
+            [
+              0,
+              [
+                0.15,
+                0.1,
+                0.7,
+                0.85
+              ]
+            ],
+            [
+              1,
+              [
+                0.2,
+                0.4,
+                0.6,
+                0.55
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "steer-run",
+          "src": "B4.mp4",
+          "in": 0.4,
+          "out": 5.2,
+          "speed": 1,
+          "kind": "mac",
+          "label": "Not the host's instruction · waits to be run",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.5,
+                0.54,
+                0.4
+              ]
+            ],
+            [
+              1,
+              [
+                0.23,
+                0.68,
+                0.44,
+                0.2
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "steer-done",
+          "src": "B4.mp4",
+          "in": 156,
+          "out": 160.5,
+          "speed": 1.5,
+          "kind": "mac",
+          "label": "Integer cents · $22.75 · tests pass",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.3,
+                0.52,
+                0.6
+              ]
+            ],
+            [
+              1,
+              [
+                0.22,
+                0.38,
+                0.48,
+                0.5
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "07-split",
+      "length": 13,
+      "shots": [
+        {
+          "id": "split-type",
+          "src": "C1.mp4",
+          "in": 3.6,
+          "out": 11,
+          "speed": 1.6,
+          "kind": "mac",
+          "label": "/split · parallel agents",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.6,
+                0.52,
+                0.36
+              ]
+            ],
+            [
+              1,
+              [
+                0.22,
+                0.7,
+                0.46,
+                0.25
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "split-run",
+          "src": "C1.mp4",
+          "in": 34,
+          "out": 62,
+          "speed": 7,
+          "kind": "mac",
+          "label": "Two agents · two worktrees · merged with git",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.25,
+                0.52,
+                0.6
+              ]
+            ],
+            [
+              1,
+              [
+                0.22,
+                0.4,
+                0.48,
+                0.48
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "split-handoff",
+          "src": "C2.mp4",
+          "in": 21,
+          "out": 24.2,
+          "speed": 1,
+          "kind": "mac",
+          "label": "Switch models · context hands over",
+          "zoom": [
+            [
+              0,
+              [
+                0.21,
+                0.46,
+                0.5,
+                0.36
+              ]
+            ],
+            [
+              1,
+              [
+                0.23,
+                0.5,
+                0.46,
+                0.3
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "08-phone",
+      "length": 16.5,
+      "shots": [
+        {
+          "id": "phone-install",
+          "src": "phone1/multai-1.mp4",
+          "in": 17,
+          "out": 50,
+          "speed": 8,
+          "kind": "phone",
+          "label": "Android app · from app.multai.si"
+        },
+        {
+          "id": "phone-pair",
+          "src": "phone2/multai-4.mp4",
+          "in": 70,
+          "out": 100,
+          "speed": 7,
+          "kind": "phone",
+          "label": "Pair with a one-time code · six matching digits"
+        },
+        {
+          "id": "phone-prompt",
+          "src": "phone2/multai-4.mp4",
+          "in": 118,
+          "out": 178,
+          "speed": 14,
+          "kind": "phone",
+          "label": "A new prompt from the phone"
+        },
+        {
+          "id": "phone-approve",
+          "src": "phone2/multai-5.mp4",
+          "in": 38,
+          "out": 56,
+          "speed": 5,
+          "kind": "phone",
+          "label": "Approve the exact change · signed by the phone"
+        }
+      ]
+    },
+    {
+      "id": "09-ship",
+      "length": 11,
+      "shots": [
+        {
+          "id": "ship-pr",
+          "src": "D1.mp4",
+          "in": 9.5,
+          "out": 34,
+          "speed": 4,
+          "kind": "mac",
+          "label": "Muse Wonder 1.0 · drafts the pull request",
+          "zoom": [
+            [
+              0,
+              [
+                0.2,
+                0.12,
+                0.6,
+                0.76
+              ]
+            ],
+            [
+              1,
+              [
+                0.24,
+                0.3,
+                0.52,
+                0.55
+              ]
+            ]
+          ]
+        },
+        {
+          "id": "ship-replay",
+          "src": "E2.mp4",
+          "in": 1.5,
+          "out": 13,
+          "speed": 2.3,
+          "kind": "browser",
+          "label": "Watch link · replay the whole session",
+          "zoom": [
+            [
+              0,
+              [
+                0.15,
+                0.06,
+                0.7,
+                0.9
+              ]
+            ],
+            [
+              1,
+              [
+                0.2,
+                0.1,
+                0.6,
+                0.7
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "10-close",
+      "length": 12,
+      "scene": "close"
+    }
+  ]
+}
