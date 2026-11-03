@@ -1,0 +1,22 @@
+{
+  "name": "multai-demo-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "voice": "node scripts/voice.mjs",
+    "timeline": "node scripts/timeline.mjs",
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Main out/multai-demo.mp4 --codec h264 --crf 16",
+    "render:teaser": "remotion render src/index.ts Teaser out/multai-teaser.mp4 --codec h264 --crf 16"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.537",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.537"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "typescript": "5.6.3"
+  }
+}

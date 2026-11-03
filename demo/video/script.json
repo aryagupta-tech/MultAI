@@ -1,0 +1,45 @@
+{
+  "voiceId": "f32827cacb3942f0ac6a3cd83a4f5772",
+  "beats": [
+    {
+      "id": "01-hook",
+      "text": "Every AI coding agent today is single-player. When you get stuck, bringing in a teammate means screenshots, copy-paste, and explaining everything again."
+    },
+    {
+      "id": "02-reveal",
+      "text": "This is MultAI: one AI coding agent, shared by your whole team, in real time. Built on Meta's Muse models."
+    },
+    {
+      "id": "03-host",
+      "text": "I open my real project. The chat gets its own git branch, so my folder is never touched. Muse Spark plans the fix, and every file change and command waits for my approval."
+    },
+    {
+      "id": "04-join",
+      "text": "I'm stuck, so I send Alex a link. Alex joins from the browser: no install, no API key. Muse Wonder writes a catch-up brief: the goal, what was tried, and who's waiting on what."
+    },
+    {
+      "id": "05-point",
+      "text": "I paste a screenshot and point at the broken button. SAM 3.1 finds its exact edges, so the agent sees exactly what I mean. Alex sends a direction from the browser: use cents, not floats. It isn't mine, so the agent pauses until I approve it."
+    },
+    {
+      "id": "06-look",
+      "text": "Then the agent checks its own work. It opens the app in a hidden browser, and SAM outlines every Pay button with pixel boxes. It doesn't guess the layout is fixed. It sees it."
+    },
+    {
+      "id": "07-split",
+      "text": "Bigger task? Slash split puts up to four agents on it at once, each in its own worktree, merged with git. Switch models mid-chat, and the new one inherits everything the last one did."
+    },
+    {
+      "id": "08-phone",
+      "text": "And I don't need to be at my desk. I install the Android app, pair it with a QR code and six matching digits, and from my phone I approve the agent's next step, steer it, or send a brand-new prompt. Every request is signed by the phone and checked again by my Mac."
+    },
+    {
+      "id": "09-ship",
+      "text": "When it's done, I review the diff, and Muse Wonder drafts the pull request, crediting who directed the agent. A watch link lets anyone replay the session."
+    },
+    {
+      "id": "10-close",
+      "text": "Your code, keys and terminal never leave your machine. For teams, classrooms and open source: MultAI. Build with AI, together."
+    }
+  ]
+}
