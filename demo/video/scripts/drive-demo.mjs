@@ -5,6 +5,7 @@
 // Every click and mark is appended to marks.jsonl with a wall-clock time and the element's
 // rectangle in CSS pixels, so the edit can zoom onto the exact control.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 const steps = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const marksFile = process.argv[3];
@@ -40,7 +41,7 @@ const finder = (target) => `(() => {
     list = [...scope.querySelectorAll(t.any ? '*' : clickable)].filter((e) => visible(e) && (t.exact ? label(e) === want || (e.getAttribute('aria-label') ?? '').toLowerCase() === want : label(e).includes(want)));
     list.sort((a, b) => a.getBoundingClientRect().width * a.getBoundingClientRect().height - b.getBoundingClientRect().width * b.getBoundingClientRect().height);
   }
-  const e = list[t.nth ?? 0];
+  const e = list.at(t.nth ?? 0);
   if (!e) return null;
   e.scrollIntoView({ block: 'nearest' });
   const r = e.getBoundingClientRect();
@@ -69,6 +70,12 @@ async function click(target) {
   // at: [fx, fy] clicks that fraction of the element (a point inside an image), not its centre.
   const [fx, fy] = target.at ?? [0.5, 0.5];
   const x = rect.x + rect.w * fx, y = rect.y + rect.h * fy;
+  // WARP=<helper> WINDOW=x,y glides the real cursor there first, so the screen recording shows it.
+  if (process.env.WARP && process.env.WINDOW) {
+    const [wx, wy] = process.env.WINDOW.split(',').map(Number);
+    execFileSync(process.env.WARP, [String(wx + x), String(wy + y), '36']);
+    await sleep(250);
+  }
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
   await sleep(120);
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
@@ -101,6 +108,33 @@ for (const step of steps) {
       if (Date.now() > until) throw new Error(`timed out waiting for ${JSON.stringify(step.waitFor)}`);
       await sleep(400);
     }
+  }
+  if (step.approveUntilDone) {
+    // Approves each waiting action after a beat (so it reads on screen) until the agent is Ready again.
+    const { delay = 2200, timeout = 600000 } = step.approveUntilDone;
+    const end = Date.now() + timeout;
+    const state = () => evaluate(`(() => { const h = document.querySelector('header')?.innerText ?? ''; return { ready: /\\n(Ready|Done)\\n/.test(h), paused: /\\nPaused\\n/.test(h), approve: [...document.querySelectorAll('main button')].some(b => b.innerText.trim() === 'Approve') }; })()`);
+    await sleep(1500);
+    const started = Date.now();
+    let busy = false;
+    for (;;) {
+      const st = await state();
+      if (!st.ready) busy = true;
+      if (st.approve) { await sleep(delay); await click({ text: 'Approve', exact: true, label: 'approve' }); await sleep(1500); continue; }
+      if (st.paused) throw new Error('the run paused or failed');
+      if (st.ready && (busy || Date.now() - started > 20000)) { mark('run done'); break; }
+      if (Date.now() > end) throw new Error('approveUntilDone timed out');
+      await sleep(500);
+    }
+  }
+  if (step.until) {
+    // until: a JS expression polled until it is truthy.
+    const until = Date.now() + (step.timeout ?? 300000);
+    while (!(await evaluate(step.until))) {
+      if (Date.now() > until) throw new Error(`timed out: ${step.until}`);
+      await sleep(500);
+    }
+    mark(step.label ?? 'until');
   }
   if (step.mark) mark(step.mark, step.text || step.sel ? await find({ any: true, text: step.text, sel: step.sel }) : undefined);
   if (step.eval) console.log(JSON.stringify(await evaluate(step.eval)));

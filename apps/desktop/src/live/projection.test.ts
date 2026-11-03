@@ -38,6 +38,11 @@ describe('projectSession', () => {
     expect(d.timeline.map((t) => t.sequence)).toEqual([1, 2, 3, 4]);
   });
 
+  test('a model handoff stays visible instead of folding into routine activity', () => {
+    const handoff = projectSession({ session: session(), participants: [], events: [ev(1, 'activity.completed', null, { tool: 'handoff', summary: 'Handed over from a to b: the conversation.' })], me });
+    expect(handoff.timeline[0]).toMatchObject({ type: 'system', eventType: 'model.handoff', text: 'Handed over from a to b: the conversation.' });
+  });
+
   test('derives capabilities from the service, never more', () => {
     expect(d.capabilities).toEqual({ submit: true, approve: true, configure: true, decide: false, delete: true });
     const viewer = projectSession({ session: session({ role: 'viewer', ownerId: other, capabilities: { submit: false, manage: false, execute: false } }), participants: [], events: [], me });

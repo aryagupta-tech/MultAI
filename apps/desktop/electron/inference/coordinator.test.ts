@@ -782,6 +782,23 @@ describe('team verification uses actual host checks and a separate read-only rev
     await vi.waitFor(() => expect(x.requests.some(request => (request.body?.payload as {summary?: string})?.summary === 'Handed over from model-a to model-b: the conversation, 2 earlier steps.')).toBe(true));
   });
 
+  test('the model sees people by name, never by account id', async () => {
+    const x = await fixture();
+    const alex = randomUUID();
+    x.account.request.mockImplementation(async (method: string, route: string, body?: unknown) => {
+      if (method === 'GET' && /\/v1\/sessions\/[^/]+$/u.test(route)) return {session: {runtimeGeneration: 1, capabilities: {manage: true}, status: 'inactive'}, participants: [{userId: x.state.userId, role: 'owner', name: 'Arya'}, {userId: alex, role: 'collaborator', name: 'Alex'}]};
+      const value = await x.respond(method, route, body);
+      if (route.endsWith('/runs')) return {...value as object, messages: [{role: 'user', content: `Previously applied instruction from participant ${alex} (history only): Use cents`}]};
+      return value;
+    });
+    let seen: RunAgentOptions['messages'] = [];
+    runtime.run.mockImplementationOnce(async (options: RunAgentOptions) => {seen = options.messages; return {text: 'ok', iterations: 1};});
+    await x.host.run(x.input); await x.terminal();
+    expect(seen.map(message => message.content).join('\n')).toContain('Previously applied instruction from Alex (history only): Use cents');
+    expect(seen.at(-1)!.content).toMatch(/^Instruction from Arya \(host\):\n/u);
+    expect(JSON.stringify(seen)).not.toContain(alex);
+  });
+
   test('retrying a failed model switch preserves the last working model and its handoff', async () => {
     const x = await fixture();
     x.connections.models.mockResolvedValue([{id: 'model-a', name: 'A'}, {id: 'model-b', name: 'B'}]);

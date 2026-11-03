@@ -11,19 +11,19 @@
     },
     {
       "id": "03-host",
-      "text": "I open my real project. The chat gets its own git branch, so my folder is never touched. Muse Spark plans the fix, and every file change and command waits for my approval."
+      "text": "I open my real project, and the chat gets its own git branch, so my folder is never touched. I paste a screenshot and point at the broken button. SAM 3.1 finds its exact edges, so Muse Spark sees exactly what I mean, plans the fix, and waits for my approval."
     },
     {
-      "id": "04-join",
-      "text": "I'm stuck, so I send Alex a link. Alex joins from the browser: no install, no API key. Muse Wonder writes a catch-up brief: the goal, what was tried, and who's waiting on what."
+      "id": "04-look",
+      "text": "Then it checks its own work. It opens the app in a hidden browser, and SAM 3.1 marks the Pay buttons with exact pixel boxes. It doesn't guess the layout is fixed. It sees it."
     },
     {
-      "id": "05-point",
-      "text": "I paste a screenshot and point at the broken button. SAM 3.1 finds its exact edges, so the agent sees exactly what I mean. Alex sends a direction from the browser: use cents, not floats. It isn't mine, so the agent pauses until I approve it."
+      "id": "05-join",
+      "text": "The totals are wrong too, so I bring in Alex with a link. Alex joins from the browser: no install, no API key. Muse Wonder writes a catch-up brief: the goal, what was tried, and who's waiting on what."
     },
     {
-      "id": "06-look",
-      "text": "Then the agent checks its own work. It opens the app in a hidden browser, and SAM outlines every Pay button with pixel boxes. It doesn't guess the layout is fixed. It sees it."
+      "id": "06-steer",
+      "text": "Alex tells the agent: use cents, not floats. It isn't my instruction, so it waits for my approval. Every file change and command waits for me, too."
     },
     {
       "id": "07-split",

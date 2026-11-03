@@ -131,6 +131,8 @@ export function projectEvent(e: WireEvent, nameOf: (userId: string | null) => st
       if (e.type === 'activity.completed' && p.tool === 'look_at_app' && typeof p.image === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/u.test(p.image) && p.image.length <= 20_000) {
         return {...base,type:'look',page:typeof p.page === 'string' ? p.page.slice(0,500) : '',summary:typeof p.summary === 'string' ? p.summary.slice(0,1000) : 'Looked at the app',image:p.image,...(typeof p.detail === 'string' && p.detail ? {detail:p.detail.slice(0,3000)} : {})};
       }
+      // A model switch handing over the chat stays visible instead of folding into routine activity.
+      if (e.type === 'activity.completed' && p.tool === 'handoff' && typeof p.summary === 'string') return {...base,type:'system',tone:'info',eventType:'model.handoff',text:p.summary.slice(0,1000)};
       const kinds:Record<string,ToolCall['tool']>={read:'read',read_file:'read',search:'search',search_text:'search',list:'list',list_files:'list',list_directory:'list',codebase_search:'search',write:'write',write_file:'write',shell:'shell',run_shell:'shell',run_command:'shell',diff:'diff'};
       const tool = typeof p.tool === 'string' ? kinds[p.tool] : undefined;
       const result=p.result&&typeof p.result==='object'?p.result as Record<string,unknown>:{};
