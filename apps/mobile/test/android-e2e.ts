@@ -137,6 +137,34 @@ try {
     assert.equal(decided.at(-1)?.approved, true);
   });
 
+  await step('the signed-in owner composer fits with larger fallback-font text and Send stays on screen', async () => {
+    // Seed this disposable host's refresh token through the real Keystore plugin; no Google or
+    // production account is involved. The subsequent restore still uses the ordinary local API.
+    await page.evaluate(async refreshToken=>{
+      const native=(window as unknown as {Capacitor:{Plugins:{SecureStore:{set(options:{key:string;value:string}):Promise<void>}}}}).Capacitor.Plugins.SecureStore;
+      await native.set({key:'account.refreshToken',value:refreshToken});
+    },host.refresh);
+    adb('shell','am','force-stop',APP);page=await attach();
+    await page.getByRole('button',{name:'Owner control',exact:true}).click({timeout:15_000});
+    await page.getByRole('button',{name:/Checkout fix/u}).click();
+    await page.getByRole('heading',{name:'New prompt',exact:true}).waitFor();
+    await page.locator('#composer').fill('Keep the owner composer usable with larger text.');
+    const layout=await page.locator('form.c-composer').evaluate((form:HTMLFormElement)=>{
+      form.style.fontFamily='monospace';
+      for(const control of form.querySelectorAll<HTMLElement>('button,textarea'))control.style.fontSize=`${parseFloat(getComputedStyle(control).fontSize)*1.25}px`;
+      const send=form.querySelector<HTMLButtonElement>('button[type="button"].c-btn')!,bounds=send.getBoundingClientRect();
+      return {overflow:document.documentElement.scrollWidth-innerWidth,left:bounds.left,right:bounds.right,width:innerWidth,enabled:!send.disabled};
+    });
+    assert.ok(layout.overflow<=1,`larger owner text must not widen the page (${layout.overflow}px)`);
+    assert.ok(layout.enabled&&layout.left>=0&&layout.right<=layout.width+1,'Send remains enabled and inside the viewport');
+    screencap('android-owner-larger-text');
+    await page.locator('form.c-composer').evaluate((form:HTMLFormElement)=>{
+      form.style.removeProperty('font-family');
+      for(const control of form.querySelectorAll<HTMLElement>('button,textarea'))control.style.removeProperty('font-size');
+    });
+    await page.locator('#composer').fill('');
+  });
+
   await step('Stop from the app cancels the run and its waiting approval', async () => {
     await call(host, 'POST', `/v1/sessions/${sessionId}/messages`, {requestId: crypto.randomUUID(), kind: 'instruction', text: 'Also add a regression test.'});
     await page.getByText('Also add a regression test.').waitFor({timeout: 15_000});

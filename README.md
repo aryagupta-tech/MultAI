@@ -140,6 +140,8 @@ Sign in with Google, open **Settings → Models & accounts → Meta Muse Spark**
 
 ## Tests
 
+Current release checks, live-provider evidence, artifact hashes and remaining device checks: [3 November 2026 verification](docs/verification/release-2026-11-03.md).
+
 ~~~sh
 npm run typecheck
 npm run test:integration   # backend + runtime against a disposable PostgreSQL
