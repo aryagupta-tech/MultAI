@@ -15,7 +15,7 @@
     },
     {
       "id": "04-look",
-      "text": "Then it checks its own work. It opens the app in a hidden browser, and SAM 3.1 marks the Pay buttons with exact pixel boxes. It doesn't guess the layout is fixed. It sees it."
+      "text": "Then it checks its own work. It opens the app in a hidden browser, and SAM 3.1 marks the Pay button with exact pixel boxes. It doesn't guess the layout is fixed. It sees it."
     },
     {
       "id": "05-join",
@@ -31,7 +31,7 @@
     },
     {
       "id": "08-phone",
-      "text": "And I don't need to be at my desk. I install the Android app, pair it with a QR code and six matching digits, and from my phone I approve the agent's next step, steer it, or send a brand-new prompt. Every request is signed by the phone and checked again by my Mac."
+      "text": "And I don't need to be at my desk. I install the Android app, pair it with a one-time code and six matching digits, and from my phone I send a brand-new prompt, start it, and approve each step. Every request is signed by the phone and checked again by my Mac."
     },
     {
       "id": "09-ship",

@@ -79,7 +79,15 @@ export class Account {
     } else {
       const secure = this.requireSecure();
       const deviceId = await secure.get(KEYS.device), deviceSecret = await secure.get(KEYS.deviceSecret);
-      const tokens = await this.api.request('POST', '/v1/auth/google/exchange', {body: {...body, ...(deviceId && deviceSecret ? {deviceId, deviceSecret} : {})}, schema: tokenBundleSchema});
+      const exchange = (device: boolean) => this.api.request('POST', '/v1/auth/google/exchange', {body: {...body, ...(device && deviceId && deviceSecret ? {deviceId, deviceSecret} : {})}, schema: tokenBundleSchema});
+      let tokens: Awaited<ReturnType<typeof exchange>>;
+      try {tokens = await exchange(true);}
+      catch (failure) {
+        // This phone was enrolled for another account (someone signed out and in as someone else): enroll it anew.
+        if (!(failure instanceof ApiError) || failure.code !== 'device_account_mismatch') throw failure;
+        await secure.remove(KEYS.device); await secure.remove(KEYS.deviceSecret);
+        tokens = await exchange(false);
+      }
       if (generation !== this.generation) throw new ApiError(409, 'stale', 'Sign-in changed.', 'invalid');
       await secure.set(KEYS.refresh, tokens.refreshToken);
       await secure.set(KEYS.device, tokens.deviceId);

@@ -7,7 +7,7 @@
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
-const steps = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const steps = JSON.parse(process.argv[2].trim().startsWith('[') ? process.argv[2] : readFileSync(process.argv[2], 'utf8'));
 const marksFile = process.argv[3];
 const port = process.env.CDP_PORT ?? '9334';
 const page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((t) => t.type === 'page' && (!process.env.CDP_URL || t.url.includes(process.env.CDP_URL)));
