@@ -3,7 +3,7 @@
 
 import { getBridge } from '../bridge/client';
 import type { AuthState, LiveBatch, LiveStatusChange, Result, ServiceError } from '../bridge/contract';
-import type { WireEvent, WireMe, WireParticipant, WireSession } from '../bridge/wire';
+import type { WireEvent, WireInvitationSummary, WireMe, WireParticipant, WireSession } from '../bridge/wire';
 import { hueFor } from '../model/format';
 import type { Draft } from '../model/store';
 import * as work from './work';
@@ -461,9 +461,19 @@ export async function leaveSession(id: string): Promise<void> {
   useApp.getState().toast('You left the session. The host can invite you again.', 'success');
 }
 
-export async function createInvitation(id: string, expiresInSeconds: number): Promise<{ token: string; expiresAt: string } | null> {
+/** expiresInSeconds null: the link works until the host revokes it. */
+export async function createInvitation(id: string, expiresInSeconds: number | null): Promise<{ token: string; expiresAt: string | null } | null> {
   const value = await call(api().createInvitation(id, expiresInSeconds));
   return value ? { token: value.invitation.token, expiresAt: value.invitation.expiresAt } : null;
+}
+
+export async function listInvitations(id: string): Promise<WireInvitationSummary[] | null> {
+  const value = await call(api().listInvitations(id));
+  return value ? value.invitations : null;
+}
+
+export async function revokeInvitation(id: string, invitationId: string): Promise<boolean> {
+  return Boolean(await call(api().revokeInvitation(id, invitationId)));
 }
 
 /** Invitation tokens are exactly 43 base64url characters, matching the service. */

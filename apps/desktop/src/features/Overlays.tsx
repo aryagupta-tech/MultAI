@@ -6,6 +6,7 @@ import {
 import { useApp, type Preferences } from '../model/store';
 import { fuzzyFilter } from '../model/fuzzy';
 import type { Project } from '../model/types';
+import type { WireInvitationSummary } from '../bridge/wire';
 import { getBridge } from '../bridge/client';
 import {copyText} from '../bridge/clipboard';
 import * as live from '../live/controller';
@@ -344,17 +345,32 @@ export function InviteDialog() {
   const scope=useRef({key:scopeKey});if(scope.current.key!==scopeKey)scope.current={key:scopeKey};
   const creating=useRef<object|null>(null);
   const [role, setRole] = useState<'collaborator' | 'viewer'>('collaborator');
-  const [expiry, setExpiry] = useState<'1h' | '24h' | '7d'>('24h');
-  const [invite, setInvite] = useState<{ code: string; link: string; expiresAt?: string } | null>(null);
+  const [expiry, setExpiry] = useState<'never' | '1h' | '24h' | '7d'>('never');
+  const [invite, setInvite] = useState<{ code: string; link: string; expiresAt?: string | null } | null>(null);
+  const [links, setLinks] = useState<WireInvitationSummary[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState<'link' | 'code' | null>(null);
 
+  // The host's links that still work, so an open-ended link can always be revoked.
+  const refreshLinks = async () => {
+    if (!d || !isLive || !d.capabilities.configure) { setLinks(null); return; }
+    const operation = scope.current;
+    const list = await live.listInvitations(d.id);
+    if (scope.current === operation) setLinks(list);
+  };
   useEffect(() => {
     if (open) {
       setInvite(null);
       setCopied(null);setBusy(false);
+      void refreshLinks();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open,activeId,accountId]);
+
+  const revoke = async (invitationId: string) => {
+    if (!d) return;
+    if (await live.revokeInvitation(d.id, invitationId)) { app.toast('Link revoked. People it already admitted stay in the session.', 'success'); void refreshLinks(); }
+  };
 
   const create = async () => {
     if (!d||creating.current===scope.current) return;
@@ -366,9 +382,9 @@ export function InviteDialog() {
     }
     creating.current=operation;setBusy(true);
     try{
-      const seconds = expiry === '1h' ? 3600 : 86_400;
+      const seconds = expiry === 'never' ? null : expiry === '1h' ? 3600 : expiry === '7d' ? 7 * 86_400 : 86_400;
       const created = await live.createInvitation(d.id, seconds);
-      if(scope.current===operation&&created)setInvite({code:created.token,link:live.inviteLink(created.token),expiresAt:created.expiresAt});
+      if(scope.current===operation&&created){setInvite({code:created.token,link:live.inviteLink(created.token),expiresAt:created.expiresAt});void refreshLinks();}
     }catch{if(scope.current===operation)app.toast('Couldn’t create the invitation. Try again.','error');}
     finally{if(creating.current===operation)creating.current=null;if(scope.current===operation)setBusy(false);}
   };
@@ -396,16 +412,14 @@ export function InviteDialog() {
           </div>
         )}
         <div className="settings-row">
-          <div><div className="switch-label">Link expires</div>{isLive && <p className="switch-desc">You’ll choose collaborator or viewer when you admit each person.</p>}</div>
+          <div><div className="switch-label">Link works</div>{isLive && <p className="switch-desc">You choose collaborator or viewer when you admit each person. They stay until they leave or you remove them.</p>}</div>
           <Segmented
             label="Link expiry"
             size="sm"
             value={expiry}
             disabled={busy}
             onChange={(v) => { setExpiry(v); setInvite(null); }}
-            options={isLive
-              ? [{ value: '1h', label: '1 hour' }, { value: '24h', label: '1 day' }]
-              : [{ value: '1h', label: '1 hour' }, { value: '24h', label: '1 day' }, { value: '7d', label: '7 days' }]}
+            options={[{ value: 'never', label: 'Until I revoke it' }, { value: '7d', label: '7 days' }, { value: '24h', label: '1 day' }]}
           />
         </div>
 
@@ -422,12 +436,26 @@ export function InviteDialog() {
                 <button type="button" className="link-btn" onClick={() => void copy('code', invite.code)}>{copied === 'code' ? 'Copied' : 'Copy code'}</button>
               </p>
             )}
-            {invite.expiresAt && <p className="field-help">Expires {new Date(invite.expiresAt).toLocaleString()}. Anyone with it can ask to join; nobody gets in until you admit them.</p>}
+            <p className="field-help">{invite.expiresAt ? `Works until ${new Date(invite.expiresAt).toLocaleString()}.` : 'Works until you revoke it.'} Anyone with it can ask to join; nobody gets in until you admit them.</p>
           </div>
         ) : (
           <Button variant="primary" icon={Link2} onClick={() => void create()} className="btn-block" disabled={busy}>
             {busy ? 'Creating…' : 'Create invitation link'}
           </Button>
+        )}
+
+        {links && links.length > 0 && (
+          <div className="field">
+            <span className="field-label">Active links</span>
+            <ul className="invite-links">
+              {links.map((l) => (
+                <li key={l.id} className="invite-links-row">
+                  <span>{l.expiresAt ? `Until ${new Date(l.expiresAt).toLocaleDateString()}` : 'Until revoked'} · created {new Date(l.createdAt).toLocaleDateString()} · {l.admitted} admitted</span>
+                  <Button size="sm" variant="secondary" onClick={() => void revoke(l.id)}>Revoke</Button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         <p className="callout">

@@ -23,7 +23,9 @@ const schemas = {
   createSession: z.tuple([z.object({ requestId: uuid, title: z.string().min(1).max(120).optional(), message: z.object({ kind, text, image: image.optional() }).strict() }).strict()]),
   postMessage: z.tuple([uuid, z.object({ requestId: uuid, kind, text, image: image.optional() }).strict()]),
   setMode: z.tuple([uuid, z.object({ mode: z.enum(['plan', 'build']), expectedGeneration: z.number().int().positive() }).strict()]),
-  createInvitation: z.tuple([uuid, z.number().int().min(60).max(86_400)]),
+  createInvitation: z.tuple([uuid, z.number().int().min(60).max(30 * 86_400).nullable()]),
+  listInvitations: z.tuple([uuid]),
+  revokeInvitation: z.tuple([uuid, uuid]),
   joinInvitation: z.tuple([z.string().regex(/^[A-Za-z0-9_-]{43}$/)]),
   listJoinRequests: z.tuple([uuid]),
   admit: z.tuple([uuid, uuid, z.enum(['collaborator', 'viewer'])]),
@@ -90,6 +92,8 @@ export async function route(account: Account, live: LiveHub, op: ServiceOp, rawA
     case 'postMessage': return wrap(() => req('POST', `/v1/sessions/${s(0)}/messages`, args[1]));
     case 'setMode': return wrap(() => req('PATCH', `/v1/sessions/${s(0)}/mode`, args[1]));
     case 'createInvitation': return wrap(() => req('POST', `/v1/sessions/${s(0)}/invitations`, { expiresInSeconds: args[1] }));
+    case 'listInvitations': return wrap(() => req('GET', `/v1/sessions/${s(0)}/invitations`));
+    case 'revokeInvitation': return wrap(() => req('DELETE', `/v1/sessions/${s(0)}/invitations/${s(1)}`));
     case 'joinInvitation': return wrap(() => req('POST', '/v1/invitations/join', { token: s(0) }));
     case 'listJoinRequests': return wrap(() => req('GET', `/v1/sessions/${s(0)}/join-requests`));
     case 'admit': return wrap(() => req('POST', `/v1/sessions/${s(0)}/join-requests/${s(1)}/admit`, { role: s(2) }));

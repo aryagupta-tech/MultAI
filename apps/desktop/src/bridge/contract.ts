@@ -2,7 +2,7 @@
 // stay in the main process; nothing here returns them.
 
 import type {
-  WireEvent, WireInvitation, WireJoinRequest, WireJoinResult, WireMe, WireMessageKind, WireMode, WireParticipant, WireSession,
+  WireEvent, WireInvitation, WireInvitationSummary, WireJoinRequest, WireJoinResult, WireMe, WireMessageKind, WireMode, WireParticipant, WireSession,
 } from './wire';
 import type {InferenceConnectionsApi} from './inference';
 import type {HostExecutionApi} from './execution';
@@ -77,7 +77,10 @@ export interface ServiceApi {
   createSession(input: { requestId: string; title?: string; message: { kind: WireMessageKind; text: string; image?: string } }): Promise<Result<{ session: WireSession; event: WireEvent }>>;
   postMessage(sessionId: string, input: { requestId: string; kind: WireMessageKind; text: string; image?: string }): Promise<Result<{ event: WireEvent }>>;
   setMode(sessionId: string, input: { mode: WireMode; expectedGeneration: number }): Promise<Result<{ session: WireSession }>>;
-  createInvitation(sessionId: string, expiresInSeconds: number): Promise<Result<{ invitation: WireInvitation }>>;
+  /** expiresInSeconds null: the link works until revoked. */
+  createInvitation(sessionId: string, expiresInSeconds: number | null): Promise<Result<{ invitation: WireInvitation }>>;
+  listInvitations(sessionId: string): Promise<Result<{ invitations: WireInvitationSummary[] }>>;
+  revokeInvitation(sessionId: string, invitationId: string): Promise<Result<{ revoked: true }>>;
   joinInvitation(token: string): Promise<Result<WireJoinResult>>;
   listJoinRequests(sessionId: string): Promise<Result<{ requests: WireJoinRequest[] }>>;
   admit(sessionId: string, requestId: string, role: 'collaborator' | 'viewer'): Promise<Result<{ admitted: true; userId: string; role: string }>>;
@@ -133,6 +136,6 @@ export const IPC = {
 export type ServiceOp =
   | 'review'
   | 'health' | 'authState' | 'signIn' | 'cancelSignIn' | 'signOut' | 'listSessions' | 'getSession' | 'readEvents'
-  | 'createSession' | 'postMessage' | 'setMode' | 'createInvitation' | 'joinInvitation' | 'listJoinRequests' | 'admit'
+  | 'createSession' | 'postMessage' | 'setMode' | 'createInvitation' | 'listInvitations' | 'revokeInvitation' | 'joinInvitation' | 'listJoinRequests' | 'admit'
   | 'revokeParticipant' | 'leaveSession' | 'deleteSession' | 'saveDecision' | 'subscribe' | 'unsubscribe' | 'sendPresence'
   | 'createReplay' | 'listReplays' | 'revokeReplay' | 'steerInstruction' | 'removeInstruction';

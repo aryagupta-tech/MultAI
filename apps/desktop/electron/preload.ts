@@ -16,7 +16,7 @@ function listen<T>(channel: string) {
 const ops: ServiceOp[] = [
   'review',
   'health', 'authState', 'signIn', 'cancelSignIn', 'signOut', 'listSessions', 'getSession', 'readEvents', 'createSession',
-  'postMessage', 'setMode', 'createInvitation', 'joinInvitation', 'listJoinRequests', 'admit', 'revokeParticipant', 'leaveSession',
+  'postMessage', 'setMode', 'createInvitation', 'listInvitations', 'revokeInvitation', 'joinInvitation', 'listJoinRequests', 'admit', 'revokeParticipant', 'leaveSession',
   'deleteSession', 'saveDecision', 'subscribe', 'unsubscribe', 'sendPresence', 'createReplay', 'listReplays', 'revokeReplay',
   'steerInstruction', 'removeInstruction',
 ];

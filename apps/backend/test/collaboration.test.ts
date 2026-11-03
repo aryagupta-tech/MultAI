@@ -154,6 +154,30 @@ test('expired and revoked invitations cannot join or be admitted', async (t) => 
   assert.match(stored.rows[0]!.token_hash, /^[a-f0-9]{64}$/u);
 });
 
+test('a link can work until the host revokes it; people it admitted stay after that', async (t) => {
+  const context = await createTestContext(); t.after(context.close);
+  const owner = await seedActor(context.db);
+  const guest = await seedActor(context.db);
+  const later = await seedActor(context.db);
+  const service = new CollaborationService(context.db);
+  const created = await service.createSession(owner.actor, {requestId: randomUUID(), message: {kind: 'discussion', text: 'Hello'}}) as {session: {id: string}};
+  const id = created.session.id;
+  const open = await service.createInvitation(owner.actor, id, {expiresInSeconds: null});
+  assert.equal(open.invitation.expiresAt, null);
+  const dated = await service.createInvitation(owner.actor, id, {expiresInSeconds: 3600});
+  assert.ok(Date.parse(dated.invitation.expiresAt!) > Date.now());
+  await assert.rejects(service.listInvitations(guest.actor, id));
+  const join = await service.requestJoin(guest.actor, {token: open.invitation.token, name: 'Alex'});
+  await service.admit(owner.actor, id, join.requestId!, {role: 'collaborator'});
+  const listed = await service.listInvitations(owner.actor, id);
+  assert.deepEqual(listed.invitations.map(i => [i.id, i.expiresAt, i.admitted]), [[dated.invitation.id, dated.invitation.expiresAt, 0], [open.invitation.id, null, 1]]);
+  // Revoking the link stops new requests; the person it already admitted keeps their place.
+  await service.revokeInvitation(owner.actor, id, open.invitation.id);
+  await assert.rejects(service.requestJoin(later.actor, {token: open.invitation.token}), hasCode('invitation_unavailable'));
+  assert.equal((await service.getSession(guest.actor, id)).session.id, id);
+  assert.deepEqual((await service.listInvitations(owner.actor, id)).invitations.map(i => i.id), [dated.invitation.id]);
+});
+
 test('revocation closes HTTP and replay access, and old admission cannot resurrect membership', async (t) => {
   const context = await createTestContext(); t.after(context.close);
   const owner = await seedActor(context.db);

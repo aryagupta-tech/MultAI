@@ -47,6 +47,8 @@ const createSchema = z.object({ requestId: uuid, title: cleanText(120).optional(
 const postMessageSchema = z.object({ requestId: uuid, kind: z.enum(['discussion', 'instruction']), text: cleanText(16000), image: imageSchema.optional() }).strict();
 const secretSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
 /** A name someone gives when joining: one line of printable text. */
+/** An invitation's expiry for the wire: an ISO time, or null for a link that works until revoked. */
+const expiryText = (value: Date | number) => (value instanceof Date && Number.isFinite(value.getTime()) ? value.toISOString() : null);
 const nameSchema = z.string().transform((value) => value.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim()).pipe(z.string().min(1).max(60));
 const sessionParams = (request: FastifyRequest) => z.object({ sessionId: uuid }).parse(request.params).sessionId;
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -286,7 +288,8 @@ export class CollaborationService {
   }
 
   async createInvitation(actor: Actor, sessionId: string, input: unknown) {
-    const { expiresInSeconds } = z.object({ expiresInSeconds: z.number().int().min(60).max(86400).default(3600) }).strict().parse(input);
+    // null: the link works until the host revokes it. People it admitted stay until they leave or are removed.
+    const { expiresInSeconds } = z.object({ expiresInSeconds: z.number().int().min(60).max(30 * 86400).nullable().default(3600) }).strict().parse(input);
     return transaction(this.db, async (client) => {
       await assertActor(client, actor);
       const authorized = await this.authorize(client, actor, uuid.parse(sessionId));
@@ -295,12 +298,28 @@ export class CollaborationService {
       if (count.rows[0]!.count >= 100) throw new ApiError(409, 'invitation_capacity', 'Revoke an invitation before creating another.');
       const token = randomBytes(32).toString('base64url');
       const id = randomUUID();
-      const result = await client.query<{expires_at: Date}>(
-        "INSERT INTO invitations(id,session_id,token_hash,expires_at) VALUES($1,$2,$3,now()+$4*interval '1 second') RETURNING expires_at",
-        [id, sessionId, digest(token), expiresInSeconds],
+      const result = await client.query<{expires_at: Date | number}>(
+        expiresInSeconds === null
+          ? "INSERT INTO invitations(id,session_id,token_hash,expires_at) VALUES($1,$2,$3,'infinity') RETURNING expires_at"
+          : "INSERT INTO invitations(id,session_id,token_hash,expires_at) VALUES($1,$2,$3,now()+$4*interval '1 second') RETURNING expires_at",
+        expiresInSeconds === null ? [id, sessionId, digest(token)] : [id, sessionId, digest(token), expiresInSeconds],
       );
-      await this.append(client, authorized.session, actor, 'invitation.created', { invitationId: id, expiresAt: result.rows[0]!.expires_at.toISOString() });
-      return { invitation: { id, sessionId, token, expiresAt: result.rows[0]!.expires_at.toISOString() } };
+      const expiresAt = expiryText(result.rows[0]!.expires_at);
+      await this.append(client, authorized.session, actor, 'invitation.created', { invitationId: id, expiresAt });
+      return { invitation: { id, sessionId, token, expiresAt } };
+    });
+  }
+
+  /** The host's links that still work, newest first, with how many people each one admitted. */
+  async listInvitations(actor: Actor, sessionId: string) {
+    return transaction(this.db, async (client) => {
+      await assertActor(client, actor);
+      const authorized = await this.authorize(client, actor, uuid.parse(sessionId));
+      requireOriginalHost(authorized, actor);
+      const rows = await client.query<{id: string; created_at: Date; expires_at: Date | number; admitted: number}>(
+        `SELECT i.id,i.created_at,i.expires_at,(SELECT count(*)::integer FROM join_requests j WHERE j.invitation_id=i.id AND j.status='admitted') AS admitted
+         FROM invitations i WHERE i.session_id=$1 AND i.revoked_at IS NULL AND i.expires_at>now() ORDER BY i.created_at DESC LIMIT 100`, [authorized.session.id]);
+      return { invitations: rows.rows.map((row) => ({ id: row.id, createdAt: row.created_at.toISOString(), expiresAt: expiryText(row.expires_at), admitted: row.admitted })) };
     });
   }
 
@@ -493,6 +512,7 @@ export async function registerCollaborationRoutes(app: FastifyInstance, dependen
   });
   app.patch('/v1/sessions/:sessionId/mode', async (request) => service.setMode(await authenticate(request), sessionParams(request), request.body));
   app.post('/v1/sessions/:sessionId/invitations', async (request, reply) => reply.code(201).send(await service.createInvitation(await authenticate(request), sessionParams(request), request.body ?? {})));
+  app.get('/v1/sessions/:sessionId/invitations', async (request) => service.listInvitations(await authenticate(request), sessionParams(request)));
   app.delete('/v1/sessions/:sessionId/invitations/:invitationId', async (request) => {
     const params = z.object({sessionId: uuid, invitationId: uuid}).parse(request.params);
     return service.revokeInvitation(await authenticate(request), params.sessionId, params.invitationId);

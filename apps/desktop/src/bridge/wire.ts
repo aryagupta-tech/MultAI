@@ -51,7 +51,8 @@ export interface WireInvitation {
   id: string;
   sessionId: string;
   token: string;
-  expiresAt: string;
+  /** null: the link works until the host revokes it. */
+  expiresAt: string | null;
 }
 
 export interface WireJoinRequest {
@@ -65,3 +66,11 @@ export interface WireJoinRequest {
 export type WireJoinResult =
   | { requestId: string; sessionId: string; status: 'pending' }
   | { sessionId: string; status: 'admitted' };
+
+/** One of the host's links that still works. */
+export interface WireInvitationSummary {
+  id: string;
+  createdAt: string;
+  expiresAt: string | null;
+  admitted: number;
+}
