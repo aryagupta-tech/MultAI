@@ -1,6 +1,6 @@
 # MultAI Companion for Android
 
-[Download signed APK 0.1.3](https://app.multai.si/app/android) · [Use the browser companion](https://app.multai.si/)
+[Download signed APK 0.1.4](https://app.multai.si/app/android) · [Use the browser companion](https://app.multai.si/)
 
 The Android app is a Capacitor 8 shell around the shared companion screens (`packages/companion-ui`). What it does and how pairing works: [docs/mobile-companion.md](../../docs/mobile-companion.md).
 
@@ -20,19 +20,19 @@ Signing certificate SHA-256: `72:E3:60:27:AE:1C:6C:A8:F9:75:A3:F8:95:EA:11:A6:78
 Install (sideload; this app is not on Google Play):
 
 1. Download the APK to the phone, or copy it over USB.
-2. Check its SHA-256 against `release/<file>.sha256` (on a computer: `shasum -a 256 multai-companion-0.1.3.apk`).
+2. Check its SHA-256 against `release/<file>.sha256` (on a computer: `shasum -a 256 multai-companion-0.1.4.apk`).
 3. Open it and allow your browser or file manager to **install unknown apps** when Android asks. Android shows **MultAI Companion**.
 
 From a computer with USB debugging:
 
 ```bash
-adb install apps/mobile/release/multai-companion-0.1.3.apk
+adb install apps/mobile/release/multai-companion-0.1.4.apk
 ```
 
 Check the signature before installing:
 
 ```bash
-apksigner verify --print-certs apps/mobile/release/multai-companion-0.1.3.apk
+apksigner verify --print-certs apps/mobile/release/multai-companion-0.1.4.apk
 ```
 
 **Update**: install the newer APK over the old one (`adb install -r …`, or open it on the phone). Your sign-in and pairing stay. Android accepts the update only if it is signed with the same key and has a higher `versionCode`; it refuses a downgrade.
@@ -85,7 +85,7 @@ JAVA_HOME=$(brew --prefix openjdk@21) ANDROID_HOME=$(brew --prefix)/share/androi
 `test/android-e2e.ts` installs the test APK on a running emulator and drives it with Playwright's Android WebView driver against a local service and the desktop's real `RemoteControlHost`. It is an emulator run, not a phone.
 
 ```bash
-TEST_DATABASE_URL=postgresql://… ANDROID_HOME=… node --import tsx apps/mobile/test/android-e2e.ts apps/mobile/build-test/multai-companion-test-0.1.3-1.apk apps/mobile/build-test/multai-companion-test-0.1.3-2.apk
+TEST_DATABASE_URL=postgresql://… ANDROID_HOME=… node --import tsx apps/mobile/test/android-e2e.ts apps/mobile/build-test/multai-companion-test-0.1.4-1.apk apps/mobile/build-test/multai-companion-test-0.1.4-2.apk
 ```
 
 The two test APKs must use ascending version codes. Build them with `MULTAI_TEST_VERSION_CODE=1` and then `2` (or set `MULTAI_E2E_FIRST_VERSION` / `MULTAI_E2E_SECOND_VERSION` to the chosen codes). The suite also checks HTTPS-invitation entry and restoration after Android process death.
