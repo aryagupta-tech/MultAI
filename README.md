@@ -2,17 +2,32 @@
 
 **One AI coding agent, shared by the whole team, in real time.**
 
-When you get stuck with an AI coding tool, bringing in a teammate today means screenshots and explaining everything again. In MultAI your teammate joins the session itself: they see the whole conversation, get a catch-up brief, can send the agent directions, and watch you approve what it does. The agent and your code stay on the host's computer.
+**[multai.si](https://multai.si)**: download for macOS and Android, or use it in the browser.
 
-Built for the **Meta Global AI Developer Hackathon** (Build for Your World), on **Muse Spark** and **Muse Wonder** through the Meta Model API.
+| | |
+|---|---|
+| **macOS** (Apple silicon) | [Download from multai.si](https://multai.si) |
+| **Android** | [Signed APK](https://api.multai.si/app/android) ([installation details](apps/mobile/README.md)) |
+| **Browser** | [app.multai.si](https://app.multai.si): join a session with no install |
+
+## Why I built it
+
+My dad was vibe coding his own website with an AI coding agent. He got stuck and asked me for help, and there was no way for me to join his session. All I could do was ask for screenshots, have him copy-paste errors, and guess what the agent had already tried.
+
+Every AI coding agent today is single-player. MultAI makes it multiplayer. The host sends an invite link. Their teammate joins the live session from a browser and reads a catch-up brief of what happened so far. Then they send the agent directions, while the host approves what it does. The agent and the code stay on the host's computer.
+
+Built for the **Meta Global AI Developer Hackathon** (Indie track, Build for Your World), on **Muse Spark**, **Muse Wonder** and **SAM 3.1** through the Meta Model API.
 
 ## How it uses Meta's models
 
 | Model | What it does in MultAI |
 |---|---|
-| **Muse Spark 1.3** | The shared coding agent. It reads, writes and runs code in a private git worktree of the host's project (or an empty private folder) with tool calls, and every effect goes through the host's approval rules. |
+| **Muse Spark 1.3** | The shared coding agent. It uses tool calls to read, write and run code in a private git worktree of the host's project (or an empty private folder), and every effect goes through the host's approval rules. `/split` runs up to four Muse Spark agents in parallel. |
 | **Muse Wonder 1.0** | Writes the **catch-up brief** when someone joins: a short chat-style summary of the goal, what was tried and fixed, decisions and who is waiting on what. It also drafts the **pull request** for the session's work, including who directed the agent. |
+| **SAM 3.1** | **Point at the problem:** a click on a screenshot becomes an exact outline of the broken element. **look_at_app:** the agent opens the app in a hidden browser, and SAM outlines and numbers what it checks. This lets the agent check its own UI fix instead of guessing. |
 | **Muse Spark (vision)** | Teammates paste a **screenshot of the bug**; the agent sees it alongside the instruction. |
+| **Muse Voice Transcribe 1.0** | Turns spoken instructions into text in the composer. |
+| **Muse Glimmer** (open weights) | Runs locally in Ollama or LM Studio, so neither the code nor the model leaves the machine. |
 
 The host connects once with a Meta Model API key. Every feature also works with OpenAI, a ChatGPT plan, Claude, Kimi or any compatible API, and with a **local model** such as **Muse Glimmer** (Meta's open-weights model) running in Ollama or LM Studio on the host's own computer, so neither the code nor the model leaves the machine. Teammates never need a key: every model call runs on the host's machine with the host's connection.
 
@@ -90,6 +105,9 @@ Add a git repository as a project and start a chat in it. The agent never edits 
 
 1. **Host starts a chat** and gives the agent a task (Plan mode to agree first, Build mode to make changes).
 2. **Invites a teammate** with an HTTPS link. They can join in a browser without installing MultAI; the host admits them as collaborator or viewer.
+   - By default the link works until the host revokes it; 7 days or 1 day can be chosen instead.
+   - The invite dialog lists the active links, each with a Revoke button.
+   - Someone admitted stays until they leave or the host removes them.
 3. **Muse Wonder writes a catch-up brief** for the newcomer automatically.
 4. **Anyone can send directions** to the agent or talk to the team; a pasted screenshot goes to the agent too.
 5. **The host approves** file changes and commands from cards in the chat, or chooses an access level:
@@ -105,7 +123,9 @@ Everything in this repository was built during the hackathon: the first commit i
 - **Desktop app** (Electron + React) for macOS, with Google sign-in, HTTPS invitations, a sandboxed renderer and OS-encrypted credentials. Windows and Linux installers are built and smoke-tested in CI, but they aren't offered for download until they've been tried on real machines.
 - **Collaboration service** (Fastify + PostgreSQL), deployed at `https://api.multai.si` on AWS Lightsail with Supabase Postgres: sessions, admission and roles, ordered live events, decisions, host-only run leases and approvals.
 - **Host runtime**: provider adapters (Meta Model API, OpenAI, Claude, Kimi, ChatGPT plan, compatible APIs), a controlled workspace, exact approval descriptors and a durable effect journal so an interrupted action is never silently repeated.
-- **Meta features**: Muse Spark as the agent, Muse Wonder catch-up briefs and pull request drafts, screenshot input, access levels and in-chat approvals.
+- **Meta features**: Muse Spark as the agent (and parallel agents with `/split`), Muse Wonder catch-up briefs and pull request drafts, SAM 3.1 point-at-the-problem and `look_at_app`, Muse Voice Transcribe, screenshot input, access levels and in-chat approvals.
+- **Phone and browser**: the [browser companion](https://app.multai.si) and the signed Android app, with phone pairing and owner control.
+- **Website**: [multai.si](https://multai.si), with the macOS and Android downloads.
 - **Developer workflow**: per-chat git worktrees of your real project, live diff review, keep, apply or discard, push and open a PR, and a host terminal.
 - **Cross-platform CI**: Windows (NSIS installer) and Linux (AppImage, .deb, .tar.gz) builds installed and tested on every push.
 
