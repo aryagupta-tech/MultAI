@@ -12,13 +12,13 @@ type Beat = { id: string; scene: string; start: number; length: number; voice: {
 const beats = timeline.beats as Beat[];
 const FPS = timeline.fps;
 const W = 1920, H = 1080;
-const BLUE = '#2f7cff';
-const FONT = '-apple-system, "SF Pro Display", "Inter", system-ui, sans-serif';
+export const BLUE = '#2f7cff';
+export const FONT = '-apple-system, "SF Pro Display", "Inter", system-ui, sans-serif';
 const ease = Easing.bezier(0.45, 0, 0.2, 1);
 const sec = (s: number) => Math.round(s * FPS);
 
 // ---------------------------------------------------------------- background
-function Backdrop() {
+export function Backdrop() {
   const frame = useCurrentFrame();
   const drift = Math.sin(frame / 240) * 40;
   return (
@@ -76,7 +76,7 @@ function Screen({ shot, length }: { shot: Shot; length: number }) {
   );
 }
 
-function PhoneFrame({ children, height = 840 }: { children: ReactNode; height?: number }) {
+export function PhoneFrame({ children, height = 840 }: { children: ReactNode; height?: number }) {
   const width = height * ASPECT.phone;
   return (
     <div style={{ width: width + 28, height: height + 28, borderRadius: 58, padding: 14, background: 'linear-gradient(145deg, #2a2d34, #0d0f13)', boxShadow: '0 50px 140px rgba(0,0,0,0.7), 0 0 0 2px rgba(255,255,255,0.08)' }}>
@@ -199,7 +199,7 @@ function Hook() {
   );
 }
 
-function Mark({ size, progress }: { size: number; progress: number }) {
+export function Mark({ size, progress }: { size: number; progress: number }) {
   const layer = (i: number) => interpolate(progress, [i * 0.18, i * 0.18 + 0.45], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.out(Easing.back(1.6)) });
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
