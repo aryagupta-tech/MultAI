@@ -14,7 +14,8 @@
     "test": "npm run test --workspaces --if-present",
     "dev:backend": "npm run dev --workspace @multai/backend",
     "db:migrate": "npm run migrate --workspace @multai/backend",
-    "test:integration": "node scripts/test-postgres.mjs"
+    "test:integration": "node scripts/test-postgres.mjs",
+    "bench:control": "node --import tsx benchmarks/control.mjs"
   },
   "devDependencies": {"typescript": "7.0.2", "tsx": "4.23.15", "@types/node": "24.19.2"}
 }

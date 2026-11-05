@@ -2,6 +2,55 @@
 
 **One AI coding agent, shared by the whole team, in real time.**
 
+## Benchmarks and effectiveness
+
+Measured **5 November 2026** on Apple M5, macOS arm64, Node 24.22.0. These are
+reproducible **local control-component measurements**, using the real runtime and
+signature verifiers. File writes are 16 KiB; valid write/signature paths use 100
+measured samples after 10 warm-ups. Approval is granted programmatically by the
+fixture; human decision time and central HTTP checks are outside these timings.
+
+| Measurement | Observed result |
+|---|---|
+| Durable write through prepare → host approval → journal completion | **10.65 ms median / 13.30 ms p95**; 100/100 writes correct |
+| Minimal durable-write baseline, without approval/journal checks | **7.69 ms median / 8.92 ms p95** on the same file fixture |
+| Completed-action replay | **0.25 ms median / 0.39 ms p95**; 100/100 returned the recorded result without replacing the file |
+| Unapproved writes / changed-after-approval writes / non-owner approvals | **100/100 refused in each fixed-case check** |
+| Unfinished reservations after SQLite reopen | **30/30 held for review**, with automatic dispatch refused |
+| Sign → service validation/verification → host verification | **0.14 ms median / 0.17 ms p95**; 100/100 valid requests accepted and 100/100 mutated requests rejected by both verifiers |
+
+The approved-write path's observed median was **about 3 ms above** the minimal
+durable-write baseline. Phone timings exclude network, UI and human decision
+time. These results do not measure AI coding quality or establish a speed,
+cost or productivity advantage over another product.
+
+**Reproduce:** `npm run --silent bench:control`. See the
+[method and limitations](benchmarks/README.md),
+[runner](benchmarks/control.mjs) and
+[raw results, source hashes and environment](benchmarks/results/control-2026-11-05.json).
+Separate [live acceptance on 3 November](docs/verification/release-2026-11-03.md)
+recorded one Muse Wonder checkout task recovering to pass **4/4 Node tests** and
+one Wonder → Spark handoff retaining **10 earlier steps**. Those are individual
+acceptance observations with human review, not a general task success rate.
+
+## Compared with other coding-agent products
+
+Documentation reviewed **5 November 2026**; this is a workflow comparison.
+
+| Product | Documented workflow |
+|---|---|
+| **MultAI** | Host-local coding, worktrees and approvals; several people share one agent session with admission roles, attributed directions, catch-up briefs, conflict review, browser participation and paired phone control. |
+| **[Codex](https://developers.openai.com/blog/mastering-codex-remote-for-engineering)** | Connected-host engineering work, worktrees, steering, code review and remote approval decisions through ChatGPT mobile. |
+| **[Claude Code](https://code.claude.com/docs/en/overview)** | Coding across terminal, IDE, desktop and browser; [Remote Control](https://code.claude.com/docs/en/remote-control) continues local sessions from a browser or phone. |
+| **[T3 Code](https://t3.codes/)** | Multiple coding-agent providers, model switching, per-thread branches and PR workflows, with desktop, web and mobile clients. |
+
+MultAI focuses on **a team directing one live agent**, with Muse Spark execution,
+Muse Wonder catch-up/PR drafting and SAM 3.1 visual grounding. We have not run a
+matched coding-task study against these products; omitted capabilities do not
+mean a competitor lacks them. [Comparison scope and sources](benchmarks/README.md#comparison-with-coding-agent-products).
+
+## Downloads
+
 **[multai.si](https://multai.si)**: download for macOS and Android, or use it in the browser.
 
 | | |
@@ -14,7 +63,7 @@
 
 My dad was vibe coding his own website with an AI coding agent. He got stuck and asked me for help, and there was no way for me to join his session. All I could do was ask for screenshots, have him copy-paste errors, and guess what the agent had already tried.
 
-Every AI coding agent today is single-player. MultAI makes it multiplayer. The host sends an invite link. Their teammate joins the live session from a browser and reads a catch-up brief of what happened so far. Then they send the agent directions, while the host approves what it does. The agent and the code stay on the host's computer.
+MultAI brings a teammate into an ongoing AI coding session. The host sends an invite link. Their teammate joins the live session from a browser and reads a catch-up brief of what happened so far. Then they send the agent directions, while the host approves what it does. The agent executes in a private worktree on the host's computer.
 
 Built for the **Meta Global AI Developer Hackathon** (Indie track, Build for Your World), on **Muse Spark**, **Muse Wonder** and **SAM 3.1** through the Meta Model API.
 
@@ -131,7 +180,7 @@ Everything in this repository was built during the hackathon: the first commit i
 
 ## Safety model
 
-- Code, files, credentials and processes stay on the **host's** computer. The service only relays the shared conversation and decisions.
+- Project files and execution stay on the **host's** computer; model credentials are stored locally. Cloud models receive the selected code, screenshots and tool results needed for inference. The collaboration service relays the shared conversation and decisions. Local-model inference avoids cloud model requests; shared conversations still use the collaboration service.
 - The agent works in a **private git worktree** of the host's project (or an empty private folder). Private paths such as `.git`, `.env`, keys and `node_modules` stay out of its reach. Every write and command is an exact descriptor (file hash or command text) that the host approves once; approvals expire, and Stop, sign-out or sleep cancel them. Only the host's own buttons move work back into their checkout.
 - Teammates' instructions are attributed; team discussion is context, never an instruction.
 - Secrets that look like API keys are redacted from shared text, briefs and command output.
