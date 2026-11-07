@@ -10,6 +10,7 @@ export function Root() {
       <Composition id="Main" component={Main} fps={fps} width={1920} height={1080} durationInFrames={Math.round(timeline.total * fps)} />
       <Composition id="Teaser" component={Teaser} fps={fps} width={1920} height={1080} durationInFrames={Math.round(teaserLength(TEASER_BEATS) * fps)} />
       <Still id="Thumbnail" component={Thumbnail} width={1920} height={1080} />
+      <Still id="ProductImage" component={Thumbnail} width={1920} height={1080} defaultProps={{ product: true }} />
     </>
   );
 }

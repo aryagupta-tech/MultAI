@@ -24,7 +24,7 @@ const avatar = (text: string, bg: string): ReactNode => (
   <span style={{ width: 56, height: 56, borderRadius: 28, background: bg, display: 'grid', placeItems: 'center', fontSize: 24, fontWeight: 800 }}>{text}</span>
 );
 
-export function Thumbnail() {
+export function Thumbnail({ product = false }: { product?: boolean }) {
   // SAM's numbered box on the hidden-browser "Pay now" button, in source pixels.
   const target = { x: 1378, y: 1440 };
   const zoom = 2.1, lens = 300;
@@ -47,7 +47,7 @@ export function Thumbnail() {
         <rect x={page.x - 44} y={page.y - 26} width={88} height={52} rx={8} fill="none" stroke="#ff4d4d" strokeWidth={6} />
       </svg>
       <div style={{ position: 'absolute', ...LENS, width: lens, height: lens, borderRadius: lens / 2, border: '8px solid #ff4d4d', boxShadow: '0 0 0 6px rgba(0,0,0,0.5), 0 30px 80px rgba(0,0,0,0.7), 0 0 70px rgba(255,77,77,0.5)', backgroundImage: `url(${MAC})`, backgroundSize: `${2880 * zoom}px ${1800 * zoom}px`, backgroundPosition: `${lens / 2 - 8 - look.x * zoom}px ${lens / 2 - 8 - look.y * zoom}px` }} />
-      <Chip style={{ left: 90, top: 860, fontSize: 32, padding: '12px 22px', background: '#ff4d4d', border: 'none' }}>SAM 3.1 sees the bug</Chip>
+      <Chip style={{ left: 90, top: 860, fontSize: 32, padding: '12px 22px', background: '#ff4d4d', border: 'none' }}>{product ? 'Point at the bug' : 'SAM 3.1 sees the bug'}</Chip>
 
       {/* Phone */}
       <div style={{ position: 'absolute', left: 1560, top: 300, transform: 'rotate(4deg)' }}>
@@ -77,7 +77,7 @@ export function Thumbnail() {
           now<br /><span style={{ color: BLUE, textShadow: `0 0 60px rgba(47,124,255,0.55)` }}>multiplayer.</span>
         </div>
         <div style={{ marginTop: 46, display: 'inline-flex', alignItems: 'center', gap: 14, padding: '14px 28px', borderRadius: 999, background: 'rgba(47,124,255,0.16)', border: '2px solid rgba(47,124,255,0.6)', fontSize: 34, fontWeight: 700 }}>
-          <span style={{ width: 14, height: 14, borderRadius: 7, background: BLUE, boxShadow: `0 0 16px ${BLUE}` }} />Built on Meta Muse + SAM 3.1
+          <span style={{ width: 14, height: 14, borderRadius: 7, background: BLUE, boxShadow: `0 0 16px ${BLUE}` }} />{product ? 'Your code stays local' : 'Built on Meta Muse + SAM 3.1'}
         </div>
       </div>
     </AbsoluteFill>
