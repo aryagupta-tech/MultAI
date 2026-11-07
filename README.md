@@ -2,7 +2,7 @@
 
 **One AI coding agent, shared by the whole team, in real time.**
 
-**[Website](https://multai.si)** · **[Try it in the browser](https://app.multai.si)** · **[Android app](https://api.multai.si/app/android)** · **[Docs](docs/)**
+**[Watch the demo (2 min)](https://youtu.be/IdmKgjTp1Ec)** · **[Website](https://multai.si)** · **[Try it in the browser](https://app.multai.si)** · **[Android app](https://api.multai.si/app/android)** · **[Docs](docs/)**
 
 ![MultAI: a teammate's request waits for the host under a Muse Wonder catch-up brief, next to the live diff](docs/images/app.webp)
 
